@@ -188,6 +188,8 @@ This package currently focuses on the Solid renderer and Element PAPI bridge. Th
 
 Solid control-flow components such as `For`, `Show`, `Switch`, `Index`, `Suspense`, and `ErrorBoundary` are re-exported from the package.
 
+See [ROADMAP.md](ROADMAP.md) for planned milestones and completion goals.
+
 ## Development
 
 ```bash
