@@ -2,9 +2,9 @@
 
 Solid rendering for [Lynx](https://lynxjs.org/).
 
-`solid-lynx` connects Solid's fine-grained reactive runtime to Lynx Element PAPI. Solid components, signals, effects, and control flow create and update native Lynx elements without a browser DOM or a virtual DOM layer.
+`solid-lynx` connects Solid's fine-grained reactive runtime to Lynx Element PAPI. Solid components, signals, effects, and control flow create and update Lynx elements without targeting the browser DOM or adding a virtual DOM layer.
 
-> **Status:** early experimental release (`0.1.0`). The renderer is usable with a Lynx Element PAPI runtime, but native device coverage and Lynx-specific build integration are still evolving.
+> **Status:** early experimental release (`0.1.0`). The renderer targets Lynx Element PAPI. A host-only Lynx-for-Web browser smoke fixture is included, while loading a Solid page bundle through that host, native device coverage, and Lynx-specific build integration remain in progress.
 
 ## Why this exists
 
@@ -16,6 +16,35 @@ ReactLynx provides an excellent React experience for Lynx. This project explores
 - A fake-PAPI test seam that makes renderer behavior testable without a mobile toolchain.
 
 The package is a rendering layer. It does not replace Lynx, Rspeedy, native navigation, or the Lynx dual-thread build pipeline.
+
+## Rendering model
+
+`solid-lynx` targets Lynx's Element PAPI rather than `document.createElement`. This is the same framework boundary used by ReactLynx: the UI framework emits Lynx element operations, and the Lynx runtime owns the actual rendering.
+
+The native path is:
+
+```text
+Solid component
+  -> solid-lynx
+  -> Lynx Element PAPI
+  -> Lynx native engine
+  -> native UI
+```
+
+The browser path uses Lynx for Web. `@lynx-js/web-core` implements the Lynx runtime contract in the browser, and `<lynx-view>` hosts the Lynx page:
+
+```text
+Solid component
+  -> solid-lynx
+  -> Lynx Element PAPI
+  -> @lynx-js/web-core
+  -> <lynx-view>
+  -> browser DOM
+```
+
+The browser DOM is an implementation detail of Lynx for Web. `solid-lynx` does not provide a direct DOM renderer fallback, and application code should not assume that `document` or `window` are available inside a Lynx page. See the [Lynx web integration documentation](https://lynxjs.org/guide/start/integrate-with-existing-apps) for the surrounding web host setup.
+
+The checked-in browser fixture currently verifies only the `@lynx-js/web-core/client` custom-element bootstrap and a static `<lynx-view>` host. It does not load a Solid page bundle through Element PAPI yet. The minimal Rspeedy attempt in this repository emitted a web JavaScript chunk instead of the `.lynx.bundle` expected by `<lynx-view>`, so the fixture does not claim browser coverage of Solid rendering or PAPI behavior.
 
 ## Install
 
@@ -40,6 +69,8 @@ module.exports = {
 ```
 
 With Rspeedy, apply this Solid transform in the JavaScript transform used by your Lynx bundle. Keep the rest of your normal Lynx/Rspeedy setup in place.
+
+For browser validation, the fixture boots `@lynx-js/web-core/client` and a static `<lynx-view>`, rather than mounting Solid into a normal DOM node. Loading the Solid page bundle through that host remains planned in [ROADMAP.md](ROADMAP.md).
 
 ## Quick start
 
@@ -178,13 +209,14 @@ The global adapter uses these current Lynx operation names:
 
 ## Scope and limitations
 
-This package currently focuses on the Solid renderer and Element PAPI bridge. The surrounding Lynx toolchain remains responsible for:
+This package currently focuses on the Solid renderer and Element PAPI bridge. The surrounding Lynx toolchain and host runtime remain responsible for:
 
 - Rspeedy configuration and bundle generation
 - Native navigation and page lifecycle integration
 - Dual-thread worklet compilation and scheduling
 - Native list virtualization and list-specific optimizations
 - Platform-specific native modules
+- Production Lynx-for-Web app-bundle generation and host integration; the included fixture covers only web-core bootstrap
 
 Solid control-flow components such as `For`, `Show`, `Switch`, `Index`, `Suspense`, and `ErrorBoundary` are re-exported from the package.
 
@@ -200,6 +232,18 @@ pnpm build
 ```
 
 Tests use an in-memory fake Element PAPI implementation, so the core renderer checks do not require iOS, Android, or Lynx Explorer.
+
+### Lynx-for-Web host smoke
+
+Install the browser used by Playwright once, then run the host-only smoke test:
+
+```bash
+pnpm install
+pnpm exec playwright install chromium
+pnpm web:test
+```
+
+To open the fixture manually, run `pnpm web:serve` and visit <http://127.0.0.1:4173>. The smoke test verifies that `@lynx-js/web-core/client` registers and upgrades the static `<lynx-view>` element. It does not load a Solid Lynx bundle; page rendering, reactivity, PAPI events, property updates, and disposal remain unverified in a browser.
 
 ## License
 

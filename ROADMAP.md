@@ -2,23 +2,30 @@
 
 This roadmap describes the intended direction for `solid-lynx`. Milestones are ordered by dependency and confidence, not by release date. Version labels are planning targets, not release promises.
 
-## 0.2: Runtime confidence
+## 0.2: Lynx-for-Web integration
 
-Validate the renderer against Lynx Element PAPI in Lynx Explorer or on a device, then close correctness and lifecycle gaps.
+Establish a browser-based Lynx runtime path so renderer development does not depend on access to a physical device. The browser target must preserve Lynx semantics instead of replacing the host with ordinary DOM rendering.
 
-- [ ] Exercise page creation, mounting, text updates, insertion, removal, and reordering in a real Lynx runtime.
-- [ ] Verify attribute, style, dataset, boolean-property, and flush behavior against current Lynx APIs.
-- [ ] Test event dispatch, propagation, capture, global bindings, namespaced handlers, replacement, and removal.
+- [x] Add a host-only browser fixture using `@lynx-js/web-core/client` and a static `<lynx-view>`.
+- [ ] Build and load a Solid Lynx bundle through the web Element PAPI path. The current Rspeedy attempt emitted a web JavaScript chunk instead of a `.lynx.bundle`.
+- [ ] Exercise page creation, mounting, text updates, insertion, removal, and reordering in the browser runtime.
+- [ ] Verify attribute, style, dataset, boolean-property, and flush behavior against the web PAPI implementation.
+- [ ] Test event dispatch, propagation, capture, global bindings, namespaced handlers, replacement, and removal in a browser.
+- [x] Add a focused Playwright smoke test for the web-core bootstrap and static `<lynx-view>` host.
+- [ ] Add Playwright coverage for Solid rendering, reactivity, events, property updates, and disposal.
 - [ ] Make root disposal detach event listeners and release all rendered nodes deterministically.
 - [ ] Test multiple isolated roots and document whether disposed roots can be mounted again.
-- [ ] Add regression coverage for each behavior confirmed in the native runtime.
+- [x] Keep the in-memory fake PAPI tests as fast unit-level regression coverage.
 
-**Milestone complete when:** core rendering, event, flush, and disposal behavior is verified in Lynx and covered by automated regression tests where the behavior can be simulated.
+**Milestone complete when:** a browser can run a Solid Lynx bundle through `@lynx-js/web-core` and `<lynx-view>`, with core rendering, event, flush, and disposal behavior covered by automated tests.
 
-## 0.3: Tooling and types
+## 0.3: Native parity, tooling, and types
 
-Make Solid-on-Lynx projects straightforward to configure and author.
+Validate native-specific behavior after the web path is working, while making Solid-on-Lynx projects straightforward to configure and author.
 
+- [ ] Run a native Lynx smoke test in Lynx Explorer or on an Android/iOS device.
+- [ ] Compare native and web behavior for shared Element PAPI operations.
+- [ ] Verify native-only behavior such as dual-thread execution, worklets, and first-screen synchronization.
 - [ ] Provide a reproducible Rspeedy integration, preferably as a small plugin or maintained configuration package.
 - [ ] Document native and Lynx-for-Web build configurations and development workflows.
 - [ ] Replace broad intrinsic JSX types with Lynx element and attribute types, using `@lynx-js/types` where compatible.
@@ -36,14 +43,13 @@ Add platform features through explicit, testable adapters while keeping the core
 - [ ] Add refs and imperative element access with deterministic cleanup.
 - [ ] Evaluate native list virtualization and expose list callbacks if the Solid model can support them cleanly.
 - [ ] Evaluate gesture, animation, and portal/overlay APIs as separate capabilities.
-- [ ] Test shared rendering behavior against Lynx-for-Web in a browser.
 - [ ] Publish examples for forms, keyed lists, asynchronous content, and platform-specific capabilities.
 
 **Milestone complete when:** supported platform features have documented contracts and tests, and unsupported capabilities fail clearly rather than silently degrading.
 
 ## 1.0: Stability
 
-Set a stable public contract after native validation and tooling have matured.
+Set a stable public contract after web validation, native validation, and tooling have matured.
 
 - [ ] Finalize and document the public host, root, event, and JSX contracts.
 - [ ] Define supported Lynx and Solid version ranges and verify them in CI.

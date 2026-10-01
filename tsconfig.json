@@ -13,5 +13,12 @@
     "jsxImportSource": "solid-lynx",
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "examples/**/*.tsx"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "examples/**/*.ts",
+    "examples/**/*.tsx",
+    "playwright.config.ts"
+  ]
 }

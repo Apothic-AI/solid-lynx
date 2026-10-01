@@ -39,15 +39,20 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "web:serve": "vite --root examples/lynx-for-web/site --host 127.0.0.1 --port 4173 --strictPort",
+    "web:test": "playwright test --config playwright.config.ts"
   },
   "peerDependencies": {
     "solid-js": "^1.9.0"
   },
   "devDependencies": {
+    "@lynx-js/web-core": "^0.26.2",
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.15.30",
     "solid-js": "^1.9.9",
     "typescript": "^5.8.3",
+    "vite": "^8.3.1",
     "vitest": "^3.2.4"
   },
   "engines": {
