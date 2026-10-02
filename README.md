@@ -4,7 +4,7 @@ Solid rendering for [Lynx](https://lynxjs.org/).
 
 `solid-lynx` connects Solid's fine-grained reactive runtime to Lynx Element PAPI. Solid components, signals, effects, and control flow create and update Lynx elements without targeting the browser DOM or adding a virtual DOM layer.
 
-> **Status:** early experimental release (`0.1.0`). The renderer targets Lynx Element PAPI. A host-only Lynx-for-Web browser smoke fixture is included, while loading a Solid page bundle through that host, native device coverage, and Lynx-specific build integration remain in progress.
+> **Status:** early experimental release (`0.1.0`). The renderer targets Lynx Element PAPI. The Solid TSX `.web.bundle` example passes its focused Lynx-for-Web Playwright suite. Native-device coverage and broader toolchain integration remain in progress.
 
 ## Why this exists
 
@@ -44,19 +44,21 @@ Solid component
 
 The browser DOM is an implementation detail of Lynx for Web. `solid-lynx` does not provide a direct DOM renderer fallback, and application code should not assume that `document` or `window` are available inside a Lynx page. See the [Lynx web integration documentation](https://lynxjs.org/guide/start/integrate-with-existing-apps) for the surrounding web host setup.
 
-The checked-in browser fixture currently verifies only the `@lynx-js/web-core/client` custom-element bootstrap and a static `<lynx-view>` host. It does not load a Solid page bundle through Element PAPI yet. The minimal Rspeedy attempt in this repository emitted a web JavaScript chunk instead of the `.lynx.bundle` expected by `<lynx-view>`, so the fixture does not claim browser coverage of Solid rendering or PAPI behavior.
+The checked-in fixture boots `@lynx-js/web-core/client` and loads the generated `main.web.bundle` in `<lynx-view>`. Rspeedy uses the published `pluginLynx` and `pluginVanillaLynx` plugins, a main-thread-only entry, Babel's universal Solid transform, and Lynx for Web's encoder. The bundle renders and updates through Element PAPI; the app is not mounted into a host-side DOM node.
 
 ## Install
 
 ```bash
 pnpm add solid-lynx solid-js
-pnpm add -D babel-preset-solid
+pnpm add -D @lynx-js/rspeedy @lynx-js/rsbuild-plugin \
+  @lynx-js/vanilla-rsbuild-plugin @lynx-js/lynx-core \
+  @rsbuild/core @rsbuild/plugin-babel babel-preset-solid
 ```
 
 Configure Solid to emit universal renderer calls targeting `solid-lynx`:
 
 ```js
-// babel.config.js
+// babel.config.cjs
 module.exports = {
   presets: [
     ["babel-preset-solid", {
@@ -68,9 +70,61 @@ module.exports = {
 };
 ```
 
-With Rspeedy, apply this Solid transform in the JavaScript transform used by your Lynx bundle. Keep the rest of your normal Lynx/Rspeedy setup in place.
+The web example applies this transform in its Rspeedy config and emits a real Lynx web bundle:
 
-For browser validation, the fixture boots `@lynx-js/web-core/client` and a static `<lynx-view>`, rather than mounting Solid into a normal DOM node. Loading the Solid page bundle through that host remains planned in [ROADMAP.md](ROADMAP.md).
+```ts
+import { defineConfig } from "@lynx-js/rspeedy";
+import { pluginLynx } from "@lynx-js/rsbuild-plugin";
+import { pluginVanillaLynx } from "@lynx-js/vanilla-rsbuild-plugin";
+import { pluginBabel } from "@rsbuild/plugin-babel";
+
+export default defineConfig({
+  source: { entry: { main: "./src/main-thread.tsx" } },
+  environments: { web: {} },
+  output: {
+    distPath: { root: "site/public" },
+    filename: { bundle: "[name].[platform].bundle" },
+  },
+  plugins: [
+    pluginLynx(),
+    pluginVanillaLynx({
+      entries: {
+        main: {
+          mainThread: "./src/main-thread.tsx",
+          background: false,
+        },
+      },
+    }),
+    pluginBabel({
+      include: /\.(?:jsx|tsx)$/,
+      babelLoaderOptions(options) {
+        options.presets ??= [];
+        options.presets.unshift([
+          "babel-preset-solid",
+          {
+            moduleName: "solid-lynx",
+            generate: "universal",
+            hydratable: false,
+          },
+        ]);
+      },
+    }),
+  ],
+});
+```
+
+`@lynx-js/lynx-core` supplies the web-core optional peer. The Vite host excludes `@lynx-js/web-core` from dependency prebundling so its relative WASM asset keeps the correct URL and MIME type, and includes the peer's lazy web entry so Vite discovers it before the first page load:
+
+```ts
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  optimizeDeps: {
+    exclude: ["@lynx-js/web-core"],
+    include: ["@lynx-js/lynx-core/web"],
+  },
+});
+```
 
 ## Quick start
 
@@ -93,15 +147,24 @@ function App() {
   );
 }
 
-const root = createLynxRoot({
-  componentId: "0",
-  cssId: 0,
-});
+const engine = lynx.getEngine();
+let root: ReturnType<typeof createLynxRoot> | undefined;
 
-root.render(() => <App />);
+function renderPage() {
+  if (root) return;
+  root = createLynxRoot({ componentId: "0", cssId: 0 });
+  root.render(() => <App />);
+}
 
-// Call this from the host page-destroy lifecycle.
-root.dispose();
+function destroyPage() {
+  root?.dispose();
+  root = undefined;
+  engine.removeEventListener("__RenderPage", renderPage);
+  engine.removeEventListener("__DestroyLifetime", destroyPage);
+}
+
+engine.addEventListener("__RenderPage", renderPage);
+engine.addEventListener("__DestroyLifetime", destroyPage);
 ```
 
 For an existing page element, pass the page and its component id instead of asking the root to create one:
@@ -216,13 +279,15 @@ This package currently focuses on the Solid renderer and Element PAPI bridge. Th
 - Dual-thread worklet compilation and scheduling
 - Native list virtualization and list-specific optimizations
 - Platform-specific native modules
-- Production Lynx-for-Web app-bundle generation and host integration; the included fixture covers only web-core bootstrap
+- Production Lynx-for-Web serving and host integration beyond the included example
 
 Solid control-flow components such as `For`, `Show`, `Switch`, `Index`, `Suspense`, and `ErrorBoundary` are re-exported from the package.
 
 See [ROADMAP.md](ROADMAP.md) for planned milestones and completion goals.
 
 ## Development
+
+Use Node.js 20.19+ or 22.12+ with pnpm for the Rspeedy/Vite example toolchain.
 
 ```bash
 pnpm install
@@ -233,17 +298,23 @@ pnpm build
 
 Tests use an in-memory fake Element PAPI implementation, so the core renderer checks do not require iOS, Android, or Lynx Explorer.
 
-### Lynx-for-Web host smoke
+### Lynx-for-Web Solid bundle
 
-Install the browser used by Playwright once, then run the host-only smoke test:
+Build the Solid TSX entry with the Lynx vanilla plugin and web encoder:
 
 ```bash
 pnpm install
+pnpm web:build
+```
+
+The bundle is `examples/lynx-for-web/site/public/main.web.bundle`, loaded by `<lynx-view url="/main.web.bundle">`. For browser testing, install Chromium once and run:
+
+```bash
 pnpm exec playwright install chromium
 pnpm web:test
 ```
 
-To open the fixture manually, run `pnpm web:serve` and visit <http://127.0.0.1:4173>. The smoke test verifies that `@lynx-js/web-core/client` registers and upgrades the static `<lynx-view>` element. It does not load a Solid Lynx bundle; page rendering, reactivity, PAPI events, property updates, and disposal remain unverified in a browser.
+To open the fixture manually, run `pnpm web:serve` and visit <http://127.0.0.1:4173>. The example includes `#count`, the `bindtap` button `#increment`, the `onClick` button `#alias-increment`, reactive `#status`, `#dataset-readout` (updated from `event.currentTarget.dataset.count` when `#status` is tapped), and `#dispose`. The serial Chromium suite passed all three checks: bundle loading and mount inside `<lynx-view>`, both event props with reactive class/style and dataset updates, and unmounting through `#dispose`.
 
 ## License
 

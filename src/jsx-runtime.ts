@@ -22,3 +22,14 @@ export function jsx(
 }
 
 export const jsxs = jsx;
+
+export namespace JSX {
+  export type Element = LynxNode;
+  export interface IntrinsicAttributes {
+    key?: string | number;
+    ref?: unknown;
+  }
+  export interface IntrinsicElements {
+    [elementName: string]: Record<string, unknown>;
+  }
+}

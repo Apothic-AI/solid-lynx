@@ -2,6 +2,7 @@ import { createRenderer } from "solid-js/universal";
 
 import type { LynxHost, RendererOptions } from "./host.js";
 import { parseEventProp } from "./events.js";
+import { registerLynxRendererForCurrentOwner } from "./render-context.js";
 
 export function createLynxRenderer<Node extends object>(
   host: LynxHost<Node>,
@@ -25,10 +26,13 @@ export function createLynxRenderer<Node extends object>(
     getNextSibling: node => host.getNextSibling(node),
   });
 
-  return {
+  const lynxRenderer = {
     ...runtime,
     render(code: () => Node, parent: Node) {
-      const dispose = runtime.render(code, parent);
+      const dispose = runtime.render(() => {
+        registerLynxRendererForCurrentOwner(lynxRenderer);
+        return code();
+      }, parent);
       host.flush();
       return () => {
         dispose();
@@ -38,6 +42,8 @@ export function createLynxRenderer<Node extends object>(
     flush: () => host.flush(),
     parseEventProp: (name: string) => parseEventProp(name, options.transformEventNames ?? true),
   };
+
+  return lynxRenderer;
 }
 
 export type LynxRenderer<Node extends object> = ReturnType<typeof createLynxRenderer<Node>>;

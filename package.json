@@ -40,16 +40,25 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "web:serve": "vite --root examples/lynx-for-web/site --host 127.0.0.1 --port 4173 --strictPort",
+    "web:build": "pnpm build && pnpm exec rspeedy build --root examples/lynx-for-web",
+    "web:serve": "vite examples/lynx-for-web/site --config examples/lynx-for-web/site/vite.config.ts --force --host 127.0.0.1 --port 4173 --strictPort",
     "web:test": "playwright test --config playwright.config.ts"
   },
   "peerDependencies": {
     "solid-js": "^1.9.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.28.0",
+    "@lynx-js/lynx-core": "^0.1.4",
+    "@lynx-js/rsbuild-plugin": "^0.1.3",
+    "@lynx-js/rspeedy": "^0.18.0",
+    "@lynx-js/vanilla-rsbuild-plugin": "^0.1.2",
     "@lynx-js/web-core": "^0.26.2",
     "@playwright/test": "^1.63.0",
+    "@rsbuild/core": "^2.2.9",
+    "@rsbuild/plugin-babel": "^2.1.0",
     "@types/node": "^22.15.30",
+    "babel-preset-solid": "^1.9.0",
     "solid-js": "^1.9.9",
     "typescript": "^5.8.3",
     "vite": "^8.3.1",

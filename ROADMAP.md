@@ -6,13 +6,13 @@ This roadmap describes the intended direction for `solid-lynx`. Milestones are o
 
 Establish a browser-based Lynx runtime path so renderer development does not depend on access to a physical device. The browser target must preserve Lynx semantics instead of replacing the host with ordinary DOM rendering.
 
-- [x] Add a host-only browser fixture using `@lynx-js/web-core/client` and a static `<lynx-view>`.
-- [ ] Build and load a Solid Lynx bundle through the web Element PAPI path. The current Rspeedy attempt emitted a web JavaScript chunk instead of a `.lynx.bundle`.
+- [x] Add a browser fixture using `@lynx-js/web-core/client` and `<lynx-view>`.
+- [x] Build and load a real Solid TSX `main.web.bundle` through `pluginLynx`, `pluginVanillaLynx`, and the web encoder.
+- [x] Verify initial Solid rendering, both event props, reactive class/style updates, dataset reads, and disposal in the full automated browser suite.
 - [ ] Exercise page creation, mounting, text updates, insertion, removal, and reordering in the browser runtime.
 - [ ] Verify attribute, style, dataset, boolean-property, and flush behavior against the web PAPI implementation.
 - [ ] Test event dispatch, propagation, capture, global bindings, namespaced handlers, replacement, and removal in a browser.
-- [x] Add a focused Playwright smoke test for the web-core bootstrap and static `<lynx-view>` host.
-- [ ] Add Playwright coverage for Solid rendering, reactivity, events, property updates, and disposal.
+- [x] Add Playwright coverage for bundle loading, Solid rendering, reactive properties, event handlers, and disposal.
 - [ ] Make root disposal detach event listeners and release all rendered nodes deterministically.
 - [ ] Test multiple isolated roots and document whether disposed roots can be mounted again.
 - [x] Keep the in-memory fake PAPI tests as fast unit-level regression coverage.

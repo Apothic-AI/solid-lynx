@@ -239,8 +239,8 @@ export function createGlobalLynxHost(
         if (value == null) delete dataset[key];
         else dataset[key] = value;
         datasets.set(node, dataset);
-        if (papi.__SetDataset) papi.__SetDataset(node, dataset);
-        else papi.__AddDataset!(node, key, value);
+        if (papi.__AddDataset) papi.__AddDataset(node, key, value);
+        else papi.__SetDataset!(node, dataset);
       } else if (property === "textContent") {
         requirePapi("__SetAttribute")(node, "text", value == null ? "" : String(value));
       } else if (booleanAttributes.has(property) && typeof value === "boolean") {

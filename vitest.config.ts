@@ -13,16 +13,13 @@ export default defineConfig({
       },
     ],
   },
-  server: {
-    deps: {
-      inline: [/^solid-js(?:\/|$)/],
-    },
-  },
-  ssr: {
-    noExternal: [/^solid-js(?:\/|$)/],
-  },
   test: {
     environment: "node",
+    server: {
+      deps: {
+        inline: [/solid-js/],
+      },
+    },
     include: ["test/**/*.test.ts"],
     exclude: [...configDefaults.exclude, "test/browser/**"],
   },

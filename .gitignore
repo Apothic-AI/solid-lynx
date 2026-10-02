@@ -4,3 +4,4 @@ coverage/
 *.tsbuildinfo
 test-results/
 playwright-report/
+/examples/lynx-for-web/site/public/*.bundle

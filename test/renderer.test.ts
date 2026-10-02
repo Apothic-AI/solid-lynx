@@ -1,10 +1,14 @@
-import { createRenderEffect, createRoot, createSignal } from "solid-js";
+import { createSignal } from "solid-js";
 import { describe, expect, it } from "vitest";
 
 import {
   createGlobalLynxHost,
   createLynxRenderer,
   createLynxRoot,
+  createElement as compiledElement,
+  createTextNode as compiledText,
+  insert as compiledInsert,
+  setProp as compiledProp,
   parseEventProp,
 } from "../src/index.js";
 import type { LynxNode } from "../src/host.js";
@@ -33,7 +37,13 @@ function createFakePapi() {
     listeners: {},
   });
 
-  const append = (parent: FakeNode, child: FakeNode, index = parent.children.length) => {
+  const append = (parent: FakeNode, child: FakeNode, anchor?: FakeNode) => {
+    if (child === anchor) return;
+    if (child.parent) {
+      child.parent.children.splice(child.parent.children.indexOf(child), 1);
+    }
+    const index = anchor ? parent.children.indexOf(anchor) : parent.children.length;
+    if (index < 0) throw new Error("Anchor is not a child of the destination parent");
     child.parent = parent;
     parent.children.splice(index, 0, child);
   };
@@ -58,10 +68,12 @@ function createFakePapi() {
     __GetElementUniqueID: (node: FakeNode) => ids.get(node)!,
     __AppendElement: (parent: FakeNode, child: FakeNode) => append(parent, child),
     __InsertElementBefore: (parent: FakeNode, child: FakeNode, anchor: FakeNode) => {
-      append(parent, child, parent.children.indexOf(anchor));
+      append(parent, child, anchor);
     },
     __RemoveElement: (parent: FakeNode, child: FakeNode) => {
-      parent.children.splice(parent.children.indexOf(child), 1);
+      const index = parent.children.indexOf(child);
+      if (index < 0) throw new Error("Cannot remove a node from the wrong parent");
+      parent.children.splice(index, 1);
       child.parent = undefined;
     },
     __FirstElement: (node: FakeNode) => node.children[0] ?? null,
@@ -135,9 +147,9 @@ describe("solid-lynx", () => {
     const renderer = createLynxRenderer(host);
     const [count, setCount] = createSignal(0);
 
-    renderer.render(() => {
+    const dispose = renderer.render(() => {
       const view = renderer.createElement("view");
-      renderer.insert(view, `Count: ${count()}`);
+      renderer.insert(view, () => `Count: ${count()}`);
       return view;
     }, fake.page);
 
@@ -145,16 +157,14 @@ describe("solid-lynx", () => {
     expect(fake.page.children[0]?.children[0]?.text).toBe("Count: 0");
 
     const text = fake.page.children[0]!.children[0]!;
-    const disposeEffect = createRoot(dispose => {
-      createRenderEffect(() => host.replaceText(text, `Count: ${count()}`));
-      return dispose;
-    });
-
     setCount(3);
 
     expect(fake.page.children[0]?.children[0]?.text).toBe("Count: 3");
+    expect(fake.page.children[0]?.children[0]).toBe(text);
     expect(fake.flushes).toBeGreaterThan(0);
-    disposeEffect();
+    dispose();
+    setCount(4);
+    expect(text.text).toBe("Count: 3");
   });
 
   it("maps properties and invokes normalized tap handlers", () => {
@@ -189,6 +199,89 @@ describe("solid-lynx", () => {
     const event = { detail: { value: 1 } };
     view.listeners.tap?.(event);
     expect(received).toBe(event);
+  });
+
+  it("reconciles reordered and removed nodes without replacing retained nodes", () => {
+    const fake = createFakePapi();
+    const host = createGlobalLynxHost({ papi: fake.papi, getParentComponentId: () => 1 });
+    const renderer = createLynxRenderer(host);
+    let setNodes!: (nodes: LynxNode[]) => void;
+    const nodes = ["a", "b", "c"].map(id => {
+      const node = renderer.createElement("view");
+      renderer.setProp(node, "id", id);
+      return node;
+    });
+    const dispose = renderer.render(() => {
+      const [current, setCurrent] = createSignal(nodes);
+      setNodes = setCurrent;
+      const view = renderer.createElement("view");
+      renderer.insert(view, current);
+      return view;
+    }, fake.page);
+    const view = fake.page.children[0]!;
+    expect(view.children).toEqual(nodes);
+    setNodes([nodes[2]!, nodes[0]!]);
+    expect(view.children).toEqual([nodes[2], nodes[0]]);
+    expect(host.getFirstChild(view)).toBe(nodes[2]);
+    expect(host.getNextSibling(nodes[2]!)).toBe(nodes[0]);
+    expect(host.getParentNode(nodes[1]!)).toBeUndefined();
+    dispose();
+  });
+
+  it("coalesces mutations and skips a queued flush after an explicit commit", () => {
+    const fake = createFakePapi();
+    const scheduled: (() => void)[] = [];
+    const host = createGlobalLynxHost({
+      papi: fake.papi,
+      getParentComponentId: () => 1,
+      flushScheduler: callback => scheduled.push(callback),
+    });
+    const view = host.createElement("view");
+    host.setProperty(view, "class", "ready", undefined);
+    host.insertNode(fake.page, view);
+    expect(fake.flushes).toBe(0);
+    expect(scheduled).toHaveLength(1);
+    host.flush();
+    expect(fake.flushes).toBe(1);
+    scheduled.shift()!();
+    expect(fake.flushes).toBe(1);
+    host.setProperty(view, "class", "updated", "ready");
+    scheduled.shift()!();
+    expect(fake.flushes).toBe(2);
+  });
+
+  it("routes compiler helpers to each root during mount and later reactive creation", () => {
+    const first = createFakePapi();
+    const second = createFakePapi();
+    const firstRoot = createLynxRoot({ page: first.page, papi: first.papi, parentComponentId: 11 });
+    const secondRoot = createLynxRoot({ page: second.page, papi: second.papi, parentComponentId: 22 });
+    const [show, setShow] = createSignal(false);
+    firstRoot.render(() => {
+      const view = compiledElement("view");
+      compiledInsert(view, () => {
+        if (!show()) return null;
+        const text = compiledElement("text");
+        compiledProp(text, "id", "later");
+        compiledInsert(text, compiledText("created later"));
+        return text;
+      });
+      return view;
+    });
+    secondRoot.render(() => {
+      const view = compiledElement("view");
+      compiledInsert(view, compiledText("second"));
+      return view;
+    });
+    setShow(true);
+    const later = first.page.children[0]!.children[0]!;
+    expect(later.attributes.id).toBe("later");
+    expect(later.children[0]!.text).toBe("created later");
+    expect(first.papi.__GetElementUniqueID!(later)).toBeTypeOf("number");
+    expect(second.papi.__GetElementUniqueID!(later)).toBeUndefined();
+    expect(second.page.children[0]!.children[0]!.text).toBe("second");
+    firstRoot.dispose();
+    expect(second.page.children).toHaveLength(1);
+    secondRoot.dispose();
   });
 
   it("disposes a root and removes its rendered tree", () => {
