@@ -128,6 +128,34 @@ test.describe("Lynx for Web Solid app", () => {
     expect(failedRequests).toEqual([]);
   });
 
+  test("inserts, removes, and reorders keyed nodes in the Lynx view", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+    const items = view.locator("#items [id^='item-']");
+    const itemIds = () => items.evaluateAll(elements => elements.map(element => element.id));
+
+    await expect.poll(itemIds).toEqual(["item-1", "item-2", "item-3"]);
+    const retainedItems = await Promise.all(["item-2", "item-3"].map(id =>
+      view.locator(`#${id}`).elementHandle(),
+    ));
+
+    await view.locator("#add-item").click();
+    await expect.poll(itemIds).toEqual(["item-1", "item-2", "item-3", "item-4"]);
+
+    await view.locator("#remove-first-item").click();
+    await expect.poll(itemIds).toEqual(["item-2", "item-3", "item-4"]);
+
+    await view.locator("#reverse-items").dispatchEvent("click", { bubbles: true });
+    await expect.poll(itemIds).toEqual(["item-4", "item-3", "item-2"]);
+    for (const [index, item] of retainedItems.entries()) {
+      expect(await item?.evaluate(element => element.isConnected), `item-${index + 2} should be retained`)
+        .toBe(true);
+    }
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
   test("unmounts the Solid app when #dispose is clicked", async ({ page }) => {
     const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
 

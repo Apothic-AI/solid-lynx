@@ -9,7 +9,7 @@ Establish a browser-based Lynx runtime path so renderer development does not dep
 - [x] Add a browser fixture using `@lynx-js/web-core/client` and `<lynx-view>`.
 - [x] Build and load a real Solid TSX `main.web.bundle` through `pluginLynx`, `pluginVanillaLynx`, and the web encoder.
 - [x] Verify initial Solid rendering, both event props, reactive class/style updates, dataset reads, and disposal in the full automated browser suite.
-- [ ] Exercise page creation, mounting, text updates, insertion, removal, and reordering in the browser runtime.
+- [x] Exercise page creation, mounting, text updates, insertion, removal, and reordering in the browser runtime.
 - [ ] Verify attribute, style, dataset, boolean-property, and flush behavior against the web PAPI implementation.
 - [ ] Test event dispatch, propagation, capture, global bindings, namespaced handlers, replacement, and removal in a browser.
 - [x] Add Playwright coverage for bundle loading, Solid rendering, reactive properties, event handlers, and disposal.

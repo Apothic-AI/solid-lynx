@@ -1,10 +1,15 @@
-import { createSignal } from "solid-js";
+import { For, createSignal } from "solid-js";
 import { createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
-import type { LynxRoot } from "solid-lynx";
+import type { LynxNode, LynxRoot } from "solid-lynx";
 
 interface LynxEngine {
   addEventListener(type: string, listener: () => void): void;
   removeEventListener(type: string, listener: () => void): void;
+}
+
+interface ListItem {
+  id: number;
+  label: string;
 }
 
 declare const lynx: {
@@ -14,8 +19,24 @@ declare const lynx: {
 function Counter(props: { onDispose: () => void }) {
   const [count, setCount] = createSignal(0);
   const [datasetReadout, setDatasetReadout] = createSignal("not read");
+  const [items, setItems] = createSignal([
+    { id: 1, label: "Alpha" },
+    { id: 2, label: "Bravo" },
+    { id: 3, label: "Charlie" },
+  ]);
+  const KeyedFor = For as unknown as (props: {
+    each: ListItem[];
+    children: (item: ListItem) => LynxNode;
+  }) => LynxNode;
+  let nextItemId = 4;
   const increment = () => setCount(value => value + 1);
   const active = () => count() % 2 === 1;
+  const addItem = () => {
+    const id = nextItemId++;
+    setItems(current => [...current, { id, label: `Item ${id}` }]);
+  };
+  const removeFirstItem = () => setItems(current => current.slice(1));
+  const reverseItems = () => setItems(current => [...current].reverse());
   const readDataset = (event: {
     currentTarget?: { dataset?: { count?: string | number } };
   }) => {
@@ -101,6 +122,20 @@ function Counter(props: { onDispose: () => void }) {
         }}
       >
         <text>Dispose</text>
+      </view>
+      <view id="list-controls">
+        <view id="add-item" role="button" bindtap={addItem}>
+          <text>Add item</text>
+        </view>
+        <view id="remove-first-item" role="button" bindtap={removeFirstItem}>
+          <text>Remove first item</text>
+        </view>
+        <view id="reverse-items" role="button" bindtap={reverseItems}>
+          <text>Reverse items</text>
+        </view>
+      </view>
+      <view id="items">
+        <KeyedFor each={items()} children={item => <text id={`item-${item.id}`}>{item.label}</text>} />
       </view>
     </view>
   );
