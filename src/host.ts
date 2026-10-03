@@ -7,7 +7,7 @@ export interface LynxHost<Node extends object = LynxNode> {
   createTextNode(value: string): Node;
   createComment(data: string): Node;
   replaceText(node: Node, value: string): void;
-  setProperty(node: Node, name: string, value: unknown, previous: unknown): void;
+  setProperty(node: Node, name: string, value: unknown, previous?: unknown): void;
   insertNode(parent: Node, node: Node, anchor?: Node): void;
   removeNode(parent: Node, node: Node): void;
   isTextNode(node: Node): boolean;

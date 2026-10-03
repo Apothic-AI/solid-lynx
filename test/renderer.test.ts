@@ -9,10 +9,26 @@ import {
   createTextNode as compiledText,
   insert as compiledInsert,
   setProp as compiledProp,
+  eventListenerOptions,
   parseEventProp,
 } from "../src/index.js";
 import type { LynxNode } from "../src/host.js";
 import type { LynxPapi } from "../src/lynx-host.js";
+
+interface FakeListener {
+  name: string;
+  eventType: string;
+  listener: (event: unknown) => void;
+}
+
+interface ListenerCall {
+  op: "add" | "remove";
+  name: string;
+  eventType: string;
+  bindType: number | undefined;
+  capture: boolean | undefined;
+  closureType: number | undefined;
+}
 
 interface FakeNode extends LynxNode {
   kind: "element" | "text";
@@ -21,12 +37,34 @@ interface FakeNode extends LynxNode {
   attributes: Record<string, unknown>;
   children: FakeNode[];
   parent?: FakeNode;
-  listeners: Record<string, (event: unknown) => void>;
+  listeners: FakeListener[];
+}
+
+/**
+ * Mirrors how Lynx hosts derive the dispatch slot of a listener registration
+ * from `bind_type`, `capture`, and `closure_type`, so a host that registers
+ * and removes with mismatched options leaves a stale registration behind.
+ */
+function listenerEventType(options: {
+  bind_type?: number;
+  capture?: boolean;
+  closure_type?: number;
+} = {}): string {
+  const closureType = typeof options.closure_type === "number" ? options.closure_type : 0;
+  const bindType = typeof options.bind_type === "number" ? options.bind_type : 1;
+  if (bindType === 5) return "global-bindevent";
+  const capture = closureType === 0
+    ? options.capture === true
+    : bindType === 2 || bindType === 3;
+  const isCatch = bindType === 3 || bindType === 4;
+  if (capture) return isCatch ? "capture-catch" : "capture-bind";
+  return isCatch ? "catchevent" : "bindevent";
 }
 
 function createFakePapi() {
   let nextId = 1;
   let flushes = 0;
+  const listenerCalls: ListenerCall[] = [];
 
   const makeNode = (kind: FakeNode["kind"], tagName: string, text = ""): FakeNode => ({
     kind,
@@ -34,7 +72,7 @@ function createFakePapi() {
     text,
     attributes: {},
     children: [],
-    listeners: {},
+    listeners: [],
   });
 
   const append = (parent: FakeNode, child: FakeNode, anchor?: FakeNode) => {
@@ -98,29 +136,70 @@ function createFakePapi() {
       node.attributes.style = value;
     },
     __AddDataset: (node: FakeNode, key: string, value: unknown) => {
-      node.attributes[`data-${key}`] = value;
+      if (value) node.attributes[`data-${key}`] = value;
+      else delete node.attributes[`data-${key}`];
     },
     __AddEventListener: (
       node: FakeNode,
       eventName: string,
       listener: (event: unknown) => void,
+      options?: { bind_type?: number; capture?: boolean; closure_type?: number },
     ) => {
-      node.listeners[eventName] = listener;
+      const eventType = listenerEventType(options);
+      listenerCalls.push({
+        op: "add",
+        name: eventName,
+        eventType,
+        bindType: options?.bind_type,
+        capture: options?.capture,
+        closureType: options?.closure_type,
+      });
+      node.listeners.push({ name: eventName, eventType, listener });
     },
     __RemoveEventListener: (
       node: FakeNode,
       eventName: string,
+      listener: (event: unknown) => void,
+      options?: { bind_type?: number; capture?: boolean; closure_type?: number },
     ) => {
-      delete node.listeners[eventName];
+      const eventType = listenerEventType(options);
+      listenerCalls.push({
+        op: "remove",
+        name: eventName,
+        eventType,
+        bindType: options?.bind_type,
+        capture: options?.capture,
+        closureType: options?.closure_type,
+      });
+      const index = node.listeners.findIndex(entry =>
+        entry.name === eventName
+        && entry.eventType === eventType
+        && entry.listener === listener
+      );
+      if (index >= 0) node.listeners.splice(index, 1);
     },
     __FlushElementTree: () => {
       flushes += 1;
     },
   };
 
+  const fire = (node: LynxNode, name: string, eventType = "bindevent") => {
+    let calls = 0;
+    for (const entry of [...(node as FakeNode).listeners]) {
+      if (entry.name !== name || entry.eventType !== eventType) continue;
+      calls += 1;
+      entry.listener({ type: name });
+    }
+    return calls;
+  };
+
   return {
     page,
     papi,
+    listenerCalls,
+    fire,
+    registrations: (node: LynxNode) =>
+      (node as FakeNode).listeners.map(({ name, eventType }) => `${eventType}:${name}`),
     get flushes() {
       return flushes;
     },
@@ -197,7 +276,9 @@ describe("solid-lynx", () => {
     });
 
     const event = { detail: { value: 1 } };
-    view.listeners.tap?.(event);
+    const [listener] = view.listeners;
+    expect(listener?.name).toBe("tap");
+    listener?.listener(event);
     expect(received).toBe(event);
   });
 
@@ -303,5 +384,310 @@ describe("solid-lynx", () => {
     dispose();
 
     expect(fake.page.children).toHaveLength(0);
+  });
+
+  it("registers every binding form in its own dispatch slot", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: fake.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+    const calls: string[] = [];
+
+    root.render(() => {
+      const view = root.renderer.createElement("view");
+      const record = (label: string) => () => calls.push(label);
+      root.renderer.setProp(view, "bindtap", record("bindtap"));
+      root.renderer.setProp(view, "catchtap", record("catchtap"));
+      root.renderer.setProp(view, "capture-bind:tap", record("capture-bind"));
+      root.renderer.setProp(view, "capture-catchtap", record("capture-catch"));
+      root.renderer.setProp(view, "global-bind:tap", record("global-bind"));
+      root.renderer.setProp(view, "main-thread:bindtap", record("main-thread"));
+      return view;
+    });
+
+    const view = fake.page.children[0]!;
+    expect(fake.registrations(view)).toEqual([
+      "bindevent:tap",
+      "catchevent:tap",
+      "capture-bind:tap",
+      "capture-catch:tap",
+      "global-bindevent:tap",
+      "bindevent:tap",
+    ]);
+    expect(fake.listenerCalls).toEqual([
+      { op: "add", name: "tap", eventType: "bindevent", bindType: 1, capture: undefined, closureType: undefined },
+      { op: "add", name: "tap", eventType: "catchevent", bindType: 4, capture: undefined, closureType: undefined },
+      {
+        op: "add",
+        name: "tap",
+        eventType: "capture-bind",
+        bindType: 2,
+        capture: true,
+        closureType: undefined,
+      },
+      {
+        op: "add",
+        name: "tap",
+        eventType: "capture-catch",
+        bindType: 3,
+        capture: true,
+        closureType: undefined,
+      },
+      {
+        op: "add",
+        name: "tap",
+        eventType: "global-bindevent",
+        bindType: 5,
+        capture: undefined,
+        closureType: undefined,
+      },
+      {
+        op: "add",
+        name: "tap",
+        eventType: "bindevent",
+        bindType: 1,
+        capture: undefined,
+        closureType: 2,
+      },
+    ]);
+    expect(eventListenerOptions("capture-bind")).toEqual({ bind_type: 2, capture: true });
+    expect(eventListenerOptions("global-bindEvent")).toEqual({ bind_type: 5 });
+    expect(eventListenerOptions("bindEvent", "main-thread")).toEqual({
+      bind_type: 1,
+      closure_type: 2,
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("removes bindings with the options they were registered with", () => {
+    const fake = createFakePapi();
+    const host = createGlobalLynxHost({
+      papi: fake.papi,
+      getParentComponentId: () => 1,
+      flushScheduler: callback => callback(),
+    });
+    const renderer = createLynxRenderer(host);
+    const parent = renderer.createElement("view");
+    host.insertNode(fake.page, parent);
+    const child = renderer.createElement("view");
+    host.insertNode(parent, child);
+
+    const handler = () => undefined;
+    renderer.setProp(child, "bindtap", handler);
+    renderer.setProp(child, "capture-bindtap", handler);
+    renderer.setProp(child, "global-bindtap", handler);
+    renderer.setProp(child, "main-thread:catchtap", handler);
+    expect(fake.registrations(child)).toHaveLength(4);
+
+    const added = fake.listenerCalls.filter(call => call.op === "add");
+    renderer.setProp(child, "bindtap", undefined);
+    renderer.setProp(child, "capture-bindtap", undefined);
+    renderer.setProp(child, "global-bindtap", undefined);
+    renderer.setProp(child, "main-thread:catchtap", undefined);
+
+    expect(fake.registrations(child)).toEqual([]);
+    expect(fake.listenerCalls.filter(call => call.op === "remove")).toEqual(
+      added.map(call => ({ ...call, op: "remove" })),
+    );
+  });
+
+  it("maps ordinary attributes, styles, datasets, and boolean properties", () => {
+    const fake = createFakePapi();
+    const host = createGlobalLynxHost({
+      papi: fake.papi,
+      getParentComponentId: () => 1,
+      flushScheduler: callback => callback(),
+    });
+    const view = host.createElement("view");
+    host.insertNode(fake.page, view);
+
+    host.setProperty(view, "id", "panel");
+    host.setProperty(view, "aria-label", "Panel");
+    host.setProperty(view, "data-role", "main");
+    host.setProperty(view, "style", { color: "red" });
+    host.setProperty(view, "disabled", true);
+
+    expect(view.attributes).toMatchObject({
+      id: "panel",
+      "aria-label": "Panel",
+      "data-role": "main",
+      style: { color: "red" },
+      disabled: "disabled",
+    });
+
+    host.setProperty(view, "disabled", false);
+    host.setProperty(view, "data-role", null);
+    host.setProperty(view, "aria-label", undefined);
+
+    expect(view.attributes).toMatchObject({ id: "panel", style: { color: "red" } });
+    expect(view.attributes).not.toHaveProperty("disabled");
+    expect(view.attributes).not.toHaveProperty("data-role");
+    expect(view.attributes).not.toHaveProperty("aria-label");
+
+    host.setProperty(view, "style", "color: blue");
+    host.setProperty(view, "class", "ready");
+    host.setProperty(view, "disabled", "disabled");
+    expect(view.attributes).toMatchObject({
+      style: "color: blue",
+      class: "ready",
+      disabled: "disabled",
+    });
+  });
+
+  it("flushes once per burst of mutations and after disposal", () => {
+    const fake = createFakePapi();
+    const scheduled: (() => void)[] = [];
+    const host = createGlobalLynxHost({
+      papi: fake.papi,
+      getParentComponentId: () => 1,
+      flushScheduler: callback => scheduled.push(callback),
+    });
+    const view = host.createElement("view");
+    host.insertNode(fake.page, view);
+
+    for (let index = 0; index < 5; index += 1) {
+      host.setProperty(view, "aria-label", `burst ${index}`);
+      host.insertNode(view, host.createElement("view"));
+    }
+    expect(scheduled).toHaveLength(1);
+    expect(fake.flushes).toBe(0);
+
+    host.flush();
+    expect(fake.flushes).toBe(1);
+    scheduled.shift()!();
+    expect(fake.flushes).toBe(1);
+  });
+
+  it("replaces a binding handler without registering a second listener", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: fake.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+    const calls: string[] = [];
+
+    root.render(() => {
+      const view = root.renderer.createElement("view");
+      root.renderer.setProp(view, "bindtap", () => calls.push("first"));
+      return view;
+    });
+
+    const view = fake.page.children[0]!;
+    expect(fake.fire(view, "tap")).toBe(1);
+
+    root.renderer.setProp(view, "bindtap", () => calls.push("second"));
+
+    expect(fake.listenerCalls.filter(call => call.op === "add")).toHaveLength(1);
+    expect(fake.registrations(view)).toEqual(["bindevent:tap"]);
+    expect(fake.fire(view, "tap")).toBe(1);
+    expect(calls).toEqual(["first", "second"]);
+
+    root.renderer.setProp(view, "bindtap", undefined);
+    expect(fake.registrations(view)).toEqual([]);
+    expect(fake.fire(view, "tap")).toBe(0);
+    expect(calls).toEqual(["first", "second"]);
+  });
+
+  it("detaches subtree listeners on removal and restores them on reinsertion", () => {
+    const fake = createFakePapi();
+    const host = createGlobalLynxHost({
+      papi: fake.papi,
+      getParentComponentId: () => 1,
+      flushScheduler: callback => callback(),
+    });
+    const renderer = createLynxRenderer(host);
+    const parent = renderer.createElement("view");
+    const child = renderer.createElement("view");
+    renderer.setProp(parent, "bindtap", () => undefined);
+    renderer.setProp(child, "capture-bindtap", () => undefined);
+    host.insertNode(fake.page, parent);
+    host.insertNode(parent, child);
+    expect(fake.registrations(parent)).toEqual(["bindevent:tap"]);
+    expect(fake.registrations(child)).toEqual(["capture-bind:tap"]);
+
+    host.removeNode(fake.page, parent);
+
+    expect(fake.registrations(parent)).toEqual([]);
+    expect(fake.registrations(child)).toEqual([]);
+    expect(fake.fire(parent, "tap")).toBe(0);
+    expect(fake.fire(child, "tap", "capture-bind")).toBe(0);
+
+    host.insertNode(fake.page, parent);
+
+    expect(fake.registrations(parent)).toEqual(["bindevent:tap"]);
+    expect(fake.registrations(child)).toEqual(["capture-bind:tap"]);
+    expect(fake.fire(parent, "tap")).toBe(1);
+    expect(fake.fire(child, "tap", "capture-bind")).toBe(1);
+  });
+
+  it("releases every listener when a root is disposed", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: fake.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+
+    root.render(() => {
+      const view = root.renderer.createElement("view");
+      const child = root.renderer.createElement("view");
+      root.renderer.setProp(view, "bindtap", () => undefined);
+      root.renderer.setProp(view, "global-bind:tap", () => undefined);
+      root.renderer.setProp(child, "main-thread:bindtap", () => undefined);
+      root.renderer.insert(view, child);
+      return view;
+    });
+
+    const view = fake.page.children[0]!;
+    const child = view.children[0]!;
+    expect(fake.registrations(view)).toHaveLength(2);
+    expect(fake.registrations(child)).toHaveLength(1);
+
+    root.dispose();
+
+    expect(fake.page.children).toHaveLength(0);
+    expect(fake.registrations(view)).toEqual([]);
+    expect(fake.registrations(child)).toEqual([]);
+    expect(fake.listenerCalls.filter(call => call.op === "remove")).toHaveLength(3);
+  });
+
+  it("remounts a disposed root into the same page", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: fake.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+    const [count, setCount] = createSignal(0);
+    const calls: string[] = [];
+    const renderApp = () => {
+      const view = root.renderer.createElement("view");
+      root.renderer.setProp(view, "bindtap", () => calls.push(`tap ${count()}`));
+      root.renderer.insert(view, () => `Count: ${count()}`);
+      return view;
+    };
+
+    root.render(renderApp);
+    const first = fake.page.children[0]!;
+    expect(fake.fire(first, "tap")).toBe(1);
+
+    root.dispose();
+    expect(fake.page.children).toHaveLength(0);
+
+    root.render(renderApp);
+    const second = fake.page.children[0]!;
+    expect(second).not.toBe(first);
+    expect(fake.registrations(second)).toEqual(["bindevent:tap"]);
+    expect(fake.fire(second, "tap")).toBe(1);
+    setCount(2);
+    expect(fake.fire(second, "tap")).toBe(1);
+    expect(calls).toEqual(["tap 0", "tap 0", "tap 2"]);
   });
 });

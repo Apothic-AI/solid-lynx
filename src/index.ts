@@ -34,7 +34,13 @@ export {
 } from "./lynx-host.js";
 export type { GlobalLynxHostOptions, LynxPapi } from "./lynx-host.js";
 export type { LynxHost, LynxNode, RendererOptions } from "./host.js";
-export { eventBindType, parseEventProp } from "./events.js";
+export {
+  eventBindType,
+  eventListenerOptions,
+  isCaptureEvent,
+  parseEventProp,
+} from "./events.js";
+export type { EventListenerOptions, ParsedEventProp } from "./events.js";
 export { createLynxRoot, renderLynxPage } from "./root.js";
 export type { LynxRoot, LynxRootOptions } from "./root.js";
 export { ensureLynxEnvironmentBasics, initializeLynxRootContext } from "./universal.js";

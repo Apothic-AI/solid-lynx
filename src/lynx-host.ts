@@ -1,5 +1,5 @@
 import type { LynxHost, LynxNode } from "./host.js";
-import { eventBindType, parseEventProp } from "./events.js";
+import { eventListenerOptions, parseEventProp } from "./events.js";
 
 type PapiFunction = (...args: any[]) => any;
 
@@ -46,6 +46,7 @@ interface RegisteredEvent {
   type: string;
   name: string;
   namespace?: string;
+  attached: boolean;
 }
 
 const builtInCreators: Record<string, keyof LynxPapi> = {
@@ -121,6 +122,56 @@ export function createGlobalLynxHost(
     return element as LynxNode;
   };
 
+  const attachEvent = (node: LynxNode, record: RegisteredEvent) => {
+    if (record.attached) return;
+    const addEventListener = papi.__AddEventListener;
+    if (typeof addEventListener === "function") {
+      addEventListener(
+        node,
+        record.name,
+        record.listener,
+        eventListenerOptions(record.type, record.namespace),
+      );
+    } else if (typeof papi.__AddEvent === "function") {
+      papi.__AddEvent(node, record.type, record.name, {
+        type: "worklet",
+        value: record.listener,
+      });
+    } else {
+      throw new Error("solid-lynx requires __AddEvent() or __AddEventListener()");
+    }
+    record.attached = true;
+  };
+
+  const detachEvent = (node: LynxNode, record: RegisteredEvent) => {
+    if (!record.attached) return;
+    record.attached = false;
+    if (typeof papi.__RemoveEventListener === "function") {
+      papi.__RemoveEventListener(
+        node,
+        record.name,
+        record.listener,
+        eventListenerOptions(record.type, record.namespace),
+      );
+    } else if (typeof papi.__AddEvent === "function") {
+      papi.__AddEvent(node, record.type, record.name, undefined);
+    }
+  };
+
+  /** Listeners only exist in the host while their node is part of the tree. */
+  const isAttached = (node: LynxNode): boolean => parents.has(node);
+
+  const syncEventTree = (node: LynxNode, attach: boolean) => {
+    const nodeEvents = events.get(node);
+    if (nodeEvents) {
+      for (const record of nodeEvents.values()) {
+        if (attach) attachEvent(node, record);
+        else detachEvent(node, record);
+      }
+    }
+    for (const child of [...(children.get(node) ?? [])]) syncEventTree(child, attach);
+  };
+
   const updateEvent = (
     node: LynxNode,
     property: string,
@@ -134,22 +185,17 @@ export function createGlobalLynxHost(
       nodeEvents = new Map();
       events.set(node, nodeEvents);
     }
-    const key = `${event.type}:${event.name}`;
+    // A namespaced binding is a separate registration from the plain one, so
+    // the namespace is part of the slot identity.
+    const key = `${event.namespace ?? ""}:${event.type}:${event.name}`;
     let registered = nodeEvents.get(key);
 
     if (typeof value !== "function" && !Array.isArray(value)) {
       if (registered) {
-        registered.handler = undefined;
-        if (papi.__RemoveEventListener) {
-          papi.__RemoveEventListener(node, event.name, registered.listener, {
-            bind_type: eventBindType(registered.type),
-            ...(registered.namespace === "main-thread" ? { closure_type: 2 } : {}),
-          });
-        } else if (papi.__AddEvent) {
-          papi.__AddEvent(node, event.type, event.name, undefined);
-        }
         nodeEvents.delete(key);
+        detachEvent(node, registered);
       }
+      if (nodeEvents.size === 0) events.delete(node);
       return true;
     }
 
@@ -171,6 +217,7 @@ export function createGlobalLynxHost(
       type: event.type,
       name: event.name,
       namespace: event.namespace,
+      attached: false,
       handler: (eventValue: unknown) => {
         if (tuple) handler(tuple[1], eventValue);
         else handler(eventValue);
@@ -179,21 +226,8 @@ export function createGlobalLynxHost(
     };
     record.listener = eventValue => record.handler?.(eventValue);
 
-    const addEventListener = papi.__AddEventListener;
-    if (typeof addEventListener === "function") {
-      addEventListener(node, event.name, record.listener, {
-        bind_type: eventBindType(event.type),
-        ...(event.namespace === "main-thread" ? { closure_type: 2 } : {}),
-      });
-    } else if (typeof papi.__AddEvent === "function") {
-      papi.__AddEvent(node, event.type, event.name, {
-        type: "worklet",
-        value: record.listener,
-      });
-    } else {
-      throw new Error("solid-lynx requires __AddEvent() or __AddEventListener()");
-    }
     nodeEvents.set(key, record);
+    if (isAttached(node)) attachEvent(node, record);
     return true;
   };
 
@@ -264,9 +298,11 @@ export function createGlobalLynxHost(
       if (anchorIndex < 0) siblingList.push(node);
       else siblingList.splice(anchorIndex, 0, node);
       children.set(parent, siblingList);
+      syncEventTree(node, true);
       scheduleFlush();
     },
     removeNode(parent, node) {
+      syncEventTree(node, false);
       requirePapi("__RemoveElement")(parent, node);
       parents.delete(node);
       const siblingList = children.get(parent);

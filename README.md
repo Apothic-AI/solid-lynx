@@ -229,10 +229,14 @@ Native Lynx event props work directly:
 <view
   bindtap={handleTap}
   catchtouchmove={handleMove}
-  capture-bindscroll={handleScroll}
+  capture-bind:scroll={handleScroll}
+  capture-catch:tap={handleCaptureCatch}
+  global-bind:tap={handleGlobalTap}
   main-thread:bindtap={handleMainThreadTap}
 />
 ```
+
+Both the colon form (`bind:tap`) and the compact form (`bindtap`) are recognized, as is the namespaced `main-thread:` and `background:` prefix.
 
 The adapter also accepts familiar event forms:
 
@@ -242,6 +246,8 @@ The adapter also accepts familiar event forms:
 | `onTap` | `bindEvent`, `tap` |
 | `onClick` | `bindEvent`, `tap` |
 | `onCatchTap` | `catchEvent`, `tap` |
+
+Each binding form is filed in its own host dispatch slot, keyed by binding type, event name, and namespace, and is registered and removed with the same `__AddEventListener` options. Listeners exist only while their node is part of the rendered tree: inserting a node registers its bindings, removing a node detaches the bindings of its whole subtree, and re-inserting it registers them again. Disposing a root therefore releases every listener it created.
 
 The following properties have dedicated handling:
 
@@ -265,7 +271,8 @@ The global adapter uses these current Lynx operation names:
 | `__AppendElement`, `__InsertElementBefore`, `__RemoveElement` | Mutate the tree |
 | `__FirstElement`, `__NextElement`, `__GetParent` | Traverse the tree |
 | `__SetAttribute`, `__SetClasses`, `__SetInlineStyles` | Update properties |
-| `__AddEvent` or `__AddEventListener` | Bind event handlers |
+| `__SetID`, `__AddDataset` or `__SetDataset` | Update id and dataset |
+| `__AddEventListener` / `__RemoveEventListener`, or `__AddEvent` | Bind and unbind event handlers |
 | `__FlushElementTree` | Commit mutations |
 
 `__CreatePage` and `__GetElementUniqueID` are additionally required when `createLynxRoot` creates a page or infers its parent component id.

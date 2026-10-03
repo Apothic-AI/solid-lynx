@@ -9,8 +9,11 @@ export default defineConfig({
   testMatch: "lynx-for-web.test.ts",
   fullyParallel: false,
   workers: 1,
+  // The first test pays for Vite's cold dependency optimization and the Lynx
+  // wasm start-up, so keep generous per-test and assertion timeouts.
+  timeout: 120_000,
   expect: {
-    timeout: 10_000,
+    timeout: 20_000,
   },
   use: {
     baseURL: `http://127.0.0.1:${port}`,
