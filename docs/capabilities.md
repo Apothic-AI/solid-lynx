@@ -173,18 +173,12 @@ as unverified rather than supported.
 
 ### Refs and imperative access
 
-`ref` is not handled by the renderer at all: `babel-preset-solid` transforms it
-before the bundle exists. A function ref becomes `use(ref, element)` and
-anything else is assigned to the binding it was written against, which is why
-only a callback is a usable `ref` value. Verifying that required reading the
-compiled output rather than the renderer, because the earlier claim here that
-`setProperty` drops `ref` described a path the compiler never takes.
-
-That left one real gap. `solid-js/universal` implements `use` as
-`untrack(() => fn(element, arg))` and throws the return value away, so a ref
-attached and then never released. `use` in this package registers whatever the
-binding returns as the owning scope's cleanup, which is what makes the
-attachment deterministic:
+`babel-preset-solid` transforms `ref` before the bundle exists. A function ref
+becomes `use(ref, element)` and anything else is assigned to the binding it was
+written against, which is why only a callback is a usable `ref` value. The
+package's universal `use` now registers the binding's cleanup with the owning
+Solid scope, so refs are released when their conditional subtree or root is
+disposed:
 
 ```tsx
 const target = createLynxRef<LynxNode>();

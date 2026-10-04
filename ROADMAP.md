@@ -50,9 +50,9 @@ Add platform features through explicit, testable adapters while keeping the core
   - Stylesheet loading and lifecycle stay open because no host PAPI adds, replaces,
     or removes a stylesheet. Documented as unsupported rather than approximated.
 - [x] Add refs and imperative element access with deterministic cleanup.
-- [ ] Evaluate native list virtualization and expose list callbacks if the Solid model can support them cleanly.
-- [ ] Evaluate gesture, animation, and portal/overlay APIs as separate capabilities.
-- [ ] Publish examples for forms, keyed lists, asynchronous content, and platform-specific capabilities.
+- [x] Evaluate native list virtualization and expose list callbacks if the Solid model can support them cleanly.
+- [x] Evaluate gesture, animation, and portal/overlay APIs as separate capabilities.
+- [x] Publish examples for forms, keyed lists, asynchronous content, and platform-specific capabilities.
 
 **Milestone complete when:** supported platform features have documented contracts and tests, and unsupported capabilities fail clearly rather than silently degrading.
 
