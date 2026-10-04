@@ -31,12 +31,12 @@ Validate native-specific behavior after the web path is working, while making So
 - [ ] Run a native Lynx smoke test in Lynx Explorer or on an Android/iOS device.
 - [ ] Compare native and web behavior for shared Element PAPI operations.
 - [ ] Verify native-only behavior such as dual-thread execution, worklets, and first-screen synchronization.
-- [ ] Provide a reproducible Rspeedy integration, preferably as a small plugin or maintained configuration package.
-- [ ] Document native and Lynx-for-Web build configurations and development workflows.
-- [ ] Replace broad intrinsic JSX types with Lynx element and attribute types, using `@lynx-js/types` where compatible.
-- [ ] Add typed event props and payloads, refs, styles, datasets, and custom elements.
-- [ ] Add JSX compile and package-consumer fixtures to verify `jsx-runtime` and `jsx-dev-runtime` behavior.
-- [ ] Expand tests for Solid control flow, keyed reconciliation, dynamic properties, event updates, and root isolation.
+- [x] Provide a reproducible Rspeedy integration, preferably as a small plugin or maintained configuration package.
+- [x] Document native and Lynx-for-Web build configurations and development workflows.
+- [x] Replace broad intrinsic JSX types with Lynx element and attribute types, using `@lynx-js/types` where compatible.
+- [x] Add typed event props and payloads, refs, styles, datasets, and custom elements.
+- [x] Add JSX compile and package-consumer fixtures to verify `jsx-runtime` and `jsx-dev-runtime` behavior.
+- [x] Expand tests for Solid control flow, keyed reconciliation, dynamic properties, event updates, and root isolation.
 
 **Milestone complete when:** a fresh example app can be built from documented instructions and common Lynx JSX usage receives useful TypeScript checking.
 

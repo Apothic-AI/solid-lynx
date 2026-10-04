@@ -94,6 +94,8 @@ export interface ProbeControls {
   disposeSecondaryRoot(): void;
   /** Taps the binding registered by the disposed-root remount. */
   remountTapCount(): number;
+  /** Runs the shared Element PAPI parity harness against this web host. */
+  parityReport(): unknown;
 }
 
 export interface PapiProbe {
@@ -113,6 +115,7 @@ export interface PapiProbe {
   mountSecondaryRoot(): void;
   disposeSecondaryRoot(): void;
   remountTapCount(): number;
+  parityReport(): unknown;
   listenerCallsFor(id: string): ListenerCall[];
   listenerCallsForUniqueId(uniqueId: number): ListenerCall[];
   listenerBalances(): ListenerBalance[];
@@ -239,6 +242,9 @@ export function installPapiProbe(): PapiProbe {
     },
     remountTapCount() {
       return controls.current?.remountTapCount() ?? 0;
+    },
+    parityReport() {
+      return controls.current?.parityReport();
     },
     listenerCallsFor(id) {
       const element = elementById(id);

@@ -29,6 +29,14 @@
     "./jsx-dev-runtime": {
       "types": "./dist/jsx-dev-runtime.d.ts",
       "import": "./dist/jsx-dev-runtime.js"
+    },
+    "./parity": {
+      "types": "./dist/parity.d.ts",
+      "import": "./dist/parity.js"
+    },
+    "./rspeedy": {
+      "types": "./dist/rspeedy.d.ts",
+      "import": "./dist/rspeedy.js"
     }
   },
   "files": [
@@ -43,7 +51,8 @@
     "typecheck:consumer": "tsc --noEmit -p test/consumer/tsconfig.json && tsc --noEmit -p test/consumer/tsconfig.dev.json",
     "web:build": "pnpm build && pnpm exec rspeedy build --root examples/lynx-for-web",
     "web:serve": "vite examples/lynx-for-web/site --config examples/lynx-for-web/site/vite.config.ts --force --host 127.0.0.1 --port ${PLAYWRIGHT_PORT:-4173} --strictPort",
-    "web:test": "playwright test --config playwright.config.ts"
+    "web:test": "playwright test --config playwright.config.ts",
+    "native:build": "pnpm build && pnpm exec rspeedy build --root examples/lynx-for-native"
   },
   "peerDependencies": {
     "solid-js": "^1.9.0"

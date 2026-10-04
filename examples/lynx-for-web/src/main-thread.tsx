@@ -1,5 +1,6 @@
 import { For, Show, createSignal } from "solid-js";
 import { createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
+import { runElementPapiParity } from "solid-lynx/parity";
 import type { LynxEvent, LynxNode, LynxPapi, LynxRoot } from "solid-lynx";
 import { installPapiProbe } from "./papi-probe.js";
 
@@ -381,6 +382,9 @@ function renderPage(): void {
     mountSecondaryRoot,
     disposeSecondaryRoot,
     remountTapCount: () => remountTaps,
+    // The same harness the native example runs, executed against this host so
+    // the two reports can be compared operation by operation.
+    parityReport: () => runElementPapiParity({ label: "web-core" }),
   });
 }
 

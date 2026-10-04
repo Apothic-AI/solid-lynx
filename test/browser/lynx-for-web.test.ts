@@ -413,6 +413,47 @@ test.describe("Lynx for Web Solid app", () => {
     expect(failedRequests).toEqual([]);
   });
 
+  interface ParityReport {
+  label: string;
+  operations: {
+    operation: string;
+    papi: string[];
+    status: "pass" | "fail" | "unsupported";
+    expected: string;
+    observed: string;
+  }[];
+  failures: { operation: string; observed: string }[];
+  summary: { pass: number; fail: number; unsupported: number };
+}
+
+test("reports shared Element PAPI parity for the web host", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+
+    const report = await probeCall<ParityReport>(view, "parityReport");
+
+    expect(report.label).toBe("web-core");
+    expect(report.failures).toEqual([]);
+    // The harness runs inside the live card, so it also proves the shared
+    // operations work while an app is mounted, not only in a unit test.
+    expect(report.summary.fail).toBe(0);
+    expect(report.operations.length).toBeGreaterThanOrEqual(15);
+    expect(report.operations.filter(result => result.status === "unsupported")).toEqual([]);
+    expect(report.summary.pass).toBe(report.operations.length);
+    for (const operation of report.operations) {
+      expect(operation.observed, `${operation.operation} should match "${operation.expected}"`)
+        .toBe(operation.expected);
+    }
+
+    // Running the harness must not disturb the app around it.
+    await expect(view.locator("#count")).toHaveText("Counter: 0");
+    await view.locator("#increment").click();
+    await expect(view.locator("#count")).toHaveText("Counter: 1");
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
   test("keeps a second root isolated and remounts a disposed root", async ({ page }) => {
     const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
     const count = view.locator("#count");
