@@ -40,6 +40,20 @@ interface ListenerBalance {
   removes: number;
 }
 
+interface CSSIdCall {
+  cssId: number | null;
+  entryName: string | undefined;
+  elementIds: (string | null)[];
+  uniqueIds: number[];
+}
+
+interface RefEvent {
+  kind: "attach" | "detach";
+  label: string;
+  tag?: string | null;
+  id?: string | null;
+}
+
 /**
  * Calls the PAPI probe that the fixture installs on the main-thread realm of
  * this `<lynx-view>`. Each view runs its own bundle in its own realm, so the
@@ -574,6 +588,194 @@ test("reports shared Element PAPI parity for the web host", async ({ page }) => 
     const explicit = await probeCall<FlushMeasurement>(view, "measureFlushesWithExplicitFlush");
     expect(explicit.during).toBe(1);
     expect(explicit.total).toBe(1);
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+});
+
+/**
+ * `ref` is transformed by the Solid JSX compile step, so the only way to verify
+ * it is against a bundle the compiler produced. These tests run the real
+ * `main.web.bundle` in `@lynx-js/web-core` and assert the node the ref receives
+ * is the live PAPI element, and that the attachment is released when the Solid
+ * scope that created it goes away.
+ */
+test.describe("refs and imperative access in the web runtime", () => {
+  test("hands a ref object the live element and clears it when the root is disposed", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+
+    await expect(view.locator("#ref-object-target")).toHaveCount(1);
+    await expect(view.locator("#ref-readout")).toHaveText(
+      "ref state: held / held",
+    );
+    expect(await probeCall<string>(view, "refObjectState")).toBe("attached");
+
+    // Disposing the root disposes every scope it owns, so no ref may still be
+    // holding an element from the torn-down tree.
+    await view.locator("#dispose").click();
+    await expect(view.locator("#ref-object-target")).toHaveCount(0);
+
+    expect(await probeCall<string>(view, "refObjectState")).toBe("detached");
+
+    const events = await probeCall<RefEvent[]>(view, "refEvents");
+    expect(events.filter(event => event.kind === "attach")).toHaveLength(1);
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
+  test("releases a callback ref when its reactive scope is disposed", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+
+    await expect(view.locator("#ref-target-text")).toHaveCount(1);
+
+    const attached = await probeCall<RefEvent[]>(view, "refEvents");
+    expect(attached).toEqual([
+      { kind: "attach", label: "callback", tag: "x-text", id: null },
+    ]);
+
+    // The ref sits inside a conditional subtree, so removing that subtree is
+    // what disposes the scope that created the element.
+    await probeCall<void>(view, "setRefTargets", false);
+
+    await expect(view.locator("#ref-target-text")).toHaveCount(0);
+    await expect.poll(async () =>
+      (await probeCall<RefEvent[]>(view, "refEvents")).map(event => event.kind)
+    ).toEqual(["attach", "detach"]);
+
+    // A ref is not an attribute: it must not have been written onto the element.
+    const target = await probeCall<ElementSnapshot>(view, "snapshot", "ref-object-target");
+    expect(target?.attributeNames).not.toContain("ref");
+    expect(target?.attributes).not.toHaveProperty("ref");
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
+  test("re-attaches a ref when its element is created again", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+
+    await probeCall<void>(view, "setRefTargets", false);
+    await expect(view.locator("#ref-target-text")).toHaveCount(0);
+
+    await probeCall<void>(view, "clearRefEvents");
+    await probeCall<void>(view, "setRefTargets", true);
+    await expect(view.locator("#ref-target-text")).toHaveCount(1);
+
+    // The Solid JSX transform emits the ref binding before the element's props,
+    // so the element has no id yet at the moment the ref receives it.
+    expect(await probeCall<RefEvent[]>(view, "refEvents")).toEqual([
+      { kind: "attach", label: "callback", tag: "x-text", id: null },
+    ]);
+    const target = await probeCall<ElementSnapshot>(view, "snapshot", "ref-target-text");
+    expect(target?.attributes.id).toBe("ref-target-text");
+    // A ref is not an attribute: it must not have been written onto the element.
+    expect(target?.attributeNames).not.toContain("ref");
+    expect(target?.attributes).not.toHaveProperty("ref");
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+});
+
+/**
+ * `__SetCSSId` is part of web-core's `ElementPAPIs` surface, so the web host can
+ * assign a compiled CSS id. Its effect is a stylesheet the Lynx toolchain put in
+ * the bundle, which this fixture does not carry, so what is asserted here is the
+ * Element PAPI contract the renderer drives: one call, carrying the root's own
+ * page children and the requested id.
+ */
+test.describe("root-scoped CSS ids in the web runtime", () => {
+  test("assigns the id to the root's page children in one call", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+
+    expect(await probeCall<CSSIdCall[]>(view, "cssIdCalls")).toEqual([]);
+
+    await probeCall<void>(view, "setCSSId", 0, "main");
+
+    const calls = await probeCall<CSSIdCall[]>(view, "cssIdCalls");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.cssId).toBe(0);
+    expect(calls[0]!.entryName).toBe("main");
+    // The root owns exactly the element it rendered into its page.
+    expect(calls[0]!.elementIds).toEqual(["app"]);
+    expect(calls[0]!.uniqueIds.every(uniqueId => uniqueId > 0)).toBe(true);
+
+    // Assigning an id must not disturb the tree it was assigned to.
+    await expect(view.locator("#app")).toHaveCount(1);
+    await expect(view.locator("#counter")).toHaveCount(1);
+    await expect(view.locator("#count")).toHaveText("Counter: 0");
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
+  test("replaces a previously assigned id and applies it to later elements", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+
+    await probeCall<void>(view, "setCSSId", 0, "main");
+    await probeCall<void>(view, "setCSSId", 0, "detail");
+
+    const calls = await probeCall<CSSIdCall[]>(view, "cssIdCalls");
+    expect(calls.map(call => call.entryName)).toEqual(["main", "detail"]);
+    expect(calls.every(call => call.elementIds.includes("app"))).toBe(true);
+
+    // An element the root puts in its page after the id was assigned belongs to
+    // the same stylesheet, so it has to be assigned the id as well.
+    await probeCall<void>(view, "appendRootChild");
+    await expect(view.locator("#root-child-1")).toHaveCount(1);
+
+    const afterAppend = await probeCall<CSSIdCall[]>(view, "cssIdCalls");
+    expect(afterAppend).toHaveLength(3);
+    expect(afterAppend[2]).toMatchObject({
+      cssId: 0,
+      entryName: "detail",
+      elementIds: ["root-child-1"],
+    });
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
+  test("forwards a null id and leaves the tree intact", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+
+    await probeCall<void>(view, "setCSSId", 0, "main");
+    await probeCall<void>(view, "setCSSId", null);
+
+    const calls = await probeCall<CSSIdCall[]>(view, "cssIdCalls");
+    expect(calls).toHaveLength(2);
+    // Resolution of `null` belongs to the host, so the renderer sends it through.
+    expect(calls[1]!.cssId).toBeNull();
+
+    await expect(view.locator("#app")).toHaveCount(1);
+    await expect(view.locator("#count")).toHaveText("Counter: 0");
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
+  test("keeps a second root's elements out of the first root's assignment", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+
+    await probeCall<void>(view, "mountSecondaryRoot");
+    await expect(view.locator("#secondary")).toHaveCount(1);
+
+    await probeCall<void>(view, "setCSSId", 0, "main");
+
+    const calls = await probeCall<CSSIdCall[]>(view, "cssIdCalls");
+    expect(calls).toHaveLength(1);
+    // The secondary root renders into its own component, so it is not one of the
+    // primary root's page children and must not be restyled by it.
+    expect(calls[0]!.elementIds).toEqual(["app"]);
 
     expect(pageErrors).toEqual([]);
     expect(consoleErrors).toEqual([]);

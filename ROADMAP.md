@@ -45,7 +45,11 @@ Validate native-specific behavior after the web path is working, while making So
 Add platform features through explicit, testable adapters while keeping the core host contract small.
 
 - [ ] Integrate stylesheet loading, CSS ids, and stylesheet lifecycle where the Lynx PAPI requires it.
-- [ ] Add refs and imperative element access with deterministic cleanup.
+  - CSS ids are done: `root.setCSSId()` drives `__SetCSSId` over a root's own page
+    children and is covered by fake-PAPI and browser tests.
+  - Stylesheet loading and lifecycle stay open because no host PAPI adds, replaces,
+    or removes a stylesheet. Documented as unsupported rather than approximated.
+- [x] Add refs and imperative element access with deterministic cleanup.
 - [ ] Evaluate native list virtualization and expose list callbacks if the Solid model can support them cleanly.
 - [ ] Evaluate gesture, animation, and portal/overlay APIs as separate capabilities.
 - [ ] Publish examples for forms, keyed lists, asynchronous content, and platform-specific capabilities.

@@ -75,10 +75,11 @@ PAPI probes.
 | Listener cleanup on root disposal | verified | not measured | Dispose the root and confirm the page has no nodes left. |
 | Multiple isolated roots | verified | not measured | Host a second root in a component and dispose one root. |
 | Disposed root can be mounted again | verified | not measured | Dispose, then render into the same root again. |
+| Ref release with its Solid scope | verified | not measured | Toggle or dispose the owner of a `ref` and confirm the ref no longer holds the node. |
 | Dual-thread execution | not applicable | not measured | Both examples set `background: false`. A card with a background thread is out of scope for this package. |
 | Worklets | not applicable | not measured | Owned by Lynx's worklet compiler, not by this renderer. |
 | First-screen synchronization | verified for web | not measured | Whether the first screen renders from the first flush on a device. |
-| Stylesheet loading and CSS ids | not implemented | not implemented | Inline styles only; tracked as a platform capability. |
+| Stylesheet loading and CSS ids | CSS ids verified; stylesheet loading has no PAPI | not measured | `root.setCSSId()` and watch `__SetCSSId` calls. Loading a stylesheet at runtime cannot be checked because no host exposes it. |
 
 ## How to fill the native column
 

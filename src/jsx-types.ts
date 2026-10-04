@@ -1,5 +1,8 @@
 import type { JSX as SolidJSX } from "solid-js";
 import type { LynxNode } from "./host.js";
+import type { LynxRef } from "./refs.js";
+
+export type { LynxRef, LynxRefCallback, LynxRefObject } from "./refs.js";
 
 /** Values that can cross Lynx's serializable attribute and dataset boundary. */
 export type LynxDatasetValue =
@@ -49,10 +52,6 @@ export type LynxBoundEventHandler<Event extends LynxEvent = LynxEvent> = readonl
 export type LynxEventPropHandler<Event extends LynxEvent = LynxEvent> =
   | LynxEventHandler<Event>
   | LynxBoundEventHandler<Event>;
-
-export type LynxRef<Element extends LynxNode = LynxNode> =
-  | Element
-  | ((element: Element) => void);
 
 export type LynxChild =
   | LynxNode

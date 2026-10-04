@@ -1,8 +1,9 @@
-import { createSignal } from "solid-js";
+import { For, createSignal } from "solid-js";
 import { describe, expect, it } from "vitest";
 
 import {
   createGlobalLynxHost,
+  createLynxRef,
   createLynxRenderer,
   createLynxRoot,
   createElement as compiledElement,
@@ -11,9 +12,11 @@ import {
   setProp as compiledProp,
   eventListenerOptions,
   parseEventProp,
+  use,
 } from "../src/index.js";
 import type { LynxNode } from "../src/host.js";
 import type { LynxPapi } from "../src/lynx-host.js";
+import type { LynxRefObject } from "../src/refs.js";
 
 interface FakeListener {
   name: string;
@@ -38,6 +41,8 @@ interface FakeNode extends LynxNode {
   children: FakeNode[];
   parent?: FakeNode;
   listeners: FakeListener[];
+  /** Last CSS id this node was assigned through `__SetCSSId`. */
+  cssId?: number | null;
 }
 
 /**
@@ -61,10 +66,17 @@ function listenerEventType(options: {
   return isCatch ? "catchevent" : "bindevent";
 }
 
+interface CSSIdCall {
+  cssId: number | null;
+  entryName: string | undefined;
+  elements: FakeNode[];
+}
+
 function createFakePapi() {
   let nextId = 1;
   let flushes = 0;
   const listenerCalls: ListenerCall[] = [];
+  const cssIdCalls: CSSIdCall[] = [];
 
   const makeNode = (kind: FakeNode["kind"], tagName: string, text = ""): FakeNode => ({
     kind,
@@ -134,6 +146,14 @@ function createFakePapi() {
     },
     __SetInlineStyles: (node: FakeNode, value: unknown) => {
       node.attributes.style = value;
+    },
+    // Mirrors the real contract: the elements arrive as one array, and `null`
+    // is forwarded rather than resolved here, so a test can assert what the
+    // renderer actually sent.
+    __SetCSSId: (elements: LynxNode[], cssId: number | null, entryName?: string) => {
+      const nodes = elements as FakeNode[];
+      cssIdCalls.push({ cssId, entryName, elements: [...nodes] });
+      for (const element of nodes) element.cssId = cssId;
     },
     __AddDataset: (node: FakeNode, key: string, value: unknown) => {
       if (value) node.attributes[`data-${key}`] = value;
@@ -243,6 +263,7 @@ function createFakePapi() {
     page,
     papi,
     listenerCalls,
+    cssIdCalls,
     fire,
     dispatch,
     liveRegistrations,
@@ -925,5 +946,402 @@ describe("solid-lynx", () => {
     first.dispose();
     second.dispose();
     expect(fake.page.children).toEqual([]);
+  });
+});
+
+/**
+ * `ref` and `use:` are transformed by the Solid JSX compile step into calls to
+ * `use(fn, element, arg)`, so these tests drive `use` directly to cover what the
+ * renderer owes those forms: the element is handed over, and whatever the
+ * binding returns is released against the owning scope.
+ */
+describe("refs and imperative access", () => {
+  it("hands a callback ref the live PAPI node and releases it on disposal", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+    const log: string[] = [];
+    let handed: LynxNode | undefined;
+
+    const dispose = root.render(() => {
+      const view = root.renderer.createElement("view");
+      root.renderer.setProp(view, "id", "target");
+      use((element: LynxNode) => {
+        handed = element;
+        log.push("attach");
+        return () => log.push("detach");
+      }, view);
+      return view;
+    });
+
+    // The ref receives the same handle the host put in the tree, not a copy or
+    // a browser DOM node.
+    expect(handed).toBe(fake.page.children[0]);
+    expect(log).toEqual(["attach"]);
+
+    dispose();
+
+    expect(log).toEqual(["attach", "detach"]);
+  });
+
+  it("gives a ref object the node and clears it when its scope is disposed", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+    const ref = createLynxRef<LynxNode>();
+    expect(ref.current).toBeUndefined();
+
+    const dispose = root.render(() => {
+      const view = root.renderer.createElement("view");
+      use(ref, view);
+      return view;
+    });
+
+    expect(ref.current).toBe(fake.page.children[0]);
+
+    dispose();
+
+    // A disposed element must not stay reachable through the ref.
+    expect(ref.current).toBeUndefined();
+  });
+
+  it("releases a ref when the reactive scope that created the element is disposed", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+    const [present, setPresent] = createSignal(true);
+    const ref = createLynxRef<LynxNode>();
+
+    const dispose = root.render(() => {
+      const view = root.renderer.createElement("view");
+      root.renderer.insert(view, () => {
+        if (!present()) return null;
+        const child = root.renderer.createElement("text");
+        use(ref, child);
+        return child;
+      });
+      return view;
+    });
+
+    const first = ref.current;
+    expect(first).toBe(fake.page.children[0]!.children[0]);
+
+    setPresent(false);
+    expect(ref.current).toBeUndefined();
+    expect(fake.page.children[0]!.children).toHaveLength(0);
+
+    setPresent(true);
+    // Re-creating the element re-attaches, and it is a different node.
+    expect(ref.current).toBe(fake.page.children[0]!.children[0]);
+    expect(ref.current).not.toBe(first);
+
+    dispose();
+    expect(ref.current).toBeUndefined();
+  });
+
+  it("releases every ref it attached when the root is disposed", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+    const log: string[] = [];
+
+    const dispose = root.render(() => {
+      const view = root.renderer.createElement("view");
+      root.renderer.setProp(view, "id", "outer");
+      use((element: LynxNode) => {
+        log.push(`attach:${(element as unknown as FakeNode).attributes.id}`);
+        return () => log.push(`detach:${(element as unknown as FakeNode).attributes.id}`);
+      }, view);
+      const inner = root.renderer.createElement("view");
+      root.renderer.setProp(inner, "id", "inner");
+      use((element: LynxNode) => {
+        log.push(`attach:${(element as unknown as FakeNode).attributes.id}`);
+        return () => log.push(`detach:${(element as unknown as FakeNode).attributes.id}`);
+      }, inner);
+      root.renderer.insert(view, inner);
+      return view;
+    });
+
+    expect(log).toEqual(["attach:outer", "attach:inner"]);
+
+    dispose();
+
+    expect(log).toEqual([
+      "attach:outer",
+      "attach:inner",
+      "detach:inner",
+      "detach:outer",
+    ]);
+  });
+
+  it("does not let an older attachment's teardown clear a newer one", () => {
+    const ref = createLynxRef<LynxNode>();
+    const first = { id: "first" } as unknown as LynxNode;
+    const second = { id: "second" } as unknown as LynxNode;
+
+    const releaseFirst = ref(first);
+    ref(second);
+    releaseFirst();
+
+    // A ref is shared, so the older attachment's teardown must only release the
+    // element it actually attached.
+    expect(ref.current).toBe(second);
+
+    ref(second)();
+    expect(ref.current).toBeUndefined();
+  });
+
+  it("keeps a ref attached when a keyed list reorders", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+    // `For` keys on item identity, so the reordered signal has to carry the same
+    // objects; replacing them would be a genuinely new list.
+    const alpha = { id: "a" };
+    const bravo = { id: "b" };
+    const charlie = { id: "c" };
+    const [items, setItems] = createSignal([alpha, bravo, charlie]);
+    const refs = new Map<string, LynxRefObject<LynxNode>>();
+
+    const dispose = root.render(() => {
+      const list = root.renderer.createElement("view");
+      root.renderer.insert(list, () => root.renderer.createComponent(
+        For as never,
+        // `each` is a getter so `For` subscribes to the signal itself. Reading it
+        // here instead would make this accessor re-run on every update, which
+        // recreates the component and is not the keyed path being tested.
+        {
+          get each() {
+            return items();
+          },
+          children: (item: { id: string }) => {
+            const row = root.renderer.createElement("view");
+            root.renderer.setProp(row, "id", item.id);
+            const ref = createLynxRef<LynxNode>();
+            refs.set(item.id, ref);
+            use(ref, row);
+            return row;
+          },
+        } as never,
+      ));
+      return list;
+    });
+
+    const rowsBefore = [...fake.page.children[0]!.children];
+    expect(refs.get("a")!.current).toBe(rowsBefore[0]);
+    expect(refs.get("c")!.current).toBe(rowsBefore[2]);
+
+    setItems([charlie, alpha, bravo]);
+
+    const rowsAfter = fake.page.children[0]!.children;
+    expect(rowsAfter.map(row => row.attributes.id)).toEqual(["c", "a", "b"]);
+    // Reconciliation moves the rows instead of recreating them, so the owning
+    // scopes stay alive and no ref is released and re-attached.
+    expect(rowsAfter[0]).toBe(rowsBefore[2]);
+    expect(rowsAfter[1]).toBe(rowsBefore[0]);
+    expect(rowsAfter[2]).toBe(rowsBefore[1]);
+    expect(refs.get("c")!.current).toBe(rowsBefore[2]);
+    expect(refs.get("a")!.current).toBe(rowsBefore[0]);
+
+    dispose();
+
+    for (const ref of refs.values()) expect(ref.current).toBeUndefined();
+  });
+
+  it("ignores a ref binding that returns something other than a teardown", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+
+    const dispose = root.render(() => {
+      const view = root.renderer.createElement("view");
+      expect(use((element: LynxNode) => element, view)).toBe(view);
+      return view;
+    });
+
+    expect(() => dispose()).not.toThrow();
+  });
+
+  it("runs a ref binding outside an owner without registering a teardown", () => {
+    const node = { kind: "element" } as unknown as LynxNode;
+    const seen: unknown[] = [];
+
+    const teardown = use((element: LynxNode) => {
+      seen.push(element);
+      return () => seen.push("teardown");
+    }, node);
+
+    expect(seen).toEqual([node]);
+    // With no owner there is nothing to register against, so the caller keeps
+    // ownership of the teardown instead of it being dropped or warned about.
+    expect(teardown).toBeTypeOf("function");
+    teardown();
+    expect(seen).toEqual([node, "teardown"]);
+  });
+});
+
+describe("root-scoped CSS ids", () => {
+  it("assigns a CSS id to every page-level element in one batched call", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+
+    root.render(() => {
+      const view = root.renderer.createElement("view");
+      root.renderer.setProp(view, "id", "rendered");
+      const sibling = root.renderer.createElement("view");
+      root.renderer.setProp(sibling, "id", "sibling");
+      root.renderer.insertNode(fake.page, sibling);
+      return view;
+    });
+
+    const [sibling, view] = fake.page.children;
+    const before = fake.flushes;
+
+    root.setCSSId(3, "index");
+
+    // One call carrying the whole root: the PAPI takes the elements as an array.
+    expect(fake.cssIdCalls).toEqual([
+      { cssId: 3, entryName: "index", elements: [sibling!, view!] },
+    ]);
+    expect(view!.cssId).toBe(3);
+    expect(sibling!.cssId).toBe(3);
+    expect(fake.flushes).toBeGreaterThan(before);
+  });
+
+  it("applies the assigned CSS id to page-level elements added later", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+    root.setCSSId(7, "detail");
+
+    expect(fake.cssIdCalls).toEqual([]);
+
+    root.render(() => {
+      const view = root.renderer.createElement("view");
+      root.renderer.setProp(view, "id", "later");
+      return view;
+    });
+
+    const view = fake.page.children[0]!;
+    expect(view.attributes.id).toBe("later");
+    expect(fake.cssIdCalls).toEqual([
+      { cssId: 7, entryName: "detail", elements: [view] },
+    ]);
+  });
+
+  it("does not reach into elements the root did not put in its page", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+
+    root.render(() => {
+      const view = root.renderer.createElement("view");
+      const nested = root.renderer.createElement("view");
+      root.renderer.setProp(nested, "id", "nested");
+      // A descendant, so the id reaches the root of the subtree only and the
+      // stylesheet then applies to the subtree through the element tree.
+      root.renderer.insert(view, nested);
+      return view;
+    });
+
+    const view = fake.page.children[0]!;
+    const nested = view.children[0]!;
+
+    root.setCSSId(2);
+
+    expect(fake.cssIdCalls).toEqual([
+      { cssId: 2, entryName: undefined, elements: [view] },
+    ]);
+    expect(view.cssId).toBe(2);
+    expect(nested.cssId).toBeUndefined();
+  });
+
+  it("replaces a previously assigned CSS id", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+    root.render(() => root.renderer.createElement("view"));
+    const view = fake.page.children[0]!;
+
+    root.setCSSId(1);
+    root.setCSSId(4, "other");
+
+    expect(fake.cssIdCalls.map(call => call.cssId)).toEqual([1, 4]);
+    expect(view.cssId).toBe(4);
+  });
+
+  it("forwards null so the host can apply its own default", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+    root.render(() => root.renderer.createElement("view"));
+
+    root.setCSSId(null);
+
+    // Resolution of `null` belongs to the host, so the renderer sends it through
+    // rather than picking a replacement id.
+    expect(fake.cssIdCalls).toEqual([
+      { cssId: null, entryName: undefined, elements: [fake.page.children[0]!] },
+    ]);
+  });
+
+  it("rejects an invalid CSS id and leaves the root unchanged", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+
+    for (const invalid of [1.5, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => root.setCSSId(invalid)).toThrow(TypeError);
+    }
+
+    expect(fake.cssIdCalls).toEqual([]);
+
+    // The rejected call must not have been recorded, so a later element does not
+    // silently pick up an id that was never accepted.
+    root.render(() => root.renderer.createElement("view"));
+
+    expect(fake.page.children[0]!.cssId).toBeUndefined();
+    expect(fake.cssIdCalls).toEqual([]);
+  });
+
+  it("reports a host without the CSS-id PAPI instead of styling nothing", () => {
+    const fake = createFakePapi();
+    const papiWithoutCSSId: LynxPapi = { ...fake.papi, __SetCSSId: undefined };
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: papiWithoutCSSId,
+      parentComponentId: 1,
+    });
+
+    // Rendering must still work on such a host; only asking for a CSS id fails.
+    root.render(() => {
+      const view = root.renderer.createElement("view");
+      root.renderer.setProp(view, "id", "still-renders");
+      return view;
+    });
+    expect(fake.page.children[0]!.attributes.id).toBe("still-renders");
+
+    expect(() => root.setCSSId(1)).toThrow(/__SetCSSId/);
+    expect(fake.cssIdCalls).toEqual([]);
+  });
+
+  it("keeps a root's CSS id off the elements of another root on the same page", () => {
+    const fake = createFakePapi();
+    const first = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 11 });
+    const second = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 22 });
+
+    first.render(() => {
+      const view = first.renderer.createElement("view");
+      first.renderer.setProp(view, "id", "first-root");
+      return view;
+    });
+    second.render(() => {
+      const view = second.renderer.createElement("view");
+      second.renderer.setProp(view, "id", "second-root");
+      return view;
+    });
+
+    const [firstView, secondView] = fake.page.children;
+
+    first.setCSSId(5);
+
+    expect(fake.cssIdCalls).toEqual([
+      { cssId: 5, entryName: undefined, elements: [firstView!] },
+    ]);
+    expect(firstView!.cssId).toBe(5);
+    // A shared page must not let one root restyle another's elements.
+    expect(secondView!.cssId).toBeUndefined();
+
+    first.dispose();
+    second.dispose();
   });
 });

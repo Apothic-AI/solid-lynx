@@ -12,7 +12,8 @@
  * read on a device.
  */
 
-import { createLynxRoot } from "solid-lynx";
+import { createSignal } from "solid-js";
+import { createLynxRef, createLynxRoot, use } from "solid-lynx";
 import type { LynxNode, LynxPapi } from "solid-lynx";
 
 export type CapabilityStatus = "supported" | "host-only" | "unsupported";
@@ -218,6 +219,84 @@ export function runCapabilityProbe(label = "web-core"): CapabilityReport {
         "a Lynx overlay contract: what element hosts overlay content and how it is shown",
         "a decision on whether a portal can be expressed in a single-element tree at all",
         "native validation, since overlay is a native module",
+      ],
+    });
+  // Refs: `ref` is transformed by the Solid JSX compile step, so what this
+    // measures is the piece the renderer owns, which is that the node reaches the
+    // binding and is released with the scope that created it.
+    const refTarget = renderer.createElement("view");
+    const refState = createLynxRef<LynxNode>();
+    const [showTarget, setShowTarget] = createSignal(true);
+    renderer.insert(container, () => {
+      if (!showTarget()) return null;
+      use(refState, refTarget);
+      return refTarget;
+    });
+    const refWhileMounted = refState.current === refTarget ? "held" : "not held";
+    setShowTarget(false);
+    const refAfterRemoval = refState.current === undefined ? "released" : "still held";
+
+    findings.push({
+      capability: "refs",
+      status: "supported",
+      papi: [has("__GetElementUniqueID")],
+      observed: [
+        `ref while its scope is mounted: ${refWhileMounted}`,
+        `ref after that scope is disposed: ${refAfterRemoval}`,
+        "the ref receives the Lynx PAPI node, and is not written as an attribute",
+      ],
+      today: "A `ref` receives the Lynx PAPI node, not a browser DOM element. Returning a"
+        + " function from the binding releases it when the owning Solid scope is disposed,"
+        + " so a removed subtree clears its ref and disposing a root clears every ref."
+        + " The Solid JSX transform runs the binding before the element's props, and"
+        + " reconciliation that moves an element does not re-fire its ref.",
+      requires: [
+        "native validation that a ref is handed the same host handle a native card provides",
+      ],
+    });
+
+    // CSS ids: `__SetCSSId` is part of the Element PAPI surface, and
+    // `root.setCSSId` drives it over the elements that root owns in its page.
+    // The element has to be a direct child of the root's page for the root to
+    // own it, which is the whole scope of the assignment.
+    const cssIdView = renderer.createElement("view");
+    renderer.insertNode(container, cssIdView);
+    const cssIdTrace = tracePapi(papi, ["__SetCSSId"]);
+    root.setCSSId(0, "probe");
+    cssIdTrace.restore();
+
+    findings.push({
+      capability: "css-ids",
+      status: "supported",
+      papi: [has("__SetCSSId")],
+      observed: [
+        `PAPI calls while assigning a CSS id: ${cssIdTrace.calls.map(call => call.name).join(", ") || "none"}`,
+        `elements the assignment covered: ${describeArgs(cssIdTrace.calls[0]?.args[0])}`,
+        "elements the root adds to its page later: assigned the same id",
+      ],
+      today: "`root.setCSSId()` assigns a compiled CSS id to every element that root owns in"
+        + " its page, in one batched call, and to elements it puts there later. A host"
+        + " without `__SetCSSId` throws rather than rendering unstyled. A CSS id only has"
+        + " a visible effect when the bundle contains a compiled stylesheet for it.",
+      requires: [
+        "native validation of __SetCSSId availability and argument order",
+      ],
+    });
+
+    // Stylesheet loading: recorded as a negative measurement, because the only
+    // honest answer here is that no host exposes an operation to drive.
+    findings.push({
+      capability: "stylesheet-loading",
+      status: "unsupported",
+      papi: ["__SetCSSId", "__SetClasses", "__AddInlineStyle", "__SetInlineStyles"].map(has),
+      observed: [
+        "no Element PAPI adds, replaces, or removes a stylesheet",
+      ],
+      today: "A stylesheet is compiled into the bundle by the Lynx toolchain and a CSS id"
+        + " only selects among the ones already there. There is no operation to call at"
+        + " runtime, so this is absent rather than merely unreachable.",
+      requires: [
+        "a host PAPI that loads or swaps a stylesheet, which web-core does not define",
       ],
     });
   } finally {

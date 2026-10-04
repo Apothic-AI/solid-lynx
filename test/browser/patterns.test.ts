@@ -199,9 +199,12 @@ test.describe("solid-lynx patterns", () => {
     expect(report.label).toBe("web-core");
     expect(report.findings.map(finding => finding.capability).sort()).toEqual([
       "animation",
+      "css-ids",
       "gestures",
       "list-virtualization",
       "overlay-portal",
+      "refs",
+      "stylesheet-loading",
     ]);
     for (const finding of report.findings) {
       expect(finding.today, `${finding.capability} must state its failure behaviour`)
@@ -240,6 +243,26 @@ test.describe("solid-lynx patterns", () => {
     const overlay = byName.get("overlay-portal")!;
     expect(overlay.status).toBe("unsupported");
     expect(overlay.observed.join(" ")).toContain("exports no Portal");
+
+    // Refs hand over the Lynx node and are released with the scope that created
+    // the element, which is the deterministic cleanup the renderer owes `ref`.
+    const refs = byName.get("refs")!;
+    expect(refs.status).toBe("supported");
+    expect(refs.observed.join(" ")).toContain("ref while its scope is mounted: held");
+    expect(refs.observed.join(" ")).toContain("ref after that scope is disposed: released");
+
+    // CSS ids reach the host's own PAPI, in one batched call.
+    const cssIds = byName.get("css-ids")!;
+    expect(cssIds.status).toBe("supported");
+    expect(cssIds.papi.find(entry => entry.name === "__SetCSSId")?.present).toBe(true);
+    expect(cssIds.observed.join(" ")).toContain("PAPI calls while assigning a CSS id: __SetCSSId");
+    expect(cssIds.observed.join(" ")).toContain("elements the assignment covered: [1 items]");
+
+    // Stylesheet loading is absent rather than unreachable: there is nothing to
+    // call, so this is measured as a negative result on purpose.
+    const stylesheets = byName.get("stylesheet-loading")!;
+    expect(stylesheets.status).toBe("unsupported");
+    expect(stylesheets.observed.join(" ")).toContain("no Element PAPI adds");
 
     expectClean(fixture);
   });

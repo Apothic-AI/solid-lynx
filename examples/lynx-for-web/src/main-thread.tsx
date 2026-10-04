@@ -1,8 +1,9 @@
 import { For, Show, createSignal } from "solid-js";
-import { createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
+import { createLynxRef, createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
 import { runElementPapiParity } from "solid-lynx/parity";
 import type { LynxEvent, LynxNode, LynxPapi, LynxRoot } from "solid-lynx";
-import { installPapiProbe } from "./papi-probe.js";
+import type { LynxRefObject } from "solid-lynx";
+import { installPapiProbe, recordRefEvent } from "./papi-probe.js";
 
 interface LynxEngine {
   addEventListener(type: string, listener: () => void): void;
@@ -265,6 +266,60 @@ function Events(props: { registerClearLog: (clear: () => void) => void }) {
   );
 }
 
+/**
+ * Refs and imperative access.
+ *
+ * Both ref forms are written the way an app writes them: `ref={viewRef}` where
+ * `viewRef` comes from `createLynxRef()`, and a plain callback ref. Each returns
+ * its teardown, which is what releases the attachment when the Solid scope that
+ * created the element is disposed. Attachments are logged through the probe
+ * rather than into a signal, because the release runs during disposal.
+ */
+function Refs(props: {
+  registerRefState: (read: () => string) => void;
+  registerTargets: (set: (present: boolean) => void) => void;
+}) {
+  const [present, setPresent] = createSignal(true);
+  const viewRef = createLynxRef<LynxNode>();
+  const textRef = createLynxRef<LynxNode>();
+
+  props.registerRefState(() => (viewRef.current ? "attached" : "detached"));
+  props.registerTargets(setPresent);
+
+  const describe = (node: LynxNode | undefined) => (node ? "held" : "released");
+
+  return (
+    <view id="refs">
+      <ToggleShow
+        when={present()}
+        children={() => (
+          <view id="ref-target">
+            <text
+              id="ref-target-text"
+              ref={element => {
+                textRef.current = element;
+                recordRefEvent("attach", "callback", element);
+                return () => {
+                  textRef.current = undefined;
+                  recordRefEvent("detach", "callback", element);
+                };
+              }}
+            >
+              ref target text
+            </text>
+          </view>
+        )}
+      />
+      <view id="ref-object-target" ref={viewRef}>
+        <text>ref object target</text>
+      </view>
+      <view id="ref-readout">
+        <text>{`ref state: ${describe(viewRef.current)} / ${describe(textRef.current)}`}</text>
+      </view>
+    </view>
+  );
+}
+
 interface AppProps {
   onDispose: () => void;
   registerBurst: (burst: () => void) => void;
@@ -297,6 +352,14 @@ function App(props: AppProps) {
         </view>
       </view>
       <Events registerClearLog={props.registerClearLog} />
+      <Refs
+        registerRefState={read => {
+          readRefState = read;
+        }}
+        registerTargets={set => {
+          setRefTargets = set;
+        }}
+      />
     </view>
   );
 }
@@ -311,6 +374,9 @@ let secondaryRoot: LynxRoot | undefined;
 let burstProperties: (() => void) | undefined;
 let clearEventLog: (() => void) | undefined;
 let remountTaps = 0;
+let readRefState: (() => string) | undefined;
+let setRefTargets: ((present: boolean) => void) | undefined;
+let rootChildCount = 0;
 
 /**
  * Hosts a second root in its own component of the same page.
@@ -385,6 +451,21 @@ function renderPage(): void {
     // The same harness the native example runs, executed against this host so
     // the two reports can be compared operation by operation.
     parityReport: () => runElementPapiParity({ label: "web-core" }),
+    setCSSId: (cssId, entryName) => {
+      root?.setCSSId(cssId, entryName);
+    },
+    refObjectState: () => readRefState?.() ?? "unregistered",
+    setRefTargets: present => setRefTargets?.(present),
+    // Adds another element straight into the primary root's page, so a CSS id
+    // assigned to that root can be observed reaching an element the root did not
+    // render itself.
+    appendRootChild: () => {
+      if (!root) throw new Error("the primary root is not mounted");
+      const node = root.renderer.createElement("view");
+      root.renderer.setProp(node, "id", `root-child-${++rootChildCount}`);
+      root.renderer.insertNode(root.page, node);
+      root.flush();
+    },
   });
 }
 

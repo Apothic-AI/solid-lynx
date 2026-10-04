@@ -33,6 +33,7 @@ interface PapiGlobal {
   __GetChildren?: PapiFunction;
   __GetParent?: PapiFunction;
   __GetComputedStyleByKey?: PapiFunction;
+  __SetCSSId?: PapiFunction;
 }
 
 export interface ListenerCall {
@@ -77,6 +78,21 @@ export interface ListenerBalance {
   removes: number;
 }
 
+export interface CSSIdCall {
+  cssId: number | null;
+  entryName: string | undefined;
+  elementIds: (string | null)[];
+  uniqueIds: number[];
+}
+
+/** One ref or `use:` attachment and release, recorded outside the view. */
+export interface RefEvent {
+  kind: "attach" | "detach";
+  label: string;
+  tag?: string | null;
+  id?: string | null;
+}
+
 export interface ProbeControls {
   /** Applies several property mutations in one synchronous task. */
   burst(): void;
@@ -96,6 +112,14 @@ export interface ProbeControls {
   remountTapCount(): number;
   /** Runs the shared Element PAPI parity harness against this web host. */
   parityReport(): unknown;
+  /** Assigns a CSS id to the primary root's page children. */
+  setCSSId(cssId: number | null, entryName?: string): void;
+  /** Reads what a `createLynxRef()` result currently holds. */
+  refObjectState(): string;
+  /** Adds or removes the ref targets so attachment and release can be compared. */
+  setRefTargets(present: boolean): void;
+  /** Appends another element directly into the primary root's page. */
+  appendRootChild(): void;
 }
 
 export interface PapiProbe {
@@ -119,6 +143,14 @@ export interface PapiProbe {
   listenerCallsFor(id: string): ListenerCall[];
   listenerCallsForUniqueId(uniqueId: number): ListenerCall[];
   listenerBalances(): ListenerBalance[];
+  cssIdCalls(): CSSIdCall[];
+  refEvents(): RefEvent[];
+  clearRefEvents(): void;
+  recordRefEvent(kind: "attach" | "detach", label: string, element?: unknown): void;
+  setCSSId(cssId: number | null, entryName?: string): void;
+  refObjectState(): string;
+  setRefTargets(present: boolean): void;
+  appendRootChild(): void;
 }
 
 const settled = () => new Promise<void>(resolve => setTimeout(resolve, 0));
@@ -128,6 +160,7 @@ export function installPapiProbe(): PapiProbe {
   const controls = { current: undefined as ProbeControls | undefined };
   let flushes = 0;
   const listenerCalls: ListenerCall[] = [];
+  const refEvents: RefEvent[] = [];
 
   const originalFlush = papi.__FlushElementTree;
   if (typeof originalFlush === "function") {
@@ -156,6 +189,25 @@ export function installPapiProbe(): PapiProbe {
   };
   wrapListenerApi("__AddEventListener");
   wrapListenerApi("__RemoveEventListener");
+
+  /**
+   * The CSS-id PAPI is the one operation whose effect is a stylesheet the bundle
+   * compiled, which the browser suite cannot see in the DOM. Recording the call
+   * is what makes "the renderer assigned the id to these elements" observable.
+   */
+  const cssIdCalls: CSSIdCall[] = [];
+  const originalSetCSSId = papi.__SetCSSId;
+  if (typeof originalSetCSSId === "function") {
+    papi.__SetCSSId = (elements: any[], cssId: number | null, entryName?: string) => {
+      cssIdCalls.push({
+        cssId,
+        entryName,
+        elementIds: elements.map(element => papi.__GetID?.(element) ?? null),
+        uniqueIds: elements.map(element => papi.__GetElementUniqueID?.(element) ?? -1),
+      });
+      return originalSetCSSId(elements, cssId, entryName);
+    };
+  }
 
   const elementById = (id: string) => {
     const page = papi.__GetPageElement?.();
@@ -246,6 +298,40 @@ export function installPapiProbe(): PapiProbe {
     parityReport() {
       return controls.current?.parityReport();
     },
+    cssIdCalls: () => [...cssIdCalls],
+    refEvents: () => [...refEvents],
+    clearRefEvents() {
+      refEvents.length = 0;
+    },
+    recordRefEvent(kind, label, element) {
+      const node = element as
+        | { tagName?: string; getAttribute?(name: string): string | null }
+        | undefined;
+      refEvents.push({
+        kind,
+        label,
+        tag: node?.tagName?.toLowerCase() ?? null,
+        id: node?.getAttribute?.("id") ?? null,
+      });
+    },
+    setCSSId(cssId, entryName) {
+      const actions = controls.current;
+      if (!actions) throw new Error("probe controls are not registered yet");
+      actions.setCSSId(cssId, entryName);
+    },
+    refObjectState() {
+      return controls.current?.refObjectState() ?? "unregistered";
+    },
+    setRefTargets(present) {
+      const actions = controls.current;
+      if (!actions) throw new Error("probe controls are not registered yet");
+      actions.setRefTargets(present);
+    },
+    appendRootChild() {
+      const actions = controls.current;
+      if (!actions) throw new Error("probe controls are not registered yet");
+      actions.appendRootChild();
+    },
     listenerCallsFor(id) {
       const element = elementById(id);
       if (!element) return [];
@@ -292,4 +378,22 @@ export function installPapiProbe(): PapiProbe {
 
   (globalThis as unknown as Record<string, unknown>).__SOLID_LYNX_PROBE__ = probe;
   return probe;
+}
+
+/**
+ * Records a ref attachment or release against the probe.
+ *
+ * Ref changes happen while a Solid scope is being torn down, so they are written
+ * to a plain log instead of a signal: a signal update during disposal is not a
+ * safe thing to depend on, and the browser suite only needs to read the result.
+ */
+export function recordRefEvent(
+  kind: RefEvent["kind"],
+  label: string,
+  element?: unknown,
+): void {
+  const probe = (globalThis as unknown as Record<string, unknown>).__SOLID_LYNX_PROBE__ as
+    | PapiProbe
+    | undefined;
+  probe?.recordRefEvent(kind, label, element);
 }

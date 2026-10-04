@@ -25,6 +25,18 @@ export interface LynxPapi {
   __NextElement: PapiFunction;
   __SetAttribute: PapiFunction;
   __SetID?: PapiFunction;
+  /**
+   * Assigns a compiled CSS id to elements.
+   *
+   * This is a member of `@lynx-js/web-core`'s `ElementPAPIs` surface, where it
+   * takes the elements as one array and an `entryName`. Optional here because a
+   * host is free not to implement it.
+   */
+  __SetCSSId?: (
+    elements: LynxNode[],
+    cssId: number | null,
+    entryName?: string,
+  ) => void;
   __SetClasses: PapiFunction;
   __SetInlineStyles: PapiFunction;
   __AddDataset?: PapiFunction;
@@ -286,6 +298,18 @@ export function createGlobalLynxHost(
       }
       scheduleFlush();
     },
+    // Present only where the host implements the CSS-id PAPI, so the root can
+    // tell "unsupported" apart from "assigned" instead of assuming either. The
+    // call itself reads the surface at call time, like every other operation
+    // here, so a host that installs its PAPI later is still called correctly.
+    ...(typeof papi.__SetCSSId === "function"
+      ? {
+        setCSSId(elements: LynxNode[], cssId: number | null, entryName?: string) {
+          requirePapi("__SetCSSId")(elements, cssId, entryName);
+          scheduleFlush();
+        },
+      }
+      : {}),
     insertNode(parent, node, anchor) {
       if (anchor == null) {
         requirePapi("__AppendElement")(parent, node);

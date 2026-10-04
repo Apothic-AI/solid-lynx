@@ -48,8 +48,9 @@ pnpm exec playwright test --config test/browser/patterns.playwright.config.ts
 | Overlays and portals | unsupported, measured | not measured | `<overlay>` is an ordinary child; importing `Portal` fails at build time. |
 | Form input events | partially supported, tested | not measured | `bindinput` and `bindconfirm` deliver; `bindchange` does not. |
 | Asynchronous content | supported, tested | not measured | Promise plus signal. No `createResource`, no streaming. |
-| Refs and imperative access | unsupported, by inspection | not measured | The `ref` prop is ignored; no element is ever handed back. |
-| Stylesheets and CSS ids | unsupported, by inspection | not measured | Inline styles only; `__SetCSSId` is never called. |
+| Refs and imperative access | supported, tested | not measured | A ref receives the live Lynx node and is released with its Solid scope. |
+| CSS ids | supported, tested | not measured | `root.setCSSId()` assigns a compiled CSS id to a root's own page children. |
+| Stylesheet loading and lifecycle | unsupported, by inspection | not measured | No Element PAPI adds, replaces, or removes a stylesheet, so there is nothing to call. |
 
 ## Findings
 
@@ -172,20 +173,85 @@ as unverified rather than supported.
 
 ### Refs and imperative access
 
-`setProperty` returns early for `ref`, `key`, and `children`, so a `ref` prop is
-dropped and no element is ever handed back. There is no imperative element
-access, and therefore nothing to clean up deterministically.
+`ref` is not handled by the renderer at all: `babel-preset-solid` transforms it
+before the bundle exists. A function ref becomes `use(ref, element)` and
+anything else is assigned to the binding it was written against, which is why
+only a callback is a usable `ref` value. Verifying that required reading the
+compiled output rather than the renderer, because the earlier claim here that
+`setProperty` drops `ref` described a path the compiler never takes.
 
-Today: `ref` is silently ignored. Supporting refs would need a decision about what
-a ref receives on a Lynx node, since a Lynx node is a host handle rather than a
-DOM element, plus deterministic detach on disposal.
+That left one real gap. `solid-js/universal` implements `use` as
+`untrack(() => fn(element, arg))` and throws the return value away, so a ref
+attached and then never released. `use` in this package registers whatever the
+binding returns as the owning scope's cleanup, which is what makes the
+attachment deterministic:
 
-### Stylesheets and CSS ids
+```tsx
+const target = createLynxRef<LynxNode>();
+<view ref={target} />;
+target.current; // the node, or undefined once its scope is disposed
+```
 
-Only inline styles are supported: `style` goes through `__SetInlineStyles`, and
-`class` through `__SetClasses`. `__SetCSSId` exists on the web host but the
-renderer never calls it, and there is no stylesheet loading or stylesheet
-lifecycle. An app that needs CSS ids has to drive the host itself.
+A ref receives the Lynx PAPI node itself, not a browser DOM element, and the
+browser suite asserts the `ref` never becomes an attribute. Two ordering details
+are part of the contract and are covered by tests: the transform emits the ref
+binding *before* the element's props, so a ref cannot rely on attributes being
+set yet; and reconciliation that moves an element does not re-fire its ref.
+
+Supported: callback refs, `createLynxRef()`, the `use:` directive, and
+`use(fn, element, arg)` called directly. Not supported: ref objects the compiler
+cannot invoke, such as a plain `{ current }` literal. The type rejects those
+rather than letting them fail silently.
+
+Native is unverified, but nothing here is platform-specific: the work is Solid
+ownership plus the node identity the renderer already hands out.
+
+### CSS ids
+
+`__SetCSSId` is part of `@lynx-js/web-core`'s `ElementPAPIs` surface, declared in
+`dist/types/IElementPAPI.d.ts` alongside the operations this renderer already
+calls. Its contract is deliberately batched:
+
+```ts
+SetCSSIdPAPI = (elements: HTMLElement[], cssId: number | null, entryName: string | undefined) => void
+```
+
+so `root.setCSSId(cssId, entryName?)` assigns one id to every element that root
+owns directly in its page in a single call, and to elements the root puts in that
+page afterwards. A nested element is not sent: the id goes on the root of the
+subtree and reaches the rest through the element tree. `null` is forwarded
+untouched, because resolving it belongs to the host.
+
+Three things are deliberate. Assignment is scoped to the root, so a second root
+sharing the same page is never restyled by the first. An invalid id throws
+before anything is recorded, so a rejected call leaves the root unchanged. And a
+host without the PAPI throws rather than silently styling nothing, which is the
+failure mode this document exists to prevent.
+
+The browser suite asserts the Element PAPI contract rather than a visual
+result, because a CSS id only has a visible effect if the bundle contains a
+compiled stylesheet for it. `examples/lynx-for-web` ships inline styles only and
+its bundle has no `styleSheetInfo`, so nothing there can show a change of
+stylesheet. Adding one is a build-configuration step
+(`pluginVanillaLynx` takes an `entry.css` or a sibling `style.css`), not a
+renderer feature.
+
+### Stylesheet loading and lifecycle
+
+There is no Element PAPI for this. The complete web-core surface is
+`__AddClass`, `__AddInlineStyle`, `__SetClasses`, `__SetCSSId`, and
+`__SetInlineStyles`; nothing adds, replaces, or removes a stylesheet, and no
+stylesheet-named identifier appears anywhere in `web-core`. A stylesheet is
+compiled into the bundle by the Lynx toolchain, and `__SetCSSId` only selects
+among the ones already there.
+
+Supporting it would mean inventing an API the host does not have, so it is
+recorded as unsupported rather than approximated. An app that needs a
+runtime-loaded stylesheet has to drive its own host.
+
+Native is unverified here in both directions: `@lynx-js/types` is not a
+dependency, so this document does not claim what a native host does with these
+same names, nor that native lacks a stylesheet operation.
 
 ## Remaining blockers
 
@@ -199,3 +265,9 @@ lifecycle. An app that needs CSS ids has to drive the host itself.
   rather than a platform capability, so it is left for a deliberate change.
 - List virtualization needs a Solid list model that can instantiate a row at an
   index. That is a renderer design question, not a host capability question.
+- Whether a native host implements `__SetCSSId` is unverified. The renderer
+  treats it as optional precisely so that a host without it fails loudly instead
+  of rendering unstyled, but that path has not been exercised on a device.
+- Stylesheet loading has no PAPI on either host to verify, so the capability is
+  absent rather than blocked. It would have to be re-opened only if a host
+  exposed one.

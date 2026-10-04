@@ -189,6 +189,7 @@ Creates an isolated Solid root backed by a Lynx page. The returned object contai
 - `page`: the page element used as the render parent.
 - `renderer`: the underlying Solid universal renderer.
 - `render(code)`: mounts the Solid tree and returns a disposer.
+- `setCSSId(cssId, entryName?)`: assigns a compiled CSS id to the elements this root owns in its page.
 - `dispose()`: disposes Solid owners, releases the listeners the root filed, and removes the nodes the root rendered.
 - `flush()`: explicitly calls `__FlushElementTree`.
 
@@ -222,6 +223,39 @@ const host = createGlobalLynxHost({
   transformEventNames: true,
 });
 ```
+
+## Refs and imperative access
+
+`ref` is transformed by the Solid JSX compile step, so it is not a renderer prop. A function ref receives the Lynx PAPI node itself, and returning a function from it registers that function as the owning Solid scope's teardown:
+
+```tsx
+import { createLynxRef } from "solid-lynx";
+
+const target = createLynxRef<LynxNode>();
+
+<view ref={target} />;
+<text ref={node => measure(node)} />;
+
+target.current; // the node, or undefined once its scope is disposed
+```
+
+The attachment is released when the scope that created the element is disposed, so removing a conditional subtree clears the ref and disposing a root clears every ref it owns. Two details of the transform are worth knowing: the ref binding runs before the element's props are applied, so a ref cannot rely on attributes being set yet, and reconciliation that moves an element does not re-fire its ref.
+
+`use(fn, element, arg)` and the `use:` directive take the same path and get the same cleanup.
+
+Only a callable ref is accepted. A plain `{ current }` object is not usable here, because the transform assigns a non-function ref to its target instead of calling it; the types reject it rather than letting it fail silently.
+
+## CSS ids
+
+`root.setCSSId(cssId, entryName?)` assigns a compiled CSS id through `__SetCSSId`:
+
+```ts
+root.setCSSId(0, "main");
+```
+
+The call is batched: one PAPI call carrying every element that root owns directly in its page, and elements the root puts in that page later get the same id. The id goes on the root of a subtree rather than each descendant. `null` is forwarded untouched for the host to resolve, an invalid id throws before anything is recorded, and a host without `__SetCSSId` throws rather than silently rendering unstyled.
+
+This selects a stylesheet the Lynx toolchain already compiled into the bundle. Loading, replacing, or removing a stylesheet at runtime is not supported: no Lynx Element PAPI does it. See [docs/capabilities.md](docs/capabilities.md).
 
 ## Events and properties
 
@@ -276,10 +310,11 @@ The global adapter uses these current Lynx operation names:
 | `__FirstElement`, `__NextElement`, `__GetParent` | Traverse the tree |
 | `__SetAttribute`, `__SetClasses`, `__SetInlineStyles` | Update properties |
 | `__SetID`, `__AddDataset` or `__SetDataset` | Update id and dataset |
+| `__SetCSSId` (optional) | Assign a compiled CSS id to elements |
 | `__AddEventListener` / `__RemoveEventListener`, or `__AddEvent` | Bind and unbind event handlers |
 | `__FlushElementTree` | Commit mutations |
 
-`__CreatePage` and `__GetElementUniqueID` are additionally required when `createLynxRoot` creates a page or infers its parent component id.
+`__CreatePage` and `__GetElementUniqueID` are additionally required when `createLynxRoot` creates a page or infers its parent component id. `__SetCSSId` is optional and used only by `setCSSId`.
 
 ## Scope and limitations
 

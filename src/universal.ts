@@ -1,3 +1,4 @@
+import { getOwner, onCleanup } from "solid-js";
 import type { LynxRenderer } from "./renderer.js";
 import { createLynxRenderer } from "./renderer.js";
 import { createGlobalLynxHost } from "./lynx-host.js";
@@ -87,12 +88,28 @@ export function mergeProps(...sources: unknown[]): unknown {
   return getCurrentRenderer().mergeProps(...sources);
 }
 
+/**
+ * Runs a ref or `use:` binding against a freshly created element.
+ *
+ * `solid-js/universal` calls the function and discards its return value, so the
+ * compiled `ref={fn}` and `use:fn={arg}` forms would attach and then never
+ * release. Anything the function returns is registered against the current
+ * Solid owner instead, so a ref attachment is released exactly when the scope
+ * that created the element is disposed.
+ *
+ * `arg` is optional because the compiled form of a `ref` passes only the
+ * element.
+ */
 export function use<A, T>(
   fn: (element: LynxNode, arg: A) => T,
   element: LynxNode,
-  arg: A,
+  arg?: A,
 ): T {
-  return getCurrentRenderer().use(fn, element, arg);
+  const teardown = getCurrentRenderer().use(fn, element, arg as A);
+  if (typeof teardown === "function" && getOwner()) {
+    onCleanup(teardown as () => void);
+  }
+  return teardown;
 }
 
 export function render(code: () => LynxNode, parent: LynxNode): () => void {
