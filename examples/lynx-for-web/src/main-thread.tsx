@@ -1,6 +1,6 @@
 import { For, Show, createSignal } from "solid-js";
 import { createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
-import type { LynxNode, LynxPapi, LynxRoot } from "solid-lynx";
+import type { LynxEvent, LynxNode, LynxPapi, LynxRoot } from "solid-lynx";
 import { installPapiProbe } from "./papi-probe.js";
 
 interface LynxEngine {
@@ -11,10 +11,6 @@ interface LynxEngine {
 interface ListItem {
   id: number;
   label: string;
-}
-
-interface TapEvent {
-  currentTarget?: { dataset?: Record<string, string | number> };
 }
 
 declare const lynx: {
@@ -60,7 +56,7 @@ function Counter(props: { onDispose: () => void }) {
   };
   const removeFirstItem = () => setItems(current => current.slice(1));
   const reverseItems = () => setItems(current => [...current].reverse());
-  const readDataset = (event: TapEvent) => {
+  const readDataset = (event: LynxEvent) => {
     setDatasetReadout(String(event.currentTarget?.dataset?.count ?? "missing"));
   };
 

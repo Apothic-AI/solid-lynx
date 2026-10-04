@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsxdev",
+    "jsxImportSource": "solid-lynx",
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["./custom-elements.d.ts", "./jsx-dev-runtime.tsx"]
+}

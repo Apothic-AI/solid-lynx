@@ -3,18 +3,27 @@ import {
   createElement,
   spread,
 } from "./universal.js";
+import type { Component } from "solid-js";
 import type { LynxNode } from "./host.js";
+import type { JSX } from "./jsx-types.js";
 
-export const Fragment = (props: { children?: unknown }) => props.children as LynxNode;
+export type { JSX } from "./jsx-types.js";
+
+export function Fragment(props: { children?: JSX.Child }): JSX.Element {
+  return props.children as JSX.Element;
+}
 
 export function jsx(
-  type: string | ((props: Record<string, unknown>) => unknown),
+  type: string | Component<any>,
   props: Record<string, unknown> | null,
   key?: string | number,
-): LynxNode {
+): JSX.Element {
   const nextProps = { ...(props ?? {}), ...(key === undefined ? {} : { key }) };
   if (typeof type === "function") {
-    return createComponent(type as (props: Record<string, unknown>) => LynxNode, nextProps);
+    return createComponent(
+      type as unknown as (props: Record<string, unknown>) => LynxNode,
+      nextProps,
+    ) as JSX.Element;
   }
   const element = createElement(type);
   spread(element, nextProps);
@@ -23,13 +32,19 @@ export function jsx(
 
 export const jsxs = jsx;
 
-export namespace JSX {
-  export type Element = LynxNode;
-  export interface IntrinsicAttributes {
-    key?: string | number;
-    ref?: unknown;
-  }
-  export interface IntrinsicElements {
-    [elementName: string]: Record<string, unknown>;
-  }
+export interface JSXSource {
+  fileName: string;
+  lineNumber: number;
+  columnNumber: number;
+}
+
+export function jsxDEV(
+  type: string | Component<any>,
+  props: Record<string, unknown> | null,
+  key?: string | number,
+  _isStaticChildren?: boolean,
+  _source?: JSXSource,
+  _self?: unknown,
+): JSX.Element {
+  return jsx(type, props, key);
 }
