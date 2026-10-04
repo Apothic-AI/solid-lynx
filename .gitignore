@@ -5,3 +5,4 @@ coverage/
 test-results/
 playwright-report/
 /examples/lynx-for-web/site/public/*.bundle
+/examples/lynx-patterns/site/public/*.bundle
