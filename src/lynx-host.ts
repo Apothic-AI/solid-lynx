@@ -5,6 +5,8 @@ type PapiFunction = (...args: any[]) => any;
 
 export interface LynxPapi {
   __CreatePage?: PapiFunction;
+  /** Container for a root nested in an existing page, so roots stay isolated. */
+  __CreateComponent?: PapiFunction;
   __CreateElement: PapiFunction;
   __CreateView?: PapiFunction;
   __CreateScrollView?: PapiFunction;

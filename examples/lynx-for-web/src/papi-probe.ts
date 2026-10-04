@@ -66,6 +66,17 @@ export interface FlushMeasurement {
   total: number;
 }
 
+export interface ListenerBalance {
+  elementId: string | null;
+  uniqueId: number;
+  name: string;
+  bindType: number | undefined;
+  capture: boolean | undefined;
+  closureType: number | undefined;
+  adds: number;
+  removes: number;
+}
+
 export interface ProbeControls {
   /** Applies several property mutations in one synchronous task. */
   burst(): void;
@@ -75,6 +86,14 @@ export interface ProbeControls {
   remount(): void;
   /** Renders into the most recently disposed root instance. */
   remountDisposedRoot(): void;
+  /** Drops the recorded event log so each tap can be asserted in isolation. */
+  clearEventLog(): void;
+  /** Hosts a second, independent root in a component of the same page. */
+  mountSecondaryRoot(): void;
+  /** Disposes the second root and leaves the primary root untouched. */
+  disposeSecondaryRoot(): void;
+  /** Taps the binding registered by the disposed-root remount. */
+  remountTapCount(): number;
 }
 
 export interface PapiProbe {
@@ -90,8 +109,13 @@ export interface PapiProbe {
   measureFlushesWithExplicitFlush(): Promise<FlushMeasurement>;
   remount(): void;
   remountDisposedRoot(): void;
+  clearEventLog(): void;
+  mountSecondaryRoot(): void;
+  disposeSecondaryRoot(): void;
+  remountTapCount(): number;
   listenerCallsFor(id: string): ListenerCall[];
   listenerCallsForUniqueId(uniqueId: number): ListenerCall[];
+  listenerBalances(): ListenerBalance[];
 }
 
 const settled = () => new Promise<void>(resolve => setTimeout(resolve, 0));
@@ -204,6 +228,18 @@ export function installPapiProbe(): PapiProbe {
     remountDisposedRoot() {
       controls.current?.remountDisposedRoot();
     },
+    clearEventLog() {
+      controls.current?.clearEventLog();
+    },
+    mountSecondaryRoot() {
+      controls.current?.mountSecondaryRoot();
+    },
+    disposeSecondaryRoot() {
+      controls.current?.disposeSecondaryRoot();
+    },
+    remountTapCount() {
+      return controls.current?.remountTapCount() ?? 0;
+    },
     listenerCallsFor(id) {
       const element = elementById(id);
       if (!element) return [];
@@ -211,6 +247,40 @@ export function installPapiProbe(): PapiProbe {
     },
     listenerCallsForUniqueId(uniqueId) {
       return listenerCalls.filter(call => call.uniqueId === uniqueId);
+    },
+    /**
+     * Counts registrations and removals per element, event name, and dispatch
+     * slot, so a test can assert that disposal released every listener it filed
+     * and left no unpaired registration behind.
+     */
+    listenerBalances() {
+      const balances = new Map<string, ListenerBalance>();
+      for (const call of listenerCalls) {
+        const key = [
+          call.uniqueId,
+          call.name,
+          call.bindType,
+          call.capture,
+          call.closureType,
+        ].join("|");
+        let balance = balances.get(key);
+        if (!balance) {
+          balance = {
+            elementId: call.elementId,
+            uniqueId: call.uniqueId,
+            name: call.name,
+            bindType: call.bindType,
+            capture: call.capture,
+            closureType: call.closureType,
+            adds: 0,
+            removes: 0,
+          };
+          balances.set(key, balance);
+        }
+        if (call.op === "add") balance.adds += 1;
+        else balance.removes += 1;
+      }
+      return [...balances.values()];
     },
   };
 

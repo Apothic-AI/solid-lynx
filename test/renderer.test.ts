@@ -193,11 +193,59 @@ function createFakePapi() {
     return calls;
   };
 
+  const collect = (node: FakeNode, found: FakeNode[] = []): FakeNode[] => {
+    for (const child of node.children) {
+      found.push(child);
+      collect(child, found);
+    }
+    return found;
+  };
+
+  /**
+   * Dispatches one event the way a Lynx host does: the capture pass walks the
+   * ancestor path from the root down, a `catch` binding stops the walk, the
+   * bubble pass walks it back up, and the global-bind pass runs the page-wide
+   * handlers last. Ordering the callbacks this way is what makes the recorded
+   * `bind_type`, `capture`, and `closure_type` options observable: a binding
+   * filed in the wrong slot lands in the wrong pass.
+   */
+  const dispatch = (target: LynxNode, name: string): void => {
+    const path: FakeNode[] = [];
+    for (let node: FakeNode | undefined = target as FakeNode; node && node !== page; node = node.parent) {
+      path.unshift(node);
+    }
+    const runPass = (
+      nodes: FakeNode[],
+      eventTypes: string[],
+    ): boolean => {
+      for (const node of nodes) {
+        for (const entry of [...node.listeners]) {
+          if (entry.name !== name || !eventTypes.includes(entry.eventType)) continue;
+          entry.listener({ type: name, target: node });
+          if (entry.eventType.includes("catch")) return true;
+        }
+      }
+      return false;
+    };
+
+    if (!runPass(path, ["capture-catch", "capture-bind"])) {
+      runPass([...path].reverse(), ["catchevent", "bindevent"]);
+    }
+    runPass([page, ...collect(page)], ["global-bindevent"]);
+  };
+
+  /** Every listener the host still holds in the tree, in tree order. */
+  const liveRegistrations = (): string[] =>
+    [page, ...collect(page)].flatMap(node =>
+      node.listeners.map(({ name, eventType }) => `${eventType}:${name}`));
+
   return {
     page,
     papi,
     listenerCalls,
     fire,
+    dispatch,
+    liveRegistrations,
     registrations: (node: LynxNode) =>
       (node as FakeNode).listeners.map(({ name, eventType }) => `${eventType}:${name}`),
     get flushes() {
@@ -689,5 +737,193 @@ describe("solid-lynx", () => {
     setCount(2);
     expect(fake.fire(second, "tap")).toBe(1);
     expect(calls).toEqual(["tap 0", "tap 0", "tap 2"]);
+  });
+
+  it("routes dispatch, propagation, and capture passes through the recorded slots", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: fake.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+    const calls: string[] = [];
+
+    root.render(() => {
+      const outer = root.renderer.createElement("view");
+      const parent = root.renderer.createElement("view");
+      const child = root.renderer.createElement("view");
+      root.renderer.setProp(outer, "global-bind:tap", () => calls.push("global"));
+      root.renderer.setProp(parent, "bindtap", () => calls.push("bubble-parent"));
+      root.renderer.setProp(child, "bindtap", () => calls.push("bubble-child"));
+      root.renderer.insert(outer, parent);
+      root.renderer.insert(parent, child);
+      return outer;
+    });
+
+    const parent = fake.page.children[0]!.children[0]!;
+    fake.dispatch(parent.children[0]!, "tap");
+
+    expect(calls).toEqual(["bubble-child", "bubble-parent", "global"]);
+  });
+
+  it("stops propagation for catch bindings and capture-catch handlers", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: fake.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+    const calls: string[] = [];
+
+    root.render(() => {
+      const outer = root.renderer.createElement("view");
+      const parent = root.renderer.createElement("view");
+      const child = root.renderer.createElement("view");
+      root.renderer.setProp(outer, "capture-catch:tap", () => calls.push("capture-catch-parent"));
+      root.renderer.setProp(parent, "bindtap", () => calls.push("bubble-parent"));
+      root.renderer.setProp(child, "catchtap", () => calls.push("catch-child"));
+      root.renderer.insert(outer, parent);
+      root.renderer.insert(parent, child);
+      return outer;
+    });
+
+    const outer = fake.page.children[0]!;
+    const child = outer.children[0]!.children[0]!;
+    fake.dispatch(child, "tap");
+
+    expect(calls).toEqual(["capture-catch-parent"]);
+    calls.length = 0;
+
+    root.renderer.setProp(outer, "capture-catch:tap", undefined);
+    fake.dispatch(child, "tap");
+
+    expect(calls).toEqual(["catch-child"]);
+  });
+
+  it("runs capture bindings before the bubble pass on the same event", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: fake.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+    const calls: string[] = [];
+
+    root.render(() => {
+      const parent = root.renderer.createElement("view");
+      const child = root.renderer.createElement("view");
+      root.renderer.setProp(parent, "capture-bind:tap", () => calls.push("capture-parent"));
+      root.renderer.setProp(parent, "main-thread:bindtap", () => calls.push("namespace-parent"));
+      root.renderer.setProp(child, "bindtap", () => calls.push("bubble-child"));
+      root.renderer.insert(parent, child);
+      return parent;
+    });
+
+    const parent = fake.page.children[0]!;
+    fake.dispatch(parent.children[0]!, "tap");
+
+    expect(calls).toEqual(["capture-parent", "bubble-child", "namespace-parent"]);
+  });
+
+  it("releases every listener a root registered when it is disposed", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: fake.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+
+    root.render(() => {
+      const parent = root.renderer.createElement("view");
+      const child = root.renderer.createElement("view");
+      root.renderer.setProp(parent, "bindtap", () => undefined);
+      root.renderer.setProp(parent, "catchtap", () => undefined);
+      root.renderer.setProp(parent, "capture-bind:tap", () => undefined);
+      root.renderer.setProp(parent, "global-bind:tap", () => undefined);
+      root.renderer.setProp(child, "main-thread:bindtap", () => undefined);
+      root.renderer.setProp(child, "capture-catchtap", () => undefined);
+      root.renderer.insert(parent, child);
+      return parent;
+    });
+
+    expect(fake.liveRegistrations()).toHaveLength(6);
+
+    root.dispose();
+
+    expect(fake.liveRegistrations()).toEqual([]);
+    // Every registration must be released in the slot it was filed in, so the
+    // removals pair with the additions whatever order disposal walks in.
+    const slots = (op: ListenerCall["op"]) =>
+      fake.listenerCalls
+        .filter(call => call.op === op)
+        .map(call =>
+          [call.name, call.eventType, call.bindType, call.capture, call.closureType].join("|"))
+        .sort();
+    expect(slots("remove")).toEqual(slots("add"));
+  });
+
+  it("keeps roots that share a page independent through render and disposal", () => {
+    const fake = createFakePapi();
+    const first = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 11 });
+    const second = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 22 });
+    const [firstCount, setFirstCount] = createSignal(0);
+    const [secondCount, setSecondCount] = createSignal(0);
+    const taps: string[] = [];
+    const renderFirst = () => {
+      const view = first.renderer.createElement("view");
+      first.renderer.setProp(view, "id", "first-root");
+      first.renderer.setProp(view, "bindtap", () => taps.push(`first ${firstCount()}`));
+      first.renderer.insert(view, () => `first ${firstCount()}`);
+      return view;
+    };
+    const renderSecond = () => {
+      const view = second.renderer.createElement("view");
+      second.renderer.setProp(view, "id", "second-root");
+      second.renderer.setProp(view, "bindtap", () => taps.push(`second ${secondCount()}`));
+      second.renderer.insert(view, () => `second ${secondCount()}`);
+      return view;
+    };
+
+    first.render(renderFirst);
+    second.render(renderSecond);
+
+    const firstView = fake.page.children[0]!;
+    const secondView = fake.page.children[1]!;
+    expect(firstView.attributes.id).toBe("first-root");
+    expect(secondView.attributes.id).toBe("second-root");
+
+    setFirstCount(1);
+    expect(firstView.children[0]!.text).toBe("first 1");
+    expect(secondView.children[0]!.text).toBe("second 0");
+
+    fake.dispatch(firstView, "tap");
+    fake.dispatch(secondView, "tap");
+    expect(taps).toEqual(["first 1", "second 0"]);
+
+    first.dispose();
+
+    expect(fake.page.children).toEqual([secondView]);
+    expect(fake.registrations(firstView)).toEqual([]);
+    expect(fake.registrations(secondView)).toEqual(["bindevent:tap"]);
+    setSecondCount(2);
+    expect(secondView.children[0]!.text).toBe("second 2");
+
+    first.render(renderFirst);
+
+    expect(fake.page.children).toHaveLength(2);
+    expect(fake.page.children[0]).toBe(secondView);
+    const remounted = fake.page.children[1]!;
+    expect(remounted).not.toBe(firstView);
+    expect(fake.registrations(remounted)).toEqual(["bindevent:tap"]);
+    fake.dispatch(remounted, "tap");
+    expect(taps).toEqual(["first 1", "second 0", "first 1"]);
+
+    first.dispose();
+    second.dispose();
+    expect(fake.page.children).toEqual([]);
   });
 });

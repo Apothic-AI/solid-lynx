@@ -1,4 +1,4 @@
-import type { LynxNode } from "./host.js";
+import type { LynxHost, LynxNode } from "./host.js";
 import {
   createGlobalLynxHost,
   createLynxPage,
@@ -41,24 +41,47 @@ export function createLynxRoot(options: LynxRootOptions = {}): LynxRoot {
     getParentComponentId: () => parentComponentId,
     transformEventNames: options.transformEventNames,
   });
-  const renderer = createLynxRenderer(host, {
+
+  /**
+   * The nodes this root inserted directly into its page.
+   *
+   * A Lynx page can host several independent roots, so disposal must release
+   * the nodes this root created instead of clearing every child of the page,
+   * which would tear down the trees of the other roots on the same page.
+   */
+  const ownedNodes: LynxNode[] = [];
+  const ownNode = (node: LynxNode) => {
+    if (!ownedNodes.includes(node)) ownedNodes.push(node);
+  };
+  const releaseNode = (node: LynxNode) => {
+    const index = ownedNodes.indexOf(node);
+    if (index >= 0) ownedNodes.splice(index, 1);
+  };
+  const ownedHost: LynxHost<LynxNode> = {
+    ...host,
+    insertNode(parent, node, anchor) {
+      host.insertNode(parent, node, anchor);
+      if (parent === page) ownNode(node);
+    },
+    removeNode(parent, node) {
+      host.removeNode(parent, node);
+      if (parent === page) releaseNode(node);
+    },
+  };
+
+  const renderer = createLynxRenderer(ownedHost, {
     transformEventNames: options.transformEventNames,
   });
 
   let disposeRenderer: (() => void) | undefined;
 
-  const clearPage = () => {
-    let child = host.getFirstChild(page);
-    while (child) {
-      host.removeNode(page, child);
-      child = host.getFirstChild(page);
-    }
-  };
-
   const dispose = () => {
     disposeRenderer?.();
     disposeRenderer = undefined;
-    clearPage();
+    for (const node of [...ownedNodes]) {
+      if (host.getParentNode(node) === page) host.removeNode(page, node);
+    }
+    ownedNodes.length = 0;
     host.flush();
   };
 

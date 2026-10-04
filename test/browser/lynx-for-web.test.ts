@@ -19,6 +19,27 @@ interface FlushMeasurement {
   total: number;
 }
 
+interface ListenerCall {
+  op: "add" | "remove";
+  name: string;
+  bindType: number | undefined;
+  capture: boolean | undefined;
+  closureType: number | undefined;
+  elementId: string | null;
+  uniqueId: number;
+}
+
+interface ListenerBalance {
+  elementId: string | null;
+  uniqueId: number;
+  name: string;
+  bindType: number | undefined;
+  capture: boolean | undefined;
+  closureType: number | undefined;
+  adds: number;
+  removes: number;
+}
+
 /**
  * Calls the PAPI probe that the fixture installs on the main-thread realm of
  * this `<lynx-view>`. Each view runs its own bundle in its own realm, so the
@@ -36,6 +57,34 @@ async function probeCall<T>(view: Locator, method: string, ...args: unknown[]): 
     }
     return await probe[name](...callArgs);
   }, { method, args });
+}
+
+/** The dispatch slot of a registration, without the element identity. */
+function dispatchSlot(call: ListenerCall) {
+  return {
+    op: call.op,
+    name: call.name,
+    bindType: call.bindType,
+    capture: call.capture,
+    closureType: call.closureType,
+  };
+}
+
+async function eventLog(view: Locator): Promise<string[]> {
+  const text = await view.locator("#event-log").textContent();
+  return (text ?? "").replace(/^Events:\s*/, "").split(" | ").filter(Boolean);
+}
+
+/**
+ * Clears the recorded event log, taps one control, and waits for the handlers
+ * that tap reached. Reading the log per tap keeps each dispatch order in its own
+ * assertion instead of accumulating every earlier tap.
+ */
+async function tapAndReadLog(view: Locator, id: string, expected: string[]): Promise<void> {
+  await probeCall<void>(view, "clearEventLog");
+  await expect.poll(() => eventLog(view)).toEqual([]);
+  await view.locator(`#${id}`).click();
+  await expect.poll(() => eventLog(view)).toEqual(expected);
 }
 
 async function loadFixture(page: Page): Promise<{
@@ -141,17 +190,30 @@ async function loadFixture(page: Page): Promise<{
     }
     return (await viewState()).renderedCount === "Counter: 0" ? "ready" : "waiting";
   };
-  try {
-    await expect.poll(renderState, {
-      timeout: 60_000,
-      message: `waiting for rendered Lynx content after ${resolvedBundleUrl} responded`,
-    }).not.toBe("waiting");
-  } catch (error) {
-    const state = await viewState();
-    throw new Error(
-      `Timed out waiting for rendered Lynx content after ${resolvedBundleUrl} responded.\n\n${diagnostics()}\n\nView state:\n${JSON.stringify(state, null, 2)}`,
-      { cause: error },
-    );
+  // The first page load of a run pays for Vite's cold dependency optimization
+  // and the Lynx wasm start-up, and the view can come up with its main-thread
+  // realm still empty. Reload once and wait again before calling that a failure,
+  // so a slow cold start is not reported as a rendering regression.
+  let contentRendered = false;
+  for (let attempt = 1; attempt <= 2 && !contentRendered; attempt += 1) {
+    if (attempt > 1) await page.reload();
+    try {
+      await expect.poll(renderState, {
+        timeout: 30_000,
+        message:
+          `waiting for rendered Lynx content after ${resolvedBundleUrl} responded`
+          + ` (attempt ${attempt} of 2)`,
+      }).not.toBe("waiting");
+      contentRendered = true;
+    } catch (error) {
+      if (attempt === 2) {
+        const state = await viewState();
+        throw new Error(
+          `Timed out waiting for rendered Lynx content after ${resolvedBundleUrl} responded.\n\n${diagnostics()}\n\nView state:\n${JSON.stringify(state, null, 2)}`,
+          { cause: error },
+        );
+      }
+    }
   }
 
   expect(pageErrors, diagnostics()).toEqual([]);
@@ -239,6 +301,157 @@ test.describe("Lynx for Web Solid app", () => {
     await view.locator("#dispose").click();
     await expect(view.locator("#count")).toHaveCount(0);
     await expect(view.locator("#dispose")).toHaveCount(0);
+
+    // Disposal must release every listener the root filed, in the slot it was
+    // filed in, and leave no registration behind in the host.
+    const balances = await probeCall<ListenerBalance[]>(view, "listenerBalances");
+    expect(balances.length).toBeGreaterThan(0);
+    expect(balances.filter(balance => balance.adds !== balance.removes)).toEqual([]);
+    expect(await probeCall(view, "pageChildren")).toEqual([]);
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
+  test("dispatches events through the capture, bubble, catch, and global passes", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+
+    // A plain binding bubbles from the target up to the page.
+    await tapAndReadLog(view, "event-bubble-child", ["bubble-child", "bubble-parent"]);
+    // `catch` stops the bubble pass, so the parent binding never runs.
+    await tapAndReadLog(view, "event-catch-child", ["catch-child"]);
+    // A capture binding runs before the bubble pass, walking down the path.
+    await tapAndReadLog(view, "event-capture-child", ["capture-parent", "capture-child"]);
+    // `capture-catch` stops the event during the capture pass.
+    await tapAndReadLog(view, "event-capture-catch-child", ["capture-catch-parent"]);
+    // A namespaced binding dispatches like its plain form.
+    await tapAndReadLog(view, "event-namespace-child", ["namespace-child", "namespace-parent"]);
+    await tapAndReadLog(view, "event-global-child", ["global-child"]);
+
+    const slots = async (id: string) =>
+      (await probeCall<ListenerCall[]>(view, "listenerCallsFor", id)).map(dispatchSlot);
+
+    expect(await slots("event-bubble-parent")).toEqual([
+      { op: "add", name: "tap", bindType: 1, capture: undefined, closureType: undefined },
+    ]);
+    expect(await slots("event-catch-child")).toEqual([
+      { op: "add", name: "tap", bindType: 4, capture: undefined, closureType: undefined },
+    ]);
+    expect(await slots("event-capture-parent")).toEqual([
+      { op: "add", name: "tap", bindType: 2, capture: true, closureType: undefined },
+    ]);
+    expect(await slots("event-capture-catch-parent")).toEqual([
+      { op: "add", name: "tap", bindType: 3, capture: true, closureType: undefined },
+    ]);
+    expect(await slots("event-namespace-child")).toEqual([
+      { op: "add", name: "tap", bindType: 1, capture: undefined, closureType: 2 },
+    ]);
+    // `@lynx-js/web-core` files a `global-bind` handler in its own dispatch slot
+    // but never runs the global pass for a function callback, so this binding is
+    // verified where the renderer owns it: the registration itself. The fake PAPI
+    // test covers the pass the host would run.
+    expect(await slots("event-global-host")).toEqual([
+      { op: "add", name: "tap", bindType: 5, capture: undefined, closureType: undefined },
+    ]);
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
+  test("replaces and removes bindings and detaches them with their subtree", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+    const slots = async (id: string) =>
+      (await probeCall<ListenerCall[]>(view, "listenerCallsFor", id)).map(dispatchSlot);
+    const bubbleSlot = { op: "add", name: "tap", bindType: 1, capture: undefined, closureType: undefined } as const;
+
+    expect(await slots("event-replace-target")).toEqual([bubbleSlot]);
+
+    // Swapping the handler keeps the one registration and retargets it.
+    await view.locator("#event-cycle-mode").click();
+    await tapAndReadLog(view, "event-replace-target", ["replace-second", "replace-parent"]);
+    expect(await slots("event-replace-target")).toEqual([bubbleSlot]);
+
+    // Dropping the handler releases the registration, so only the parent binding
+    // answers the tap.
+    await view.locator("#event-cycle-mode").click();
+    await tapAndReadLog(view, "event-replace-target", ["replace-parent"]);
+    expect(await slots("event-replace-target")).toEqual([
+      bubbleSlot,
+      { ...bubbleSlot, op: "remove" },
+    ]);
+
+    // Restoring the handler registers the same slot again.
+    await view.locator("#event-cycle-mode").click();
+    await tapAndReadLog(view, "event-replace-target", ["replace-first", "replace-parent"]);
+    expect(await slots("event-replace-target")).toEqual([
+      bubbleSlot,
+      { ...bubbleSlot, op: "remove" },
+      bubbleSlot,
+    ]);
+
+    // A subtree that leaves the tree takes its bindings with it and gets them
+    // back when it returns.
+    const nested = await probeCall<ElementSnapshot>(view, "snapshot", "event-nested");
+    expect(await probeCall<ListenerCall[]>(view, "listenerCallsForUniqueId", nested!.uniqueId)
+      .then(calls => calls.map(dispatchSlot))).toEqual([bubbleSlot]);
+
+    await view.locator("#event-nested-toggle").click();
+    await expect(view.locator("#event-nested")).toHaveCount(0);
+    expect(await probeCall<ListenerCall[]>(view, "listenerCallsForUniqueId", nested!.uniqueId)
+      .then(calls => calls.map(dispatchSlot))).toEqual([bubbleSlot, { ...bubbleSlot, op: "remove" }]);
+
+    await view.locator("#event-nested-toggle").click();
+    const restored = await probeCall<ElementSnapshot>(view, "snapshot", "event-nested");
+    expect(restored?.uniqueId).not.toBe(nested!.uniqueId);
+    expect(await slots("event-nested")).toEqual([bubbleSlot]);
+    await tapAndReadLog(view, "event-nested", ["nested"]);
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
+  test("keeps a second root isolated and remounts a disposed root", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+    const count = view.locator("#count");
+    const secondaryCount = view.locator("#secondary-count");
+
+    await probeCall<void>(view, "mountSecondaryRoot");
+    await expect(secondaryCount).toHaveText("Secondary: 0");
+    expect(await probeCall(view, "pageChildren")).toEqual([
+      { tag: "view", id: "app" },
+      { tag: "view", id: null },
+    ]);
+
+    // Each root updates only its own state.
+    await view.locator("#secondary-increment").click();
+    await expect(secondaryCount).toHaveText("Secondary: 1");
+    await expect(count).toHaveText("Counter: 0");
+    await view.locator("#increment").click();
+    await expect(count).toHaveText("Counter: 1");
+    await expect(secondaryCount).toHaveText("Secondary: 1");
+
+    // Disposing one root releases its own nodes and leaves the other alone.
+    await probeCall<void>(view, "disposeSecondaryRoot");
+    await expect(secondaryCount).toHaveCount(0);
+    await view.locator("#increment").click();
+    await expect(count).toHaveText("Counter: 2");
+
+    await probeCall<void>(view, "mountSecondaryRoot");
+    await expect(secondaryCount).toHaveText("Secondary: 0");
+    await view.locator("#dispose").click();
+    await expect(count).toHaveCount(0);
+    await expect(secondaryCount).toHaveText("Secondary: 0");
+    await view.locator("#secondary-increment").click();
+    await expect(secondaryCount).toHaveText("Secondary: 1");
+
+    // A disposed root can be mounted again, and it registers fresh listeners.
+    await probeCall<void>(view, "remountDisposedRoot");
+    await expect(view.locator("#remounted-root")).toHaveCount(1);
+    await view.locator("#remounted-tap").click();
+    expect(await probeCall<number>(view, "remountTapCount")).toBe(1);
 
     expect(pageErrors).toEqual([]);
     expect(consoleErrors).toEqual([]);

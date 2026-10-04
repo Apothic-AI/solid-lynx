@@ -1,6 +1,6 @@
 import { For, Show, createSignal } from "solid-js";
 import { createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
-import type { LynxNode, LynxRoot } from "solid-lynx";
+import type { LynxNode, LynxPapi, LynxRoot } from "solid-lynx";
 import { installPapiProbe } from "./papi-probe.js";
 
 interface LynxEngine {
@@ -165,10 +165,27 @@ function Properties(props: { step: number; burst: number }) {
 }
 
 /**
+ * A second app hosted by its own root in a component of the same page, so the
+ * browser suite can prove that two roots update and dispose independently.
+ */
+function Secondary() {
+  const [count, setCount] = createSignal(0);
+
+  return (
+    <view id="secondary" style={buttonStyle}>
+      <text id="secondary-count">{`Secondary: ${count()}`}</text>
+      <view id="secondary-increment" role="button" bindtap={() => setCount(value => value + 1)}>
+        <text>Increment secondary</text>
+      </view>
+    </view>
+  );
+}
+
+/**
  * Event dispatch, propagation, and binding lifetime. Handlers append to a log
  * that the browser suite reads back through `#event-log`.
  */
-function Events() {
+function Events(props: { registerClearLog: (clear: () => void) => void }) {
   const [log, setLog] = createSignal<string[]>([]);
   const [mode, setMode] = createSignal<"first" | "second" | "none">("first");
   const [nested, setNested] = createSignal(true);
@@ -178,6 +195,8 @@ function Events() {
   const replaced = () => (mode() === "none" ? undefined : mode() === "first" ? first : second);
   const cycleMode = () => setMode(current => (current === "first" ? "second" : current === "second" ? "none" : "first"));
   const toggleNested = () => setNested(value => !value);
+
+  props.registerClearLog(() => setLog([]));
 
   return (
     <view id="events">
@@ -207,6 +226,9 @@ function Events() {
         </view>
       </view>
 
+      {/* `web-core` files a `global-bind` handler but does not run the global
+          pass for function callbacks, so the browser suite asserts this
+          binding through the PAPI probe instead of the log. */}
       <view id="event-global-host" global-bind:tap={() => record("global-host")}>
         <view id="event-global-child" role="button" bindtap={() => record("global-child")}>
           <text>global child</text>
@@ -249,6 +271,7 @@ function Events() {
 interface AppProps {
   onDispose: () => void;
   registerBurst: (burst: () => void) => void;
+  registerClearLog: (clear: () => void) => void;
 }
 
 function App(props: AppProps) {
@@ -276,7 +299,7 @@ function App(props: AppProps) {
           <text>Burst properties</text>
         </view>
       </view>
-      <Events />
+      <Events registerClearLog={props.registerClearLog} />
     </view>
   );
 }
@@ -284,9 +307,47 @@ function App(props: AppProps) {
 ensureLynxEnvironmentBasics();
 
 const engine = lynx.getEngine();
+const papi = globalThis as unknown as LynxPapi;
 let root: LynxRoot | undefined;
 let disposedRoot: LynxRoot | undefined;
+let secondaryRoot: LynxRoot | undefined;
 let burstProperties: (() => void) | undefined;
+let clearEventLog: (() => void) | undefined;
+let remountTaps = 0;
+
+/**
+ * Hosts a second root in its own component of the same page.
+ *
+ * `__CreatePage` returns the one page a runtime owns, so a second root needs
+ * its own container element. `__CreateComponent` is the PAPI that creates one
+ * with a unique id, which is what the second root renders into.
+ */
+function mountSecondaryRoot(): void {
+  if (secondaryRoot || !root) return;
+
+  const createComponent = papi.__CreateComponent;
+  const getUniqueId = papi.__GetElementUniqueID;
+  if (typeof createComponent !== "function" || typeof getUniqueId !== "function") {
+    throw new Error("the web PAPI needs __CreateComponent() to host a second root");
+  }
+  const page = root.page;
+  const container = createComponent(
+    getUniqueId(page),
+    "secondary",
+    0,
+    "__Card__",
+    "secondary-root",
+  ) as LynxNode;
+  papi.__AppendElement(page, container);
+
+  secondaryRoot = createLynxRoot({ page: container });
+  secondaryRoot.render(() => <Secondary />);
+}
+
+function disposeSecondaryRoot(): void {
+  secondaryRoot?.dispose();
+  secondaryRoot = undefined;
+}
 
 function renderPage(): void {
   if (root) return;
@@ -302,6 +363,9 @@ function renderPage(): void {
       registerBurst={burst => {
         burstProperties = burst;
       }}
+      registerClearLog={clear => {
+        clearEventLog = clear;
+      }}
     />
   ));
   probe.registerControls({
@@ -311,10 +375,16 @@ function renderPage(): void {
     remountDisposedRoot: () => {
       disposedRoot?.render(() => (
         <view id="remounted-root">
-          <text>remounted</text>
+          <view id="remounted-tap" role="button" bindtap={() => { remountTaps += 1; }}>
+            <text>remounted</text>
+          </view>
         </view>
       ));
     },
+    clearEventLog: () => clearEventLog?.(),
+    mountSecondaryRoot,
+    disposeSecondaryRoot,
+    remountTapCount: () => remountTaps,
   });
 }
 
@@ -326,6 +396,7 @@ function disposePage(): void {
 }
 
 function destroyLifetime(): void {
+  disposeSecondaryRoot();
   disposePage();
   engine.removeEventListener("__RenderPage", renderPage);
   engine.removeEventListener("__DestroyLifetime", destroyLifetime);

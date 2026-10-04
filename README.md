@@ -189,8 +189,10 @@ Creates an isolated Solid root backed by a Lynx page. The returned object contai
 - `page`: the page element used as the render parent.
 - `renderer`: the underlying Solid universal renderer.
 - `render(code)`: mounts the Solid tree and returns a disposer.
-- `dispose()`: disposes Solid owners and removes the rendered native tree.
+- `dispose()`: disposes Solid owners, releases the listeners the root filed, and removes the nodes the root rendered.
 - `flush()`: explicitly calls `__FlushElementTree`.
+
+Several roots can share one page, each with its own container element passed as `page` and its own parent component id. Disposing a root releases only the nodes that root rendered, so the other roots keep rendering and dispatching. A disposed root can be rendered into again: `render` is refused only while a previous tree is still mounted, and the new tree registers fresh listeners.
 
 ### `createLynxRenderer(host, options?)`
 
@@ -248,6 +250,8 @@ The adapter also accepts familiar event forms:
 | `onCatchTap` | `catchEvent`, `tap` |
 
 Each binding form is filed in its own host dispatch slot, keyed by binding type, event name, and namespace, and is registered and removed with the same `__AddEventListener` options. Listeners exist only while their node is part of the rendered tree: inserting a node registers its bindings, removing a node detaches the bindings of its whole subtree, and re-inserting it registers them again. Disposing a root therefore releases every listener it created.
+
+`@lynx-js/web-core` files a `global-bind` handler in the `global-bindEvent` slot but does not run the global pass for function callbacks, so a `global-bind:tap` prop is registered and removed correctly yet is not invoked by that host. Native hosts and the fake PAPI tests cover that pass.
 
 The following properties have dedicated handling:
 

@@ -11,13 +11,18 @@ Establish a browser-based Lynx runtime path so renderer development does not dep
 - [x] Verify initial Solid rendering, both event props, reactive class/style updates, dataset reads, and disposal in the full automated browser suite.
 - [x] Exercise page creation, mounting, text updates, insertion, removal, and reordering in the browser runtime.
 - [x] Verify attribute, style, dataset, boolean-property, and flush behavior against the web PAPI implementation.
-- [ ] Test event dispatch, propagation, capture, global bindings, namespaced handlers, replacement, and removal in a browser.
+- [x] Test event dispatch, propagation, capture, global bindings, namespaced handlers, replacement, and removal in a browser.
 - [x] Add Playwright coverage for bundle loading, Solid rendering, reactive properties, event handlers, and disposal.
-- [ ] Make root disposal detach event listeners and release all rendered nodes deterministically.
-- [ ] Test multiple isolated roots and document whether disposed roots can be mounted again.
+- [x] Make root disposal detach event listeners and release all rendered nodes deterministically.
+- [x] Test multiple isolated roots and document whether disposed roots can be mounted again.
 - [x] Keep the in-memory fake PAPI tests as fast unit-level regression coverage.
 
 **Milestone complete when:** a browser can run a Solid Lynx bundle through `@lynx-js/web-core` and `<lynx-view>`, with core rendering, event, flush, and disposal behavior covered by automated tests.
+
+Verified notes for this milestone:
+
+- Disposal releases the listeners a root filed in the same slots it registered them and removes the nodes that root rendered. Roots sharing a page dispose independently, and a disposed root can be rendered into again.
+- `global-bind:tap` is registered in its own dispatch slot and verified there, but `@lynx-js/web-core` does not run the global pass for function callbacks, so that pass stays covered by the fake PAPI tests until a host delivers it.
 
 ## 0.3: Native parity, tooling, and types
 
