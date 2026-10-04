@@ -1,5 +1,43 @@
 import { expect, test, type Locator, type Page, type Response } from "@playwright/test";
 
+interface ElementSnapshot {
+  tag: string;
+  id: string | null;
+  uniqueId: number;
+  attributes: Record<string, string>;
+  attributeNames: string[];
+  inlineStyle: string | null;
+  dataset: Record<string, unknown>;
+  classes: string[];
+  childCount: number;
+  children: { tag: string; id: string | null }[];
+  parentId: string | null;
+}
+
+interface FlushMeasurement {
+  during: number;
+  total: number;
+}
+
+/**
+ * Calls the PAPI probe that the fixture installs on the main-thread realm of
+ * this `<lynx-view>`. Each view runs its own bundle in its own realm, so the
+ * trace belongs to that view alone.
+ */
+async function probeCall<T>(view: Locator, method: string, ...args: unknown[]): Promise<T> {
+  return view.evaluate(async (element, { method: name, args: callArgs }) => {
+    const shadow = (element as HTMLElement).shadowRoot;
+    const frame = shadow?.querySelector("iframe") as
+      | (HTMLIFrameElement & { contentWindow: Record<string, any> })
+      | null;
+    const probe = frame?.contentWindow?.__SOLID_LYNX_PROBE__;
+    if (!probe) {
+      throw new Error("the main-thread PAPI probe is not available in this lynx-view");
+    }
+    return await probe[name](...callArgs);
+  }, { method, args });
+}
+
 async function loadFixture(page: Page): Promise<{
   bundleResponse: Response;
   consoleErrors: string[];
@@ -15,6 +53,13 @@ async function loadFixture(page: Page): Promise<{
   page.on("pageerror", error => pageErrors.push(error.message));
   page.on("console", message => {
     if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("worker", worker => {
+    worker.on("console", message => {
+      if (message.type() === "error") {
+        consoleErrors.push(`Worker ${worker.url()}: ${message.text()}`);
+      }
+    });
   });
   page.on("requestfailed", request => {
     failedRequests.push(
@@ -73,13 +118,45 @@ async function loadFixture(page: Page): Promise<{
     .toBeDefined();
   expect(bundleResponse!.ok(), `bundle request failed: ${resolvedBundleUrl}\n\n${diagnostics()}`)
     .toBe(true);
+  expect(await bundleResponse!.finished(), `bundle transfer failed: ${resolvedBundleUrl}\n\n${diagnostics()}`)
+    .toBeNull();
+
+  const viewState = () => view.evaluate(element => {
+    const shadowRoot = element.shadowRoot;
+    const iframe = shadowRoot?.querySelector("iframe");
+    const frameWindow = iframe?.contentWindow as
+      | (Window & { __SOLID_LYNX_PROBE__?: unknown })
+      | null
+      | undefined;
+    return {
+      renderedCount: shadowRoot?.querySelector("#count")?.textContent ?? null,
+      shadowChildren: Array.from(shadowRoot?.children ?? []).map(child => child.tagName.toLowerCase()),
+      iframeCount: shadowRoot?.querySelectorAll("iframe").length ?? 0,
+      probeInstalled: Boolean(frameWindow?.__SOLID_LYNX_PROBE__),
+    };
+  });
+  const renderState = async () => {
+    if (pageErrors.length > 0 || consoleErrors.length > 0 || failedRequests.length > 0) {
+      return "error";
+    }
+    return (await viewState()).renderedCount === "Counter: 0" ? "ready" : "waiting";
+  };
+  try {
+    await expect.poll(renderState, {
+      timeout: 60_000,
+      message: `waiting for rendered Lynx content after ${resolvedBundleUrl} responded`,
+    }).not.toBe("waiting");
+  } catch (error) {
+    const state = await viewState();
+    throw new Error(
+      `Timed out waiting for rendered Lynx content after ${resolvedBundleUrl} responded.\n\n${diagnostics()}\n\nView state:\n${JSON.stringify(state, null, 2)}`,
+      { cause: error },
+    );
+  }
+
   expect(pageErrors, diagnostics()).toEqual([]);
   expect(consoleErrors, diagnostics()).toEqual([]);
   expect(failedRequests, diagnostics()).toEqual([]);
-
-  const count = view.locator("#count");
-  await expect(count).toHaveText("Counter: 0");
-  await expect(view.locator("#status")).toBeAttached();
 
   const contentIsInsideView = await view.evaluate(element => {
     const shadowRoot = element.shadowRoot;
@@ -162,6 +239,87 @@ test.describe("Lynx for Web Solid app", () => {
     await view.locator("#dispose").click();
     await expect(view.locator("#count")).toHaveCount(0);
     await expect(view.locator("#dispose")).toHaveCount(0);
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
+  test("maps attributes, styles, datasets, and boolean properties through the web PAPI", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+    const target = view.locator("#properties-target");
+
+    const initial = await probeCall<ElementSnapshot>(view, "snapshot", "properties-target");
+    expect(initial?.tag).toBe("view");
+    expect(initial?.parentId).toBe("properties");
+    expect(initial?.attributes.role).toBe("note");
+    expect(initial?.attributes["aria-label"]).toBe("Property target 0-0");
+    expect(initial?.attributes.disabled).toBe("disabled");
+    expect(initial?.attributes.checked).toBe("checked");
+    expect(initial?.dataset).toMatchObject({ kind: "initial", burst: "0" });
+    expect(initial?.classes).toEqual(["target"]);
+    expect(await probeCall<string>(view, "computedStyle", "properties-target", "background-color"))
+      .toBe("rgb(15, 23, 42)");
+    await expect(target).toHaveAttribute("role", "note");
+    await expect(target).toHaveCSS("padding", "4px");
+
+    await view.locator("#properties-advance").click();
+    await expect(view.locator("#properties-step")).toHaveText("Properties step 1 burst 0");
+
+    const stringStyled = await probeCall<ElementSnapshot>(view, "snapshot", "properties-target");
+    expect(stringStyled?.attributes["aria-label"]).toBe("Property target 1-0");
+    expect(stringStyled?.attributes).not.toHaveProperty("disabled");
+    expect(stringStyled?.attributes.checked).toBe("checked");
+    expect(stringStyled?.dataset).toMatchObject({ kind: "updated" });
+    expect(await probeCall<string>(view, "computedStyle", "properties-target", "background-color"))
+      .toBe("rgb(29, 78, 216)");
+    expect(await probeCall<string>(view, "computedStyle", "properties-target", "padding"))
+      .toBe("0px");
+    await expect(target).toHaveCSS("background-color", "rgb(29, 78, 216)");
+
+    await view.locator("#properties-advance").click();
+    await expect(view.locator("#properties-step")).toHaveText("Properties step 2 burst 0");
+
+    const restored = await probeCall<ElementSnapshot>(view, "snapshot", "properties-target");
+    expect(restored?.attributes.role).toBe("note");
+    expect(restored?.attributeNames).not.toContain("aria-label");
+    expect(restored?.attributes.disabled).toBe("disabled");
+    expect(restored?.attributeNames).toContain("disabled");
+    expect(restored?.attributeNames).not.toContain("checked");
+    expect(restored?.attributeNames).not.toContain("data-kind");
+    expect(restored?.dataset).toEqual({ burst: "0" });
+    expect(await probeCall<string>(view, "computedStyle", "properties-target", "background-color"))
+      .toBe("rgb(15, 23, 42)");
+    await expect(target).toHaveAttribute("disabled", "disabled");
+    await expect(target).not.toHaveAttribute("aria-label", /.*/);
+
+    expect(pageErrors).toEqual([]);
+    expect(consoleErrors).toEqual([]);
+    expect(failedRequests).toEqual([]);
+  });
+
+  test("coalesces flushes per task and honors an explicit flush", async ({ page }) => {
+    const { consoleErrors, failedRequests, pageErrors, view } = await loadFixture(page);
+
+    expect(await probeCall<number>(view, "flushCount")).toBeGreaterThan(0);
+
+    await probeCall<void>(view, "reset");
+    await view.locator("#properties-burst").click();
+    await expect(view.locator("#properties-step")).toHaveText("Properties step 0 burst 3");
+    expect(await probeCall<number>(view, "flushCount")).toBe(1);
+
+    const burst = await probeCall<ElementSnapshot>(view, "snapshot", "properties-target");
+    expect(burst?.dataset).toMatchObject({ burst: "3" });
+    expect(burst?.classes).toEqual(["target", "target-3"]);
+    expect(await probeCall<string>(view, "computedStyle", "properties-target", "padding")).toBe("10px");
+
+    const coalesced = await probeCall<FlushMeasurement>(view, "measureFlushes");
+    expect(coalesced.during).toBe(0);
+    expect(coalesced.total).toBe(1);
+
+    const explicit = await probeCall<FlushMeasurement>(view, "measureFlushesWithExplicitFlush");
+    expect(explicit.during).toBe(1);
+    expect(explicit.total).toBe(1);
 
     expect(pageErrors).toEqual([]);
     expect(consoleErrors).toEqual([]);

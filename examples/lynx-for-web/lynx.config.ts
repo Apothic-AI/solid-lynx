@@ -18,6 +18,17 @@ export default defineConfig({
       bundle: "[name].[platform].bundle",
     },
   },
+  tools: {
+    rspack: {
+      // The package and this example are authored for NodeNext resolution, so
+      // relative imports carry the `.js` extension TypeScript requires.
+      resolve: {
+        extensionAlias: {
+          ".js": [".ts", ".tsx", ".js"],
+        },
+      },
+    },
+  },
   plugins: [
     pluginLynx(),
     pluginVanillaLynx({

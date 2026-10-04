@@ -10,10 +10,10 @@
         margin: 2rem;
       }
 
+      /* `width="auto"` and `height="auto"` below hand the view's size to the
+         rendered Lynx tree, so the fixture shows every section of the app and
+         Playwright can click each control inside the view. */
       lynx-view {
-        display: block;
-        width: min(100%, 32rem);
-        height: 20rem;
         border: 1px solid #aaa;
       }
     </style>
@@ -22,6 +22,12 @@
   <body>
     <h1>solid-lynx Lynx-for-Web fixture</h1>
     <p>This counter is compiled as a Solid Lynx Element PAPI bundle.</p>
-    <lynx-view id="fixture" url="/main.web.bundle"></lynx-view>
+    <lynx-view
+      id="fixture"
+      url="/main.web.bundle"
+      width="auto"
+      height="auto"
+      style="width: min(100%, 40rem)"
+    ></lynx-view>
   </body>
 </html>
