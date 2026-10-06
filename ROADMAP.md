@@ -28,8 +28,8 @@ Verified notes for this milestone:
 
 Validate native-specific behavior after the web path is working, while making Solid-on-Lynx projects straightforward to configure and author.
 
-- [ ] Run a native Lynx smoke test in Lynx Explorer or on an Android/iOS device.
-- [ ] Compare native and web behavior for shared Element PAPI operations.
+- [x] Run a native Lynx smoke test in Lynx Explorer or on an Android/iOS device.
+- [x] Compare native and web behavior for shared Element PAPI operations.
 - [ ] Verify native-only behavior such as dual-thread execution, worklets, and first-screen synchronization.
 - [x] Provide a reproducible Rspeedy integration, preferably as a small plugin or maintained configuration package.
 - [x] Document native and Lynx-for-Web build configurations and development workflows.
@@ -40,6 +40,22 @@ Validate native-specific behavior after the web path is working, while making So
 
 **Milestone complete when:** a fresh example app can be built from documented instructions and common Lynx JSX usage receives useful TypeScript checking.
 
+Verified notes for this milestone:
+
+- Native smoke: the card loads through `lynx://open?url=http://127.0.0.1:8099/main.lynx.bundle`
+  in Lynx Explorer 4.1.0 (`com.lynx.explorer`) on an SM-A037U, renders an
+  `Increment` control and `Native parity count: 0`, and tapping increments the
+  count through `bindtap` with no renderer error.
+- Native parity: all twenty shared Element PAPI operations pass on the device,
+  matching the web host and the fake PAPI; see `docs/parity-checklist.md`.
+- Two defects were found and fixed by the device run: the native host returns
+  element handles whose `typeof` is `"unknown"` (the host no longer validates
+  creators with a DOM `typeof` check), and `__GetPageElement()` returns `null`
+  until `__CreatePage()` has been called (the example now creates the page).
+- Explorer still shows a `processData is not a function` banner because the
+  documented main-thread-only build emits an empty `/app-service.js`; it does not
+  affect load, render, or tap. Dual-thread cards remain unverified.
+
 ## 0.4: Lynx platform capabilities
 
 Add platform features through explicit, testable adapters while keeping the core host contract small.
@@ -47,8 +63,11 @@ Add platform features through explicit, testable adapters while keeping the core
 - [ ] Integrate stylesheet loading, CSS ids, and stylesheet lifecycle where the Lynx PAPI requires it.
   - CSS ids are done: `root.setCSSId()` drives `__SetCSSId` over a root's own page
     children and is covered by fake-PAPI and browser tests.
-  - Stylesheet loading and lifecycle stay open because no host PAPI adds, replaces,
-    or removes a stylesheet. Documented as unsupported rather than approximated.
+  - Stylesheet loading and lifecycle stay open. web-core exposes no PAPI that adds,
+    replaces, or removes a stylesheet, so it is documented as unsupported rather
+    than approximated. The A03 device run did observe native
+    `__LoadStyleSheet`/`__AdoptStyleSheet`/`__ReplaceStyleSheets` globals; their
+    semantics are unmeasured, so integrating them is still open.
 - [x] Add refs and imperative element access with deterministic cleanup.
 - [x] Evaluate native list virtualization and expose list callbacks if the Solid model can support them cleanly.
 - [x] Evaluate gesture, animation, and portal/overlay APIs as separate capabilities.

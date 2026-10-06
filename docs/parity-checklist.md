@@ -2,15 +2,15 @@
 
 The renderer only speaks the Element PAPI, so parity between hosts is a
 statement about PAPI behaviour rather than about Solid features. This checklist
-records, per operation, what the web host does today and what a native host has
-to be measured against.
+records, per operation, what the web host and a measured native host do.
 
 `runElementPapiParity()` from `solid-lynx/parity` produces the rows below. The web
 column is filled automatically by the "reports shared Element PAPI parity for the
 web host" test in `test/browser/lynx-for-web.test.ts`, which runs the harness
-inside a live `<lynx-view>`. The native column is filled by hand from the report
-`examples/lynx-for-native` prints, which needs Lynx Explorer or a device. See
-[building.md](building.md) for how to run it.
+inside a live `<lynx-view>`. The native column comes from the hand run on Lynx
+Explorer 4.1.0 (`com.lynx.explorer`) on an SM-A037U; see
+[building.md](building.md) for how to reproduce it. Both hosts pass all twenty
+shared operations.
 
 Status values: `pass` matches the expected result, `fail` does not and carries an
 `observed` value, `unsupported` means the host does not implement the PAPI at
@@ -20,43 +20,50 @@ all.
 
 | Operation | Element PAPI | Expected | Web (`@lynx-js/web-core`) | Native (device) |
 | --- | --- | --- | --- | --- |
-| `page` | __CreatePage | page | pass | not measured |
-| `sandbox` | __CreateView, __AppendElement | attached | pass | not measured |
-| `element-unique-id` | __GetElementUniqueID | unique id >= 0 | pass | not measured |
-| `create-element` | __CreateView, __CreateElement | view | pass | not measured |
-| `create-raw-text` | __CreateRawText, __GetAttributeByName | parity | pass | not measured |
-| `append` | __CreateElement, __AppendElement, __GetChildren | 2 children | pass | not measured |
-| `insert-before` | __CreateElement, __InsertElementBefore, __GetChildren | inserted | pass | not measured |
-| `remove` | __RemoveElement, __GetChildren | removed | pass | not measured |
-| `traverse` | __FirstElement, __NextElement, __GetParent | first, next, parent | pass | not measured |
-| `set-attribute` | __SetAttribute, __GetAttributeByName | attribute | pass | not measured |
-| `attribute-names` | __SetAttribute, __GetAttributeNames | listed | pass | not measured |
-| `classes` | __SetClasses, __GetClasses | alpha,beta | pass | not measured |
-| `inline-styles` | __SetInlineStyles | style set | pass | not measured |
-| `dataset` | __GetDataset | dataset | pass | not measured |
-| `id` | __SetID, __GetID | parity-id | pass | not measured |
-| `event-listener` | - | listener API present | pass | not measured |
-| `flush` | __FlushElementTree | flushed | pass | not measured |
-| `renderer-mount` | __CreateView, __CreateRawText | mounted | pass | not measured |
-| `renderer-text-update` | __SetAttribute, __GetAttributeByName | updated | pass | not measured |
-| `renderer-dispose` | __RemoveElement, __GetChildren | released | pass | not measured |
+| `page` | __CreatePage | page | pass | pass |
+| `sandbox` | __CreateView, __AppendElement | attached | pass | pass |
+| `element-unique-id` | __GetElementUniqueID | unique id >= 0 | pass | pass |
+| `create-element` | __CreateView, __CreateElement | view | pass | pass |
+| `create-raw-text` | __CreateRawText, __GetAttributeByName | parity | pass | pass |
+| `append` | __CreateElement, __AppendElement, __GetChildren | 2 children | pass | pass |
+| `insert-before` | __CreateElement, __InsertElementBefore, __GetChildren | inserted | pass | pass |
+| `remove` | __RemoveElement, __GetChildren | removed | pass | pass |
+| `traverse` | __FirstElement, __NextElement, __GetParent | first, next, parent | pass | pass |
+| `set-attribute` | __SetAttribute, __GetAttributeByName | attribute | pass | pass |
+| `attribute-names` | __SetAttribute, __GetAttributeNames | listed | pass | pass |
+| `classes` | __SetClasses, __GetClasses | alpha,beta | pass | pass |
+| `inline-styles` | __SetInlineStyles | style set | pass | pass |
+| `dataset` | __GetDataset | dataset | pass | pass |
+| `id` | __SetID, __GetID | parity-id | pass | pass |
+| `event-listener` | - | listener API present | pass | pass |
+| `flush` | __FlushElementTree | flushed | pass | pass |
+| `renderer-mount` | __CreateView, __CreateRawText | mounted | pass | pass |
+| `renderer-text-update` | __SetAttribute, __GetAttributeByName | updated | pass | pass |
+| `renderer-dispose` | __RemoveElement, __GetChildren | released | pass | pass |
 
 The fake PAPI in `test/parity.test.ts` passes all twenty operations too, which
 is what makes a native `fail` attributable to the host rather than to the
 renderer.
 
-Notes to record during a native run:
+Notes recorded during the native run:
 
-- `page`: a native host may not expose `__CreatePage`. The harness then needs the
-  card's root element passed as `page`; `examples/lynx-for-native` documents how
-  it resolves one.
-- `inline-styles`: the harness only checks that a style can be written and read
-  back. Style *computation* on a device, including `__GetComputedStyleByKey`, is
-  a separate question this row does not answer.
+- `page`: the native host **does** expose `__CreatePage`, and `__GetPageElement()`
+  returns `null` until it has been called. `examples/lynx-for-native` therefore
+  creates the page with `__CreatePage("0", 0)` and passes the same element to
+  the harness and to `createLynxRoot`; see [building.md](building.md).
+- Element handles: native PrimJS reports them with `typeof` `"unknown"` rather
+  than `"object"`. The host validates creators with `isLynxNode()` instead of a
+  DOM `typeof` check, or every element a device creates is rejected.
+- `inline-styles`: native keeps the style out of the `style` attribute and
+  exposes it through `__GetInlineStyles`, so the harness reads it back that way.
+  Style *computation* on a device, including `__GetComputedStyleByKey`, is a
+  separate question this row does not answer.
 - `dataset`: hosts spell dataset writes `__AddDataset` or `__SetDataset`; both are
-  accepted, and the row records which one the host has.
-- `event-listener`: presence only. Whether a handler is delivered at all is the
-  runtime table below.
+  accepted, and the row records which one the host has. Native exposes both and
+  the harness uses `__AddDataset`.
+- `event-listener`: presence only. Native exposes `__AddEventListener` and
+  `__RemoveEventListener` (and `__AddEvent`); whether a handler is delivered at
+  all is the runtime table below.
 
 ## Runtime behaviour
 
@@ -65,9 +72,9 @@ PAPI probes.
 
 | Behaviour | Web (`@lynx-js/web-core`) | Native (device) | How to check |
 | --- | --- | --- | --- |
-| Initial render and text mount | verified | not measured | Open the card; `#parity-count` must read `Native parity count: 0`. |
-| Reactive text update | verified | not measured | Tap `#parity-increment`; the count must increase. |
-| Tap dispatch through `bindtap` | verified | not measured | Tap `#parity-increment`; no error may be logged. |
+| Initial render and text mount | verified | verified | Open the card; `#parity-count` reads `Native parity count: 0`. |
+| Reactive text update | verified | verified | Tap `#parity-increment`; the count increases to 1. |
+| Tap dispatch through `bindtap` | verified | verified | Tap `#parity-increment`; the count increases and no renderer error is logged. |
 | Event propagation, capture, and catch | verified | not measured | Extend the card with the event cases from `examples/lynx-for-web`. |
 | `global-bind` delivery | known host gap | not measured | Register `global-bind:tap` and tap elsewhere; web-core never invokes it. |
 | Namespaced `main-thread:` bindings | verified | not measured | Bind `main-thread:bindtap` and confirm the handler runs. |
@@ -81,16 +88,25 @@ PAPI probes.
 | First-screen synchronization | verified for web | not measured | Whether the first screen renders from the first flush on a device. |
 | Stylesheet loading and CSS ids | CSS ids verified; stylesheet loading has no PAPI | not measured | `root.setCSSId()` and watch `__SetCSSId` calls. Loading a stylesheet at runtime cannot be checked because no host exposes it. |
 
-## How to fill the native column
+The native device run also shows a `processData is not a function` banner from
+Explorer's LogBox: with `background: false` the bundle's `/app-service.js` is
+intentionally empty, and the shell still invokes `processData` on it. It does not
+affect loading, rendering, or tap dispatch.
+
+## How to re-measure the native column
+
+The column above is filled from a hand run; repeat it after a native-affecting
+change:
 
 1. Build the card: `pnpm native:build`.
 2. Load `examples/lynx-for-native/dist/main.lynx.bundle` in Lynx Explorer or on a
    device, as described in [building.md](building.md).
-3. Copy the `[solid-lynx parity]` report from the console.
+3. Copy the `[solid-lynx parity]` report from the console or from
+   `adb logcat` (it is logged on one line).
 4. For each operation, write the `status` and, when it is not `pass`, the
    `observed` value and the harness `note`.
-5. Replace every `not measured` above with the result, and turn a `fail` into a
-   defect report rather than a note.
+5. Replace any result that changed, and turn a `fail` into a defect report
+   rather than a note.
 
 An `unsupported` operation is only a difference to record if the renderer needs
 it. Everything in the first table is something `src/lynx-host.ts` calls, so an

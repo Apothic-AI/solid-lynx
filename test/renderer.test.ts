@@ -15,7 +15,7 @@ import {
   use,
 } from "../src/index.js";
 import type { LynxNode } from "../src/host.js";
-import type { LynxPapi } from "../src/lynx-host.js";
+import { isLynxNode, type LynxPapi } from "../src/lynx-host.js";
 import type { LynxRefObject } from "../src/refs.js";
 
 interface FakeListener {
@@ -313,6 +313,41 @@ describe("solid-lynx", () => {
     dispose();
     setCount(4);
     expect(text.text).toBe("Count: 3");
+  });
+
+  it("accepts native element handles whose typeof is not object", () => {
+    // A native PrimJS host returns opaque element handles with `typeof
+    // "unknown"`, so the host must not validate a created element with a
+    // `typeof element === "object"` check. A function is the closest
+    // standard-JS stand-in for a non-`object` handle.
+    const fake = createFakePapi();
+    const handle = () => "view";
+    const host = createGlobalLynxHost({
+      papi: { ...fake.papi, __CreateView: () => handle },
+      getParentComponentId: () => 1,
+    });
+
+    expect(host.createElement("view")).toBe(handle);
+  });
+
+  it("reports a creator that returned nothing as a failed creation", () => {
+    const fake = createFakePapi();
+    const host = createGlobalLynxHost({
+      papi: { ...fake.papi, __CreateView: () => null },
+      getParentComponentId: () => 1,
+    });
+
+    expect(() => host.createElement("view")).toThrow(/failed to create <view>/);
+  });
+
+  it("classifies element handles without assuming a DOM object", () => {
+    expect(isLynxNode({})).toBe(true);
+    expect(isLynxNode(() => undefined)).toBe(true);
+    expect(isLynxNode(null)).toBe(false);
+    expect(isLynxNode(undefined)).toBe(false);
+    expect(isLynxNode("view")).toBe(false);
+    expect(isLynxNode(1)).toBe(false);
+    expect(isLynxNode(false)).toBe(false);
   });
 
   it("maps properties and invokes normalized tap handlers", () => {

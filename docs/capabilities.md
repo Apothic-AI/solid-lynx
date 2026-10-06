@@ -13,11 +13,15 @@ Statuses used here:
 | `supported` | The renderer has a working path and it is covered by an automated test. |
 | `host-only` | The host provides the capability, but the renderer has no path to it. It works only if the app drives the PAPI itself. |
 | `unsupported` | Neither host nor renderer provides it. Using it fails or silently does nothing, as described. |
-| not measured | Requires Lynx Explorer or a device. Nothing in this repository has run it. |
+| not measured | Not yet run against that host in this repository. |
 
-Nothing native has been validated. `@lynx-js/types` is not a dependency of this
-repository, so native PAPI names and semantics are unverified here and are marked
-as such rather than assumed.
+The shared Element PAPI parity card **has** run on a device: all twenty shared
+operations pass on Lynx Explorer 4.1.0 on an SM-A037U (see
+[parity-checklist.md](parity-checklist.md) and [building.md](building.md)). The
+capability probe below has only been run in a browser, so the Native column of
+the summary table stays `not measured`. `@lynx-js/types` is not a dependency of
+this repository, so native JSX typings remain unverified and are marked as such
+rather than assumed.
 
 ## How these answers are produced
 
@@ -50,7 +54,7 @@ pnpm exec playwright test --config test/browser/patterns.playwright.config.ts
 | Asynchronous content | supported, tested | not measured | Promise plus signal. No `createResource`, no streaming. |
 | Refs and imperative access | supported, tested | not measured | A ref receives the live Lynx node and is released with its Solid scope. |
 | CSS ids | supported, tested | not measured | `root.setCSSId()` assigns a compiled CSS id to a root's own page children. |
-| Stylesheet loading and lifecycle | unsupported, by inspection | not measured | No Element PAPI adds, replaces, or removes a stylesheet, so there is nothing to call. |
+| Stylesheet loading and lifecycle | unsupported, by inspection | not measured | web-core has no PAPI for it; native exposes `__LoadStyleSheet` and friends (observed, not measured), so there is nothing implemented to call. |
 
 ## Findings
 
@@ -232,7 +236,8 @@ renderer feature.
 
 ### Stylesheet loading and lifecycle
 
-There is no Element PAPI for this. The complete web-core surface is
+There is no stylesheet-loading Element PAPI on the web host. The complete
+web-core surface is
 `__AddClass`, `__AddInlineStyle`, `__SetClasses`, `__SetCSSId`, and
 `__SetInlineStyles`; nothing adds, replaces, or removes a stylesheet, and no
 stylesheet-named identifier appears anywhere in `web-core`. A stylesheet is
@@ -243,25 +248,31 @@ Supporting it would mean inventing an API the host does not have, so it is
 recorded as unsupported rather than approximated. An app that needs a
 runtime-loaded stylesheet has to drive its own host.
 
-Native is unverified here in both directions: `@lynx-js/types` is not a
-dependency, so this document does not claim what a native host does with these
-same names, nor that native lacks a stylesheet operation.
+Native is not measured for semantics, but the device run did record the global
+PAPI inventory: a native host **does** expose `__LoadStyleSheet`,
+`__AdoptStyleSheet`, and `__ReplaceStyleSheets`, names web-core does not have.
+What they accept and do is untested here, so this document does not claim they
+work; `@lynx-js/types` is still not a dependency, so their contract is not
+described either.
 
 ## Remaining blockers
 
-- Every native column. No Lynx Explorer or device run has happened, so no native
-  capability claim in this document is verified.
-- Native PAPI names and semantics are unverified: `@lynx-js/types` is not a
-  dependency here, so nothing in this document asserts what a native host does
-  with these same names.
+- The Native column of the summary table. The shared Element PAPI parity card has
+  run on a device, but the capability probe has not, so no per-capability native
+  claim in this document is verified.
+- Native PAPI names: the device run recorded the global inventory (for example
+  `__SetCSSId`, `__LoadStyleSheet`, `__AdoptStyleSheet`, `__ReplaceStyleSheets`
+  all exist), but their semantics were not exercised, so nothing here asserts
+  what a native host does with these same names.
 - Gestures are the only silent failure. Making them fail loudly would mean
   changing the property path in `src/lynx-host.ts`, which is renderer behaviour
   rather than a platform capability, so it is left for a deliberate change.
 - List virtualization needs a Solid list model that can instantiate a row at an
   index. That is a renderer design question, not a host capability question.
-- Whether a native host implements `__SetCSSId` is unverified. The renderer
-  treats it as optional precisely so that a host without it fails loudly instead
-  of rendering unstyled, but that path has not been exercised on a device.
+- Native `__SetCSSId` exists — the device inventory lists it — but
+  `root.setCSSId()` has not been exercised on a device, so that path is still
+  unmeasured even though the renderer already treats the PAPI as optional and
+  fails loudly when a host lacks it.
 - Stylesheet loading has no PAPI on either host to verify, so the capability is
   absent rather than blocked. It would have to be re-opened only if a host
   exposed one.

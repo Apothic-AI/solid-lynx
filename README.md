@@ -4,7 +4,7 @@ Solid rendering for [Lynx](https://lynxjs.org/).
 
 `solid-lynx` connects Solid's fine-grained reactive runtime to Lynx Element PAPI. Solid components, signals, effects, and control flow create and update Lynx elements without targeting the browser DOM or adding a virtual DOM layer.
 
-> **Status:** early experimental release (`0.1.0`). The renderer targets Lynx Element PAPI. The Solid TSX `.web.bundle` example passes its focused Lynx-for-Web Playwright suite. Native-device coverage and broader toolchain integration remain in progress.
+> **Status:** early experimental release (`0.1.0`). The renderer targets Lynx Element PAPI. The Solid TSX `.web.bundle` example passes its focused Lynx-for-Web Playwright suite, and the native smoke card loads, renders, and passes all twenty shared Element PAPI operations in Lynx Explorer on an Android device. Dual-thread cards and broader toolchain integration remain in progress.
 
 ## Why this exists
 
@@ -285,7 +285,7 @@ The adapter also accepts familiar event forms:
 
 Each binding form is filed in its own host dispatch slot, keyed by binding type, event name, and namespace, and is registered and removed with the same `__AddEventListener` options. Listeners exist only while their node is part of the rendered tree: inserting a node registers its bindings, removing a node detaches the bindings of its whole subtree, and re-inserting it registers them again. Disposing a root therefore releases every listener it created.
 
-`@lynx-js/web-core` files a `global-bind` handler in the `global-bindEvent` slot but does not run the global pass for function callbacks, so a `global-bind:tap` prop is registered and removed correctly yet is not invoked by that host. Native hosts and the fake PAPI tests cover that pass.
+`@lynx-js/web-core` files a `global-bind` handler in the `global-bindEvent` slot but does not run the global pass for function callbacks, so a `global-bind:tap` prop is registered and removed correctly yet is not invoked by that host. The fake PAPI tests cover that pass; whether a native host runs it is not measured.
 
 The following properties have dedicated handling:
 

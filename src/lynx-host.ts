@@ -81,6 +81,24 @@ function getGlobalPapi(): LynxPapi {
   return globalThis as unknown as LynxPapi;
 }
 
+/**
+ * Whether a value returned by a Lynx element creator is a usable node.
+ *
+ * The web host wraps DOM nodes, so its elements are `typeof "object"`. A native
+ * PrimJS host returns opaque element handles whose `typeof` is `"unknown"`, so a
+ * strict `typeof value === "object"` test rejects every element a device
+ * creates. A creator that failed yields `null` or `undefined` instead, which is
+ * the case this guard exists to catch, so the check only has to rule out the
+ * primitives a broken host might return.
+ */
+export function isLynxNode(value: unknown): value is LynxNode {
+  return value !== null
+    && value !== undefined
+    && typeof value !== "string"
+    && typeof value !== "number"
+    && typeof value !== "boolean";
+}
+
 export function createGlobalLynxHost(
   options: GlobalLynxHostOptions,
 ): LynxHost<LynxNode> {
@@ -130,10 +148,10 @@ export function createGlobalLynxHost(
     const element = typeof creator === "function"
       ? creator(options.getParentComponentId())
       : requirePapi("__CreateElement")(tag, options.getParentComponentId());
-    if (!element || typeof element !== "object") {
+    if (!isLynxNode(element)) {
       throw new Error(`Lynx failed to create <${tag}>`);
     }
-    return element as LynxNode;
+    return element;
   };
 
   const attachEvent = (node: LynxNode, record: RegisteredEvent) => {
@@ -248,7 +266,10 @@ export function createGlobalLynxHost(
   const host: LynxHost<LynxNode> = {
     createElement: createNativeElement,
     createTextNode(value) {
-      const node = requirePapi("__CreateRawText")(value) as LynxNode;
+      const node = requirePapi("__CreateRawText")(value) as unknown;
+      if (!isLynxNode(node)) {
+        throw new Error("Lynx failed to create a raw text node");
+      }
       textNodes.add(node);
       return node;
     },
@@ -257,7 +278,10 @@ export function createGlobalLynxHost(
       if (typeof creator !== "function") {
         throw new Error("Solid control flow requires Lynx __CreateWrapperElement() support");
       }
-      const node = creator(options.getParentComponentId()) as LynxNode;
+      const node = creator(options.getParentComponentId()) as unknown;
+      if (!isLynxNode(node)) {
+        throw new Error("Lynx failed to create a wrapper element");
+      }
       return node;
     },
     replaceText(node, value) {
@@ -383,7 +407,11 @@ export function createLynxPage(
   if (typeof papi.__CreatePage !== "function") {
     throw new Error("solid-lynx requires Lynx Element PAPI __CreatePage()");
   }
-  return papi.__CreatePage(componentId, cssId) as LynxNode;
+  const page = papi.__CreatePage(componentId, cssId) as unknown;
+  if (!isLynxNode(page)) {
+    throw new Error("Lynx failed to create a page");
+  }
+  return page;
 }
 
 export const createLynxHost = createGlobalLynxHost;

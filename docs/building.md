@@ -5,7 +5,8 @@ Two hosts, one renderer: the Lynx-for-Web target runs in a browser through
 Both are built from the same sources with the same Solid plugin.
 
 Everything below is split into what this repository verifies automatically and
-what needs a real native runtime. Nothing in the second group has been run yet.
+what needs a real native runtime. The native bundle is loaded and exercised by
+hand on a device; the steps and the observed result are recorded below.
 
 | Step | Command | Verified here |
 | --- | --- | --- |
@@ -15,7 +16,7 @@ what needs a real native runtime. Nothing in the second group has been run yet.
 | Build the web bundle | `pnpm web:build` | yes |
 | Browser suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | yes |
 | Build the native bundle | `pnpm native:build` | yes |
-| Run the native bundle | Lynx Explorer or a device | no, needs a native host |
+| Run the native bundle | Lynx Explorer 4.1.0 on an Android device | yes, by hand (see Native) |
 
 ## The Solid Rspeedy integration
 
@@ -99,23 +100,41 @@ The example under `examples/lynx-for-native` builds the same card for a device:
 
 1. `pnpm native:build` produces `examples/lynx-for-native/dist/main.lynx.bundle`.
    This step is verified here.
-2. Loading that bundle is **not** verified here. It needs Lynx Explorer or a
-   device, and the steps below have to be run by hand.
+2. Loading that bundle was run by hand on a device: Lynx Explorer 4.1.0
+   (`com.lynx.explorer`, engine 3.5) on an SM-A037U (Android 13). Serve `dist/`
+   over `http://127.0.0.1:8099`, `adb reverse` the port, and open
+   `lynx://open?url=http://127.0.0.1:8099/main.lynx.bundle`.
 
 The environment is named `lynx`, which is Rspeedy's default; an app that ships
 both targets declares `environments: { lynx: {}, web: {} }` instead.
 
-### What a native run has to confirm
+### What a native run confirmed
 
-Each item is a real unknown, not a formality. Record the outcome in
+Recorded from the device run; per-operation rows are in
 [parity-checklist.md](parity-checklist.md).
 
-- **Root element.** The card renders into an element the host provides. The
-  example resolves `__GetPageElement()`, falling back to
-  `globalThis.__SOLID_LYNX_ROOT_ELEMENT__`, and throws a named error when
-  neither exists. A device run has to establish which of the two a native host
-  actually provides, and the answer decides whether the renderer needs a
-  documented `createLynxRoot` option for native roots.
+- **Root element (resolved).** The native host exposes both `__CreatePage` and
+  `__GetPageElement`, but `__GetPageElement()` returns `null` until a page
+  exists. The example therefore creates the page through the documented
+  `__CreatePage("0", 0)` and passes it to `runElementPapiParity` and
+  `createLynxRoot`. This is the same call `createLynxRoot` makes when no `page`
+  option is supplied, so no new API was needed.
+- **Element handle shape (renderer defect, fixed).** Native element handles are
+  opaque PrimJS objects whose `typeof` is `"unknown"`, not `"object"`. The host
+  used to reject them with `Lynx failed to create <view>`; `isLynxNode()` in
+  `src/lynx-host.ts` now validates creators without assuming a DOM object.
+- **Inline style read-back (harness defect, fixed).** Native keeps the style out
+  of the `style` attribute; `__GetAttributeByName(node, "style")` returns `null`
+  and the harness reported `inline-styles` as a failure. It now prefers
+  `__GetInlineStyles`, which native exposes. All twenty shared operations pass.
+- **Rendering and events (confirmed).** The card renders an `Increment` button
+  and `Native parity count: 0`; tapping increments the counter to 1 through
+  `bindtap`, so flush and reactive text updates work on the device.
+- **`processData is not a function` (observed host warning).** With
+  `background: false` the bundle's `/app-service.js` is intentionally empty, and
+  Explorer still invokes `processData` on it, so LogBox shows a red banner. It
+  does not block loading, rendering, or tapping. The card stays main-thread
+  only; a background thread would change that decision and is out of scope.
 - **Dual-thread execution.** Both examples declare `background: false` and run
   the renderer on the main thread only. A card with a background thread is
   unverified, and worklets are out of scope for this package.
@@ -130,11 +149,13 @@ Each item is a real unknown, not a formality. Record the outcome in
 ### Using Lynx Explorer
 
 1. Build the bundle with `pnpm native:build`.
-2. Create a project in Lynx Explorer and set its card bundle to
-   `examples/lynx-for-native/dist/main.lynx.bundle`, or serve that directory and
-   point Explorer at it.
-3. Open the debugger and watch the console. The card logs
-   `[solid-lynx parity] {...}` with the full parity report.
+2. Serve `examples/lynx-for-native/dist` on loopback (for example
+   `python3 -m http.server 8099 --bind 127.0.0.1`), `adb reverse tcp:8099 tcp:8099`,
+   and open `lynx://open?url=http://127.0.0.1:8099/main.lynx.bundle`.
+   Append a `?v=` query to bypass Explorer's bundle cache when re-running.
+3. Read the console, or filter `adb logcat` for `lynx_console`. The card logs
+   `[solid-lynx parity] {...}` with the full parity report **on one line**,
+   because the native console bridge drops everything after the first newline.
 4. Compare that report against the web column in
    [parity-checklist.md](parity-checklist.md).
 
@@ -153,7 +174,8 @@ code:
 import { runElementPapiParity } from "solid-lynx/parity";
 
 const report = runElementPapiParity({ label: "native", page });
-console.log(JSON.stringify(report, null, 2));
+// One line: the native console bridge drops everything after the first newline.
+console.log(JSON.stringify(report));
 ```
 
 It creates a sandbox element inside the given page, probes the shared Element

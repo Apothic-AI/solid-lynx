@@ -130,6 +130,27 @@ describe("element PAPI parity harness", () => {
     expect(host.page.children).toEqual([]);
   });
 
+  it("reads inline styles back through __GetInlineStyles when the host exposes it", () => {
+    const host = createFakeHost();
+    // Native PrimJS keeps the inline style out of the `style` attribute and
+    // exposes it only through `__GetInlineStyles`, so the harness has to prefer
+    // that operation or it reports a false failure.
+    const papi = {
+      ...host.papi,
+      // The `style` attribute stays invisible; every other attribute read is
+      // unchanged so only the inline-styles probe is affected.
+      __GetAttributeByName: (node: FakeNode, name: string) =>
+        name === "style" ? null : host.papi.__GetAttributeByName(node, name),
+      __GetInlineStyles: (node: FakeNode) => node.attributes.style ?? null,
+    };
+
+    const report = runElementPapiParity({ papi });
+
+    const styles = byOperation(report).get("inline-styles");
+    expect(styles?.status).toBe("pass");
+    expect(report.summary.fail).toBe(0);
+  });
+
   it("records a missing operation as unsupported instead of a failure", () => {
     const host = createFakeHost();
     const { __GetClasses: _omitted, ...withoutClasses } = host.papi;

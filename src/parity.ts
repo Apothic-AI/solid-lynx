@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 
 import type { LynxNode } from "./host.js";
-import type { LynxPapi } from "./lynx-host.js";
+import { isLynxNode, type LynxPapi } from "./lynx-host.js";
 import { createLynxRoot } from "./root.js";
 
 /**
@@ -79,6 +79,7 @@ interface ParityPapi extends LynxPapi {
   __GetAttributeByName?: PapiFunction;
   __GetAttributeNames?: PapiFunction;
   __GetDataset?: PapiFunction;
+  __GetInlineStyles?: PapiFunction;
   __GetComputedStyleByKey?: PapiFunction;
 }
 
@@ -191,7 +192,7 @@ export function runElementPapiParity(options: ElementPapiParityOptions = {}): Pa
       }
       page = call("__CreatePage", options.componentId ?? "0", options.cssId ?? 0) as LynxNode;
     }
-    if (typeof page !== "object") return "no page element";
+    if (!isLynxNode(page)) return "no page element";
     const id = papi.__GetElementUniqueID?.(page);
     return id === undefined || (Number.isInteger(id) && id >= 0)
       ? "page"
@@ -212,7 +213,7 @@ export function runElementPapiParity(options: ElementPapiParityOptions = {}): Pa
     };
   };
 
-  if (typeof page !== "object" || page === null) {
+  if (!isLynxNode(page)) {
     // Nothing can be attached anywhere, so every remaining operation is reported
     // as blocked by the same cause instead of failing on its own.
     for (const operation of parityOperationIds.slice(1)) {
@@ -367,9 +368,13 @@ export function runElementPapiParity(options: ElementPapiParityOptions = {}): Pa
     "style set",
     withSandbox(node => {
       call("__SetInlineStyles", node, "color: rgb(1, 2, 3)");
-      const readBack = supports("__GetAttributeByName").length === 0
-        ? (call("__GetAttributeByName", node, "style") as string | null)
-        : (call("__GetComputedStyleByKey", node, "color") as string | null);
+      // Hosts expose the value differently: native has `__GetInlineStyles`,
+      // web-core stores it as the `style` attribute, and either may compute it.
+      const readBack = typeof papi.__GetInlineStyles === "function"
+        ? (call("__GetInlineStyles", node) as string | null)
+        : typeof papi.__GetAttributeByName === "function"
+          ? (call("__GetAttributeByName", node, "style") as string | null)
+          : (call("__GetComputedStyleByKey", node, "color") as string | null);
       return readBack ? "style set" : `no style (${String(readBack)})`;
     }),
   );

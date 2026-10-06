@@ -17,27 +17,32 @@ ensureLynxEnvironmentBasics();
 const engine = lynx.getEngine();
 
 /**
- * The element this card renders into.
+ * The page element this card renders into.
  *
- * This is the one wiring step that has not been run against a real native host
- * yet, so it fails loudly instead of guessing: `__GetPageElement()` is what the
- * web host provides, and a native integration can publish its own root element
- * as `globalThis.__SOLID_LYNX_ROOT_ELEMENT__` before the card is evaluated.
- * `docs/building.md` records what a device run has to confirm here.
+ * On a real native host `__GetPageElement()` exists but returns `null` until a
+ * page has been created, so the card creates one through the documented
+ * `__CreatePage(componentId, cssId)` PAPI on first run. That is the same call
+ * `createLynxRoot` makes when no `page` is supplied. The web host returns its
+ * page from `__GetPageElement()` directly, and an integration that owns its own
+ * root can still publish one as `globalThis.__SOLID_LYNX_ROOT_ELEMENT__`.
  */
 function resolveRootElement(): LynxNode {
   const host = globalThis as unknown as {
-    __GetPageElement?: () => LynxNode | undefined;
+    __GetPageElement?: () => LynxNode | null | undefined;
+    __CreatePage?: (componentId: string, cssId: number) => LynxNode;
     __SOLID_LYNX_ROOT_ELEMENT__?: LynxNode;
   };
-  const element = host.__GetPageElement?.() ?? host.__SOLID_LYNX_ROOT_ELEMENT__;
-  if (!element) {
-    throw new Error(
-      "solid-lynx: no root element for the native card. Provide the element the card renders"
-      + " into as globalThis.__SOLID_LYNX_ROOT_ELEMENT__ before this module runs.",
-    );
+  const existing = host.__GetPageElement?.();
+  if (existing) return existing;
+  if (host.__SOLID_LYNX_ROOT_ELEMENT__) return host.__SOLID_LYNX_ROOT_ELEMENT__;
+  if (typeof host.__CreatePage === "function") {
+    return host.__CreatePage("0", 0);
   }
-  return element;
+  throw new Error(
+    "solid-lynx: no root element for the native card. This host exposes neither"
+    + " __GetPageElement() nor __CreatePage(); publish the element the card renders into as"
+    + " globalThis.__SOLID_LYNX_ROOT_ELEMENT__ before this module runs.",
+  );
 }
 
 /**
@@ -53,22 +58,32 @@ function resolveRootElement(): LynxNode {
  */
 function renderParityCard(root: LynxRoot): void {
   const [count, setCount] = createSignal(0);
+  const { renderer } = root;
+
+  // Native Lynx lays text out inside a <text> element, so the card wraps each
+  // string the way a compiled Solid text node does.
+  const textElement = (id: string, value: string | (() => string)): LynxNode => {
+    const text = renderer.createElement("text");
+    renderer.setProp(text, "id", id);
+    renderer.insert(text, value);
+    return text;
+  };
 
   root.render(() => {
-    const card = root.renderer.createElement("view");
-    const label = root.renderer.createTextNode("Native parity count: 0");
-    const increment = root.renderer.createElement("view");
+    const card = renderer.createElement("view");
+    const increment = renderer.createElement("view");
 
-    root.renderer.setProp(card, "id", "parity-card");
-    root.renderer.setProp(increment, "id", "parity-increment");
-    root.renderer.setProp(increment, "bindtap", () => setCount(value => value + 1));
-    root.renderer.insert(increment, root.renderer.createTextNode("Increment"));
-    root.renderer.insert(card, label);
-    root.renderer.insert(card, increment);
+    renderer.setProp(card, "id", "parity-card");
+    renderer.setProp(card, "style", "display: flex; flex-direction: column; padding: 16px;");
+    renderer.setProp(increment, "id", "parity-increment");
+    renderer.setProp(increment, "style", "padding: 12px; background-color: #334155; color: #ffffff;");
+    renderer.setProp(increment, "bindtap", () => setCount(value => value + 1));
+    renderer.insert(increment, textElement("parity-increment-label", "Increment"));
+    renderer.insert(card, increment);
 
     // The text is a reactive accessor, which is what a compiled Solid text node
     // compiles to, so this is the same update path JSX produces.
-    root.renderer.insert(card, () => `Native parity count: ${count()}`);
+    renderer.insert(card, textElement("parity-count", () => `Native parity count: ${count()}`));
 
     return card;
   });
@@ -81,12 +96,19 @@ function renderCard(): void {
 
   const page = resolveRootElement();
   // The same harness the web card runs, so the two reports can be compared row
-  // by row in docs/parity-checklist.md.
+  // by row in docs/parity-checklist.md. It is logged on one line because the
+  // native console bridge drops everything after the first newline.
   const report = runElementPapiParity({ label: "native", page });
-  console.log(`[solid-lynx parity] ${JSON.stringify(report, null, 2)}`);
+  console.log(`[solid-lynx parity] ${JSON.stringify(report)}`);
 
   root = createLynxRoot({ page, transformEventNames: true });
   renderParityCard(root);
+  const { __GetChildren } = globalThis as unknown as {
+    __GetChildren?: (node: LynxNode) => LynxNode[] | null;
+  };
+  console.log(`[solid-lynx native] card rendered into page with ${
+    String(__GetChildren?.(page)?.length ?? "unknown")
+  } child(ren)`);
 }
 
 function destroyCard(): void {
