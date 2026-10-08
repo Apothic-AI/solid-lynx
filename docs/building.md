@@ -105,6 +105,45 @@ The example under `examples/lynx-for-native` builds the same card for a device:
    over `http://127.0.0.1:8099`, `adb reverse` the port, and open
    `lynx://open?url=http://127.0.0.1:8099/main.lynx.bundle`.
 
+### Verified A03 setup
+
+The native smoke used the Galaxy A03 / SM-A037U, Android 13 (API 33), serial
+`R9WT911JVVH`. The connected tablet serial `19779010` is in use by another agent
+and must not be targeted. Pin every ADB command to the A03 with
+`adb -s R9WT911JVVH`; avoid commands that enumerate or address all attached
+devices.
+
+Lynx Explorer 4.1.0 (`com.lynx.explorer`, engine 3.5) was obtained from the
+official `lynx-family/lynx` GitHub release:
+
+```text
+https://github.com/lynx-family/lynx/releases/download/4.1.0/LynxExplorer-noasan-release.apk
+SHA-256: 6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6
+```
+
+The APK was verified against the release digest, is `arm64-v8a`, and is installed
+on the A03. Do not reinstall it unless needed. Explorer opens the bundle through
+its `lynx://open?url=...` deep link; there is no file picker.
+
+Re-run the smoke with an A03-only loopback server and reverse tunnel:
+
+```bash
+pnpm native:build
+python3 -m http.server 8099 --bind 127.0.0.1 \
+  --directory examples/lynx-for-native/dist
+adb -s R9WT911JVVH reverse tcp:8099 tcp:8099
+adb -s R9WT911JVVH shell am start \
+  -a android.intent.action.VIEW \
+  -d 'lynx://open?url=http://127.0.0.1:8099/main.lynx.bundle' \
+  -p com.lynx.explorer
+```
+
+Use a fresh `?v=<unique-value>` query on the bundle URL if Explorer serves a
+cached bundle. Capture the one-line `[solid-lynx parity]` report and relevant
+`lynx_console` logcat output. Afterward, stop only the server started for the
+test and run `adb -s R9WT911JVVH reverse --remove tcp:8099`. Do not change users,
+settings, or install ArtemisAccessibilityHelper for this test.
+
 The environment is named `lynx`, which is Rspeedy's default; an app that ships
 both targets declares `environments: { lynx: {}, web: {} }` instead.
 
@@ -130,6 +169,9 @@ Recorded from the device run; per-operation rows are in
 - **Rendering and events (confirmed).** The card renders an `Increment` button
   and `Native parity count: 0`; tapping increments the counter to 1 through
   `bindtap`, so flush and reactive text updates work on the device.
+- **Parity (confirmed).** The native card and host pass all twenty shared
+  Element PAPI operations. The per-operation results are recorded in
+  [parity-checklist.md](parity-checklist.md).
 - **`processData is not a function` (observed host warning).** With
   `background: false` the bundle's `/app-service.js` is intentionally empty, and
   Explorer still invokes `processData` on it, so LogBox shows a red banner. It
@@ -142,9 +184,12 @@ Recorded from the device run; per-operation rows are in
   first flush on a device is unverified; the browser suite only proves it for
   the web host.
 - **Event delivery.** `global-bind` handlers are registered but never invoked by
-  `@lynx-js/web-core`. Whether a native host runs that pass is unverified.
-- **Stylesheet loading.** The examples set inline styles only. Stylesheet
-  loading, CSS ids, and stylesheet lifecycle are not implemented here.
+  `@lynx-js/web-core`; native delivery was not part of the smoke card.
+- **CSS ids and stylesheets.** The A03 exposes `__SetCSSId`,
+  `__LoadStyleSheet`, `__AdoptStyleSheet`, and `__ReplaceStyleSheets` in its
+  global PAPI inventory. Their native semantics were not exercised. The renderer
+  implements root-scoped `__SetCSSId`; runtime stylesheet loading/lifecycle is
+  not implemented.
 
 ### Using Lynx Explorer
 
