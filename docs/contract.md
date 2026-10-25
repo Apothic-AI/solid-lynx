@@ -523,9 +523,10 @@ test. The migration guide repeats it from a consumer's point of view
 | A registration is released through the same PAPI pair that filed it, and a host with no complete pair throws instead of filing a listener nothing can release. | `src/lynx-host.ts:247-292` (`resolveBindingPath`, `attachEvent`, `detachEvent`) | `test/renderer.test.ts:1014` (both directions), `:1081` |
 | Removing a subtree detaches its listeners; re-inserting registers them again. | `src/lynx-host.ts:297-306` (`syncEventTree`), called from `:481` and `:485` | `test/renderer.test.ts:789` |
 | Root disposal clears every ref it attached. | `src/universal.ts:103-113` (`onCleanup`), `src/refs.ts:47-56` | `test/renderer.test.ts:1300`; browser `:606` |
-| Disposal flushes the host (`__FlushElementTree`) once at the end. | `src/root.ts:157` | `test/renderer.test.ts:733` |
+| Disposal flushes the host (`__FlushElementTree`) as the last thing it does, so its removals are not left pending. | `src/renderer.ts:39` (disposal flush), `src/root.ts:157` (root flush, last statement of `dispose`) | `test/renderer.test.ts:2086` (asserts the last host call is a flush) |
 | Roots sharing one page dispose independently. | `src/root.ts:86-116` | `test/renderer.test.ts:1151`; browser `:471` |
 | A disposed root can be rendered into again, with fresh listeners. | `src/root.ts:163-168` | `test/renderer.test.ts:853`; browser `:471` |
+| A root that owned every resource above leaves none of it behind: no page children, no live registration on any element it rendered, no ref holding a node, and no live list row or repopulatable callback pair. | `src/root.ts:148-158`, `src/list.ts:296-305`, `src/refs.ts:47-56` | `test/renderer.test.ts:2086` (reads the fake PAPI's post-dispose tree rather than a call log) |
 
 **Not proven / not applicable:**
 
@@ -533,7 +534,14 @@ test. The migration guide repeats it from a consumer's point of view
   a stylesheet (§8). A CSS id assigned through `setCSSId` stays assigned to the
   elements it was applied to; disposal removes the elements, so no un-assign call
   is made or needed. No test asserts anything about a stylesheet, because no host
-  in this repository has one to assert against.
+  in this repository has one to assert against. This is out of the cleanup claim
+  rather than a gap in it: nothing here acquires a stylesheet, so nothing here
+  can fail to release one. `ROADMAP.md` 1.0 records the same position and why the
+  roadmap box was retitled around it.
+- **The number of flushes one disposal performs.** Not asserted. A rendered root
+  issues two (`src/renderer.ts:39`, `src/root.ts:157`) and three when it owned a
+  list; only "the last call is a flush" is tested. An earlier revision of this
+  section said "once" and cited a test that never disposes a root.
 - **Cleanup ordering between two roots.** Each root removes its own nodes in
   insertion order; no test asserts a specific interleaving when two roots
   dispose in the same task.

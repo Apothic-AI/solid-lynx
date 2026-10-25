@@ -2074,3 +2074,108 @@ describe("indexed list model", () => {
     expect(() => host.createElement("list")).toThrow(/does not implement Element PAPI __CreateList/);
   });
 });
+
+/**
+ * A disposal audit, kept apart from the tests above on purpose: it asserts the
+ * state the fake PAPI is left holding rather than which methods disposal called,
+ * so it is the one place a whole root's resources are checked together. Being
+ * last in the file also means adding it moved no earlier line, which matters
+ * because `docs/contract.md` and `docs/migration.md` cite those lines by number.
+ */
+describe("root disposal leaves nothing behind", () => {
+  it("disposes a root that owned everything without leaving host state behind", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+    const ref = createLynxRef<LynxNode>();
+    let rendered: LynxNode | undefined;
+    let taps = 0;
+    const onTap = () => {
+      taps += 1;
+    };
+
+    // The only ordering claim a test can pin without depending on how many
+    // removals a disposal happens to perform: whatever else it did, the last
+    // call disposal makes to the host is the flush.
+    const order: string[] = [];
+    const removeElement = fake.papi.__RemoveElement!;
+    fake.papi.__RemoveElement = (parent: LynxNode, child: LynxNode) => {
+      order.push("remove");
+      removeElement(parent, child);
+    };
+    const flush = fake.papi.__FlushElementTree;
+    fake.papi.__FlushElementTree = () => {
+      order.push("flush");
+      flush();
+    };
+
+    root.setCSSId(4, "detail");
+
+    const items = [{ id: 1 }, { id: 2 }];
+    const list = root.createList<{ id: number }>({
+      items: () => items,
+      getKey: item => item.id,
+      children: (item) => {
+        const row = root.renderer.createElement("view");
+        root.renderer.setProp(row, "bindtap", onTap);
+        root.renderer.insert(row, () => `row ${item.id}`);
+        return row;
+      },
+    });
+
+    const dispose = root.render(() => {
+      rendered = root.renderer.createElement("view");
+      root.renderer.setProp(rendered, "bindtap", onTap);
+      use(ref, rendered);
+      return rendered;
+    });
+
+    fake.requestCell(0);
+    fake.requestCell(1);
+
+    // Every assertion after disposal would also hold for a root that never
+    // rendered anything, so the state is measured before it is torn down and
+    // every element the host put in the tree is held for inspection.
+    expect(fake.page.children).toHaveLength(2);
+    expect(fake.liveRegistrations()).toHaveLength(3);
+    expect(ref.current).toBe(rendered);
+    expect(list.rows).toHaveLength(2);
+    // Every node the host put in its tree, page first. Collected before
+    // disposal because afterwards the same walk returns nothing, which would
+    // make the per-node assertions below vacuous.
+    const hostNodes = (): FakeNode[] => {
+      const found: FakeNode[] = [];
+      const walk = (node: FakeNode) => {
+        found.push(node);
+        for (const child of node.children) walk(child);
+      };
+      walk(fake.page);
+      return found;
+    };
+    const nodes = hostNodes();
+
+    dispose();
+
+    // What the host still holds, read from its own bookkeeping rather than from
+    // a log of the calls disposal made.
+    expect(hostNodes()).toEqual([fake.page]);
+    expect(fake.liveRegistrations()).toEqual([]);
+    expect(ref.current).toBeUndefined();
+    expect(list.disposed).toBe(true);
+    expect(list.rows).toHaveLength(0);
+    // No listener slot survived on any element the root had rendered, including
+    // the rows the host materialized and the list element it held.
+    for (const node of nodes) expect(fake.registrations(node)).toEqual([]);
+    // Nor does a live element keep the CSS-id record: the elements the id was
+    // applied to are gone, and no un-assign call is made or needed (§8).
+    expect(hostNodes().filter(node => node.cssId !== undefined)).toEqual([]);
+    // The host still holds the list's callback pair, because no Element PAPI
+    // removes one, so the pair itself has to be inert.
+    const installed = fake.installedListCallbacks()!;
+    expect(installed.componentAtIndex(list.list, fake.nextListId(), 0, 1, false)).toBeUndefined();
+    expect((list.list as FakeNode).children).toHaveLength(0);
+
+    expect(order).toContain("remove");
+    expect(order.at(-1)).toBe("flush");
+    expect(taps).toBe(0);
+  });
+});

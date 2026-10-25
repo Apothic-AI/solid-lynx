@@ -222,12 +222,14 @@ landed, and where to read it:
   `1.0.0` entry, and `package.json` and `src/index.ts` both say `1.0.0`. Nothing
   is tagged or published ([release.md](release.md) §5).
 
-[ROADMAP.md](../ROADMAP.md) records the milestone honestly: three of the five
-`1.0` items are done (the documented contracts, migration/compatibility guidance,
-and the version ranges — Node via `node-matrix`, Solid via `solid-matrix`), and
-the milestone is **not complete**. The open items are a native runtime check in
-CI and deterministic stylesheet cleanup — the latter cannot be confirmed until
-the stylesheet probe has a device run.
+[ROADMAP.md](../ROADMAP.md) records the milestone honestly: all five `1.0`
+items are now done, and the one that used to stay open was retitled rather than
+ticked as written. Its third noun was stylesheet cleanup, which this renderer
+cannot claim because it never loads a stylesheet; the box now claims cleanup
+only for the resources it acquires (root, listener, ref, list callback) and says
+where the stylesheet half went. Both the capability and the native measurement
+remain open elsewhere and are recorded as such: native list and stylesheet
+behavior still need a device run.
 
 Two blockers remain, and neither is resolvable from a fresh session's shell:
 

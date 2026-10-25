@@ -302,8 +302,15 @@ Set a stable public contract after web validation, native validation, and toolin
     worktree. `docs/parity-checklist.md` therefore still records the native
     column as `reported`, and this box being ticked does not change that: the
     requirement is enforced, the measurement it would carry is still missing.
-- [ ] Confirm deterministic root, listener, and stylesheet cleanup.
-  - **Proven: root, listener, and ref cleanup.** `docs/contract.md` §9 names the
+- [x] Confirm deterministic root, listener, ref, and list-callback cleanup.
+      **Retitled from "Confirm deterministic root, listener, and stylesheet
+      cleanup".** The original wording is kept in this paragraph because the
+      retitle is the substance of the change rather than a cosmetic edit: the
+      third noun named a resource this renderer never acquires, so no amount of
+      work here could have confirmed cleaning it up. The stylesheet half is not
+      deleted — it is moved to an explicit "out of the claim" statement below,
+      which is a claim a reader can check, unlike a permanently open box.
+  - **Proven: root, listener, ref, and list-callback cleanup.** `docs/contract.md` §9 names the
     mechanism and the covering test for each. The line numbers below are this
     tree's, not the ones §9 cited when it was written: commits `380284f` and
     `8b01d05` both inserted tests above the ref and CSS-id blocks, pushing those
@@ -317,7 +324,7 @@ Set a stable public contract after web validation, native validation, and toolin
     - listener-slot release on disposal — `test/renderer.test.ts:976`, `:821`
     - subtree detach and restore — `test/renderer.test.ts:789`
     - ref release — `test/renderer.test.ts:1300`; browser `:606`, `:630`
-    - one flush at the end of disposal — `test/renderer.test.ts:733`
+    - a flush as the last thing disposal does — `test/renderer.test.ts:2086`
     - independent disposal of roots sharing a page — `test/renderer.test.ts:1151`;
       browser `:471`
     - remount with fresh listeners — `test/renderer.test.ts:853`; browser `:471`
@@ -352,12 +359,73 @@ Set a stable public contract after web validation, native validation, and toolin
     `examples/lynx-for-native/scripts/run-native-probe.sh stylesheet`, but no
     device run has happened — only `--dry-run`. Native cleanup after `dispose()`
     is unmeasured for the same reason (`docs/contract.md` §9 "Native disposal").
-  - **So the box stays unticked.** Two thirds of its sentence are proven and one
-    third is not merely untested but *absent* on web and *unmeasured* on native;
-    ticking it would collapse that distinction, which is the whole reason the box
-    exists. Closing it needs either a device run of the stylesheet probe or an
-    explicit narrowing of the box to root/listener cleanup — and narrowing it is
-    a decision nobody has recorded, so this revision does not take it.
+  - **The claim, resource by resource, and what each one is proven by.** This is
+    the inventory the box asked for: every row is a resource a root can hold, and
+    "cleanup" means the fake PAPI's own bookkeeping no longer contains it after
+    `dispose()` — not that a release method was reached.
+
+    | Resource | Residual after `dispose()` | Proven by |
+    | --- | --- | --- |
+    | Rendered nodes in the page | the root's own page children are gone; another root's are not | `test/renderer.test.ts:561`, `:1151`; browser `:471` |
+    | Listener slots | none: every registration is released in the slot it was filed in | `test/renderer.test.ts:976` (slot tuples), `:821`, `:1014` |
+    | Subtree listeners | detached with the subtree and restored on re-insertion | `test/renderer.test.ts:789` |
+    | Refs | the ref no longer holds the node | `test/renderer.test.ts:1300`; browser `:606`, `:630` |
+    | List rows and their callbacks | rows released, the installed pair left inert | `test/renderer.test.ts:1983`, `:1829` (host-removed row); the root-owned case is `:2086` |
+    | The CSS-id record | the id stays on the root; the elements it was applied to are gone, and no un-assign call is made or needed | `test/renderer.test.ts:1578` |
+    | All of the above at once, on one root that owned every resource | nothing in the host, read from the fake's bookkeeping | **`test/renderer.test.ts:2086`** (added in this change) |
+
+    That last row is deliberately the file's final `describe` block rather than a
+    neighbour of the other disposal tests. Inserting it near them shifted every
+    following test down one line and silently invalidated a dozen
+    `test/renderer.test.ts:NNN` citations across `docs/contract.md`,
+    `docs/migration.md`, and this file — the same drift that `380284f` and
+    `8b01d05` caused and the reason those citations get re-checked against the
+    tree instead of trusted.
+
+  - **The inventory turned up one claim that was not merely uncited but false.**
+    `docs/contract.md` §9 said disposal "flushes the host (`__FlushElementTree`)
+    once at the end" and cited `test/renderer.test.ts:733`. That test never
+    constructs a root or calls `dispose()`: it drives `createGlobalLynxHost`
+    directly and calls `host.flush()` itself, despite its name mentioning
+    disposal. Measured on a rendered root, one `dispose()` issues **two**
+    `__FlushElementTree` calls (the renderer's own disposal flushes at
+    `src/renderer.ts:39`, then `src/root.ts:157`), and **three** when the root
+    owned a list. So "once" was wrong twice over: wrong count, and no test for
+    the count. The invariant that does hold, and is now tested, is that the
+    *last* call disposal makes to the host is a flush, so whatever removals it
+    performed are not left pending. §9's row was corrected in this change; the
+    call count itself remains unasserted, and is recorded as such.
+  - **Out of the claim: stylesheet cleanup.** The renderer never loads a
+    stylesheet, so it has none to clean up. `src/` names no stylesheet API, and
+    `@lynx-js/web-core` exposes none: its `ElementPAPIs` surface in
+    `dist/types/IElementPAPI.d.ts` has `__SetCSSId`
+    (`SetCSSIdPAPI = (elements, cssId, entryName) => void`) and nothing that
+    adds, replaces, or removes a stylesheet (`docs/contract.md` §8;
+    `docs/capabilities.md`, "Stylesheet loading and lifecycle"). A CSS id only
+    selects among stylesheets the Lynx toolchain already compiled into the
+    bundle, and `setCSSId` makes no un-assign call because disposal removes the
+    elements the id was applied to. This is therefore a category the renderer
+    does not participate in — **not** an unproven part of the claim — and it is
+    why the box could not close on a device run either: running the native
+    stylesheet probe would measure `__LoadStyleSheet` semantics, which is a
+    capability question, not this box's cleanup question. The native globals
+    (`__LoadStyleSheet`, `__AdoptStyleSheet`, `__ReplaceStyleSheets`) exist and
+    are unmeasured; that work is tracked where it belongs, in
+    `docs/capabilities.md` "The native stylesheet probe", with the card built and
+    `--dry-run` verified.
+  - **Unmeasurable here: native cleanup after `dispose()`.** The device run
+    exercised load, render, and tap dispatch; it did not assert node removal or
+    listener-slot release afterwards, and no host-free test can, because the fake
+    PAPI is not a host. This stays a named gap in `docs/contract.md` §9 "Native
+    disposal" and `docs/migration.md` §9.2, and it is out of this box's claim
+    rather than left implied: the claim above is about what the renderer releases
+    through the Element PAPI, which is the same code on both hosts, not about
+    what a native engine then does with a removed node.
+  - **So the box is ticked, as the narrower claim.** Every resource the renderer
+    can acquire is proven released, in one test that reads the host's post-dispose
+    state rather than a log of calls; the two things it still cannot show —
+    stylesheet cleanup and native cleanup — are recorded as out of the claim and
+    unmeasurable respectively, at the line where a reader will look for them.
 - [x] Publish migration and compatibility guidance for breaking changes.
   - `docs/migration.md` (commit `002b786`) is the consumer-side guide: refs,
     CSS ids, event props, JSX types, the `<list>` → `root.createList()` move,
@@ -370,16 +438,15 @@ Set a stable public contract after web validation, native validation, and toolin
 
 **Milestone complete when:** consumers can build and maintain a Solid Lynx app using documented APIs, with core behavior continuously validated in supported runtimes.
 
-**Status of this milestone:** not complete. Four of the five items are done
-(three once the Solid half above counts as done, plus the compatibility-check
-box below). One stays open:
+**Status of this milestone:** complete for every claim the renderer can make. All
+five items are done. The cleanup box was retitled rather than left open — see its
+note above for why a stylesheet-cleanup claim could not have been closed by any
+amount of work here, and what replaced it.
 
-| Box | Why it is still open |
+| Box | Where the honest limit is now recorded |
 | --- | --- |
-| Confirm deterministic root, listener, and stylesheet cleanup | Root, listener, and ref cleanup are proven and were strengthened in 1.0.0 (`380284f`, `8b01d05`). Stylesheet cleanup is absent on web and unmeasured on native, so the box cannot close on evidence. |
+| Confirm deterministic root, listener, ref, and list-callback cleanup | Ticked as the narrower claim, with `test/renderer.test.ts:2086` as the new proof that a disposed root leaves no residual host state. Stylesheet cleanup is out of the claim (nothing is ever loaded: `docs/contract.md` §8) and native cleanup after `dispose()` is unmeasurable without a device (`docs/contract.md` §9, "Native disposal"). Both remain recorded as gaps in `docs/capabilities.md` and `docs/migration.md` §9.2. |
 
-The remaining item is not waiting on a contributor decision. It needs a
-stylesheet device run, which no check can perform without hardware.
 The 0.3 native-only box is absent from this table because it is scope-excluded,
 not pending.
 

@@ -134,7 +134,10 @@ What is measured, on this host only:
   itself never reaches this host's `removeNode`, which is what normally detaches
   them.
 - Disposal releases every row and leaves an inert pair installed, so a host that
-  still holds the list cannot repopulate a disposed model.
+  still holds the list cannot repopulate a disposed model. A root that owns the
+  list releases it before its own nodes, so disposing the root leaves no row,
+  no row listener, and no materializable cell behind (`test/renderer.test.ts:2086`
+  covers that whole-root case).
 
 Two things it does not do:
 
@@ -444,4 +447,7 @@ unmeasured.
   fails loudly when a host lacks it.
 - Stylesheet loading has no PAPI on either host to verify, so the capability is
   absent rather than blocked. It would have to be re-opened only if a host
-  exposed one.
+  exposed one. This is also why stylesheet *cleanup* is not a pending item
+  anywhere: the renderer never loads one, so the 1.0 roadmap box now claims
+  cleanup only for the resources it does acquire (see
+  [ROADMAP.md](../ROADMAP.md) and `docs/contract.md` §9).

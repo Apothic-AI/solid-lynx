@@ -477,18 +477,20 @@ right-hand column supports.
 | Nodes the root inserted into its page are removed on `dispose()`, and no others | `src/root.ts:86-116`, `:148-158` | `test/renderer.test.ts:561`, `:1014`; browser `test/browser/lynx-for-web.test.ts:471` |
 | Every listener the root registered is removed, in the slot it was filed in | `src/lynx-host.ts:453-455`, reached from `src/root.ts:149` | `test/renderer.test.ts:976` (asserts the add/remove slot tuples match), `:821` |
 | Removing a subtree detaches its listeners; re-inserting restores them | `src/lynx-host.ts:266-276`, `:436-452`, `:453-455` | `test/renderer.test.ts:789` |
-| Every ref the root attached is released | `src/universal.ts:103-113`, `src/refs.ts:47-56` | `test/renderer.test.ts:1163`; browser `:690` |
-| `dispose()` ends with one `__FlushElementTree` | `src/root.ts:157` | `test/renderer.test.ts:733` |
-| Roots sharing a page dispose independently | `src/root.ts:86-116` | `test/renderer.test.ts:1014`; browser `:527` |
-| A disposed root remounts with fresh listeners | `src/root.ts:163-168` | `test/renderer.test.ts:853`; browser `:527` |
+| Every ref the root attached is released | `src/universal.ts:103-113`, `src/refs.ts:47-56` | `test/renderer.test.ts:1300`; browser `:606`, `:630` |
+| `dispose()` ends with a `__FlushElementTree`, so its removals are not left pending | `src/renderer.ts:39`, `src/root.ts:157` | `test/renderer.test.ts:2086` |
+| Roots sharing a page dispose independently | `src/root.ts:86-116` | `test/renderer.test.ts:1151`; browser `:471` |
+| A disposed root remounts with fresh listeners | `src/root.ts:163-168` | `test/renderer.test.ts:853`; browser `:471` |
 | Swapping a handler does not add a second registration | `src/lynx-host.ts:310-315` | `test/renderer.test.ts:757`; browser `:442` |
-| Lists a root created are disposed with the root, and disposing a list releases every row and its listeners | `src/root.ts:146-150`, `src/list.ts:296-305` | `test/renderer.test.ts:1816`, `:1662` |
+| Lists a root created are disposed with the root, and disposing a list releases every row and its listeners | `src/root.ts:146-150`, `src/list.ts:296-305` | `test/renderer.test.ts:1983`, `:1829` |
+| A root that owned all of the above leaves no residual host state — no nodes, no live registration, no ref, no list row, no CSS id left on a live element | `src/root.ts:148-158` | `test/renderer.test.ts:2086` |
 
 ### 9.2 Not proven
 
 | Statement | Status |
 | --- | --- |
-| **Stylesheet cleanup** | Not applicable: the renderer never loads a stylesheet. A CSS id assigned by `setCSSId` stays on its elements; disposal removes the elements, and no un-assign call is made or needed. No test asserts anything about a stylesheet because no host here has one to assert against. |
+| **Stylesheet cleanup** | Not applicable: the renderer never loads a stylesheet. A CSS id assigned by `setCSSId` stays on its elements; disposal removes the elements, and no un-assign call is made or needed. No test asserts anything about a stylesheet because no host here has one to assert against. This is outside the claim, not a gap in it — the 1.0 roadmap box is scoped to the resources the renderer acquires. |
+| How many `__FlushElementTree` calls one `dispose()` performs | Not asserted. Two on a rendered root, three when it owned a list; only "the last call is a flush" is tested (`test/renderer.test.ts:2086`). |
 | Disposal ordering between two roots disposing in the same task | Unspecified and untested. Each root removes its own nodes in insertion order. |
 | Native listener-slot removal and node removal after `dispose()` | **Unmeasured.** The device run proved load, render, and tap dispatch; it did not assert cleanup afterward. |
 | `global-bind` delivery after cleanup | Not observable on web-core, which never invokes the callback; the registration lifecycle itself is covered. |
