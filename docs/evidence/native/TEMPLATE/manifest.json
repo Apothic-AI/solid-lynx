@@ -1,0 +1,16 @@
+{
+  "kind": "capture",
+  "card": "smoke",
+  "capture": "lynx_console-smoke-<stamp>.log",
+  "device": {
+    "serial": "R9WT911JVVH",
+    "getState": "device"
+  },
+  "timestamp": "<YYYY-MM-DDTHH:MM:SSZ>",
+  "commit": "<git rev-parse HEAD at the run>",
+  "verifier": {
+    "exitCode": 0,
+    "verdict": "verdict: verified — <n> operation(s) pass across 1 captured report(s)."
+  },
+  "note": "TEMPLATE — this is not evidence. Copy the directory, replace every <placeholder>, and point capture at the log you actually kept."
+}
