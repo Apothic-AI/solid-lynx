@@ -163,10 +163,12 @@ probe capture.
 node scripts/require-native-evidence.mjs --range <base>..HEAD
 ```
 
-This is what the `native-evidence` CI job runs over a pull request
-(`pull_request.base.sha..HEAD`). It decides whether the diff touches
+This is the command the `native-evidence` CI job is wired to run over a pull
+request (`pull_request.base.sha..HEAD`) — **the job itself has not run on GitHub
+Actions yet**. It decides whether the diff touches
 native-facing code, then looks for a committed record that satisfies the
-requirement. It reads git and the filesystem only.
+requirement. It reads git and the filesystem only, so running it by hand gives
+the same answer the job would.
 
 ### 3. Read the exit codes correctly
 
@@ -382,30 +384,39 @@ landed, and where to read it:
 - **Migration guide.** [migration.md](migration.md) is the `0.x` → frozen
   contract upgrade path: refs, CSS ids, event props, JSX types, the
   `<list>` → `root.createList()` move, root lifecycle.
-- **CI and PR template.** `.github/workflows/ci.yml` has six jobs (`unit`;
+- **CI and PR template.** `.github/workflows/ci.yml` defines six jobs (`unit`;
   `node-matrix`, standing alone; then `solid-matrix`, `browser`, `native-build`,
   and `native-evidence`, all `needs: unit`); `.github/pull_request_template.md`
-  repeats the same checks and states the native evidence requirement. CI
-  compiles the native bundle and **executes nothing native**; `native-evidence`
-  enforces that a native-facing change carries a stored, verifier-passing
+  repeats the same checks and states the native evidence requirement.
+  **No workflow has executed on GitHub Actions for any commit in this
+  repository** — `gh run list` returns no runs and `ci.yml` is not on
+  `origin/master` — so the workflow is defined, statically parsed, and locally
+  replayed, not exercised. That is why the 1.0 box about CI verification is
+  unticked. `native-build` compiles the native bundle and **executes nothing
+  native**; `native-evidence` is written to enforce that a native-facing change
+  carries a stored, verifier-passing
   capture, an explicit recorded decision, or a recorded *pending* run
   (`docs/evidence/native/README.md`). The verifier is chosen by the manifest's
   `card`: parity for `smoke`, probe for `stylesheet` and `list`. A pending record
-  exits 3 rather than 0, and the job surfaces that as a warning annotation —
-  see "How to check the claims" above for the full code table.
+  exits 3 rather than 0, and the job is written to surface that as a warning
+  annotation — see "How to check the claims" above for the full code table.
 - **Release process and 1.0.0.** [release.md](release.md) is the cut order with
   the command behind each step; [CHANGELOG.md](../CHANGELOG.md) carries the
   `1.0.0` entry, and `package.json` and `src/index.ts` both say `1.0.0`. Nothing
   is tagged or published ([release.md](release.md) §5).
 
-[ROADMAP.md](../ROADMAP.md) records the milestone honestly: all five `1.0`
-items are now done, and the one that used to stay open was retitled rather than
-ticked as written. Its third noun was stylesheet cleanup, which this renderer
-cannot claim because it never loads a stylesheet; the box now claims cleanup
-only for the resources it acquires (root, listener, ref, list callback) and says
-where the stylesheet half went. Both the capability and the native measurement
-remain open elsewhere and are recorded as such: native list and stylesheet
-behavior still need a device run.
+[ROADMAP.md](../ROADMAP.md) records the milestone honestly: **four of the five
+`1.0` items are ticked and one is not.** The unticked one is "Define supported
+Lynx and Solid version ranges and verify them in CI" — the ranges are defined
+and their commands pass locally, but no workflow has ever run on GitHub Actions,
+so the "in CI" half is unearned and the tick was withdrawn. Nothing else is
+needed for it but a push. The cleanup box that used to stay open was retitled
+rather than ticked as written: its third noun was stylesheet cleanup, which this
+renderer cannot claim because it never loads a stylesheet; the box now claims
+cleanup only for the resources it acquires (root, listener, ref, list callback)
+and says where the stylesheet half went. Both the capability and the native
+measurement remain open elsewhere and are recorded as such: native list and
+stylesheet behavior still need a device run.
 
 The two blockers behind the open boxes — the A03 (`ub_y33g9p`) and the package
 name (`ub_frxxn5`) — are detailed under "Remaining Work" above. Neither is

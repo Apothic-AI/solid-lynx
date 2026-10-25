@@ -72,8 +72,10 @@ Validate native-specific behavior after the web path is working, while making So
 **Status of this milestone:** met. Every box is either ticked or scope-excluded,
 and the completion criterion above does not depend on the excluded native-only
 box — it is about the example build and TypeScript checking, both of which are
-verified in CI. The device findings below are what the smoke run established, and
-none of them is restated as a present pass.
+verified by the local gate (`pnpm typecheck`, `test/consumer/*`, `pnpm test`) that
+the `unit` job runs. That gate has been run here; the workflow carrying it has
+not run on GitHub Actions. The device findings below are what the smoke run
+established, and none of them is restated as a present pass.
 
 Verified notes for this milestone:
 
@@ -206,24 +208,38 @@ Set a stable public contract after web validation, native validation, and toolin
     and §12 JSX types each list the signature, its status (stable, provisional,
     or unsupported), and the test that fails if it changes. §15 collects
     everything outside the contract and §16 the exported surface with no test.
-  - Evidence the document is enforced rather than aspirational: the CI `unit`
-    job runs `pnpm typecheck` (build, then `tsc --noEmit`, then the consumer
-    fixtures), `pnpm typecheck:consumer` (`test/consumer/tsconfig.json` and
-    `tsconfig.dev.json`, which assert the type-level rejections with
-    `@ts-expect-error`), and `pnpm test` (117 unit tests in 6 files: 62 in
-    `test/renderer.test.ts`, 19 in `test/native-parity-verify.test.ts`, 14 in
-    `test/list-probe-report.test.ts`, 9 in `test/parity.test.ts`, 7 in
-    `test/stylesheet-probe-report.test.ts`, 6 in `test/rspeedy.test.ts`), so a
-    contract item that loses its covering test or its type rejection turns CI
-    red.
-- [x] Define supported Lynx and Solid version ranges and verify them in CI.
-  - **Node half: done, and verified in CI.** `docs/compatibility.md` §5–§7
+  - Evidence the document is enforced rather than aspirational: the `unit` job in
+    `.github/workflows/ci.yml` runs `pnpm typecheck` (build, then `tsc --noEmit`,
+    then the consumer fixtures), `pnpm typecheck:consumer`
+    (`test/consumer/tsconfig.json` and `tsconfig.dev.json`, which assert the
+    type-level rejections with `@ts-expect-error`), and `pnpm test` — measured in
+    this tree as **213 unit tests in 9 files**, of which `test/renderer.test.ts`
+    contributes 63 (the file has grown since this box was written; the counts
+    move, the arrangement does not). A contract item that loses its covering test
+    or its type rejection therefore fails a command that the workflow runs, and
+    the same commands have been run here to exit 0. The workflow itself has not
+    run on GitHub Actions — see the next box — so the enforcement is real and
+    local, not a claim about a runner.
+- [ ] Define supported Lynx and Solid version ranges and verify them in CI.
+      **Unticked on the CI half only.** The original wording is kept above,
+      unedited, because the change is a correction of evidence rather than a
+      redefinition of the goal. The ranges are defined and their commands pass
+      locally; what is missing is the CI execution the box names. It was ticked
+      while the workflow had never run anywhere, which is the exact overclaim
+      the rest of this tree spends its effort removing — a claim stronger than
+      its evidence. What would earn the tick: the first push of this branch,
+      which starts `unit`, `node-matrix`, `solid-matrix`, `browser`,
+      `native-build`, and `native-evidence` on GitHub Actions, plus one green
+      `node-matrix` and one green `solid-matrix` run recorded with their URLs.
+      That is one PR away, and nothing else is blocking it — see "What is still
+      unverified" at the end of this box.
+  - **Node half: defined, and verified locally — not in CI.** `docs/compatibility.md` §5–§7
     (commit `5ecace6`) defines the set: exact pins for `solid-js` 1.9.15,
     `@lynx-js/web-core` 0.26.2, `@lynx-js/rspeedy` 0.18.0,
     `@lynx-js/lynx-core` 0.1.4, the two Lynx Rsbuild plugins, `@rsbuild/core`
     2.2.11, `@rsbuild/plugin-babel` 2.1.0, and `babel-preset-solid` 1.9.15, plus
     the Node and pnpm ranges. The `node-matrix` job in
-    `.github/workflows/ci.yml` is what covers the Node range: it runs
+    `.github/workflows/ci.yml` *would* cover the Node range: it runs
     `pnpm install --frozen-lockfile`, `pnpm typecheck`, and `pnpm test` on
     `20.x`, `22.x`, and `24.x` — the two declared Node lines plus the major the
     open-ended `>=22.12.0` admits, chosen because no manifest in the graph caps
@@ -234,9 +250,9 @@ Set a stable public contract after web validation, native validation, and toolin
     an earlier commit in this release, before the sweep and probe suites landed;
     the other five Node lines were not re-run, so their 121 is an expectation,
     not a result, and the 213 above is measured on 22.23.3 only.
-  - **Solid half: done — the range widens the evidence rather than shrinking the
-    claim.** The range stays `^1.9.15` (`package.json:59`) and the `solid-matrix`
-    job in `.github/workflows/ci.yml` gives it a run. What decides it:
+  - **Solid half: defined, and verified locally — not in CI.** The range stays
+    `^1.9.15` (`package.json:59`) and the `solid-matrix` job in
+    `.github/workflows/ci.yml` *would* give it a run. What decides it:
     - `^1.9.15` admits exactly three published versions: `1.9.15` (the pin),
       `1.9.16`, and `1.9.17` (`latest`). `1.9.14` and below, `1.10.0-beta.0`, and
       every `2.x` are outside it. So the range is closable by running two
@@ -263,25 +279,41 @@ Set a stable public contract after web validation, native validation, and toolin
       does not exist in pnpm 12.9.1 and `pnpm add -D -E` was measured to let a
       later `git checkout` of the manifests silently downgrade the gate back to
       1.9.15. `docs/compatibility.md` §2 records both failures.
-    - What is still unverified: the job has not run on GitHub Actions (this
-      worktree cannot dispatch it), so the recorded evidence is the local replay
-      of its exact steps. A future `1.9.18` would be admitted by the range and
-      would need a `matrix.include` entry before it could be claimed.
+    - What is still unverified: **the job has never run on GitHub Actions.** No
+      workflow has executed there for any commit on this branch — `gh run list`
+      for the repository returns no runs at all, and `.github/workflows/ci.yml`
+      is not on `origin/master`, which sits at `e40d1c5`, 52 commits behind.
+      The workflow file is validated by static parse (both matrices expand, all
+      six jobs and their `needs:` edges are well-formed), and its `run:` steps
+      were replayed locally at named commits with the results above. That is a
+      local replay of the exact steps, **not** a CI run: the leg matrix, the
+      `needs: unit` edges, and every `actions/*` step are unexecuted. A future
+      `1.9.18` would be admitted by the range and would need a `matrix.include`
+      entry before it could be claimed.
   - The `unit` job's accounting of what closes this box: `solid-matrix` has
     `needs: unit`, so a red unit gate stops it from running rather than
-    producing a second, confusing failure.
+    producing a second, confusing failure. That edge is declared and statically
+    parsed; it has not been exercised, because nothing has run on a runner yet.
 - [x] Require native and web compatibility checks for changes to shared behavior.
-  - **Web half: enforced.** The `browser` job runs both suites on every pull
-    request — `PLAYWRIGHT_PORT=4186 pnpm web:test` (17 tests) and
-    `PLAYWRIGHT_PORT=4200` with `test/browser/patterns.playwright.config.ts`
-    (9 tests) — and a red suite fails the PR.
+  - **Web half: enforced by a declared job, and green locally.** The `browser`
+    job *would* run both suites on every pull request —
+    `PLAYWRIGHT_PORT=4186 pnpm web:test` (17 tests) and `PLAYWRIGHT_PORT=4200`
+    with `test/browser/patterns.playwright.config.ts` (9 tests) — and a red suite
+    would fail it. Both suites were run here at this commit and passed 17 and 9.
+    The job has not run on GitHub Actions, so what is established is that the
+    suites are green and that a job runs them; that a PR would be blocked is the
+    declared behaviour, not an observed one.
   - **Native half: enforced as a requirement on evidence, not as an execution.**
-    The `native-evidence` job runs `scripts/require-native-evidence.mjs` over
-    `pull_request.base.sha..HEAD` on every pull request, and a change to
-    native-facing code with no satisfying record is **red**. That is the
+    The `native-evidence` job *would* run
+    `scripts/require-native-evidence.mjs` over `pull_request.base.sha..HEAD` on
+    every pull request, and a change to native-facing code with no satisfying
+    record would be **red**. That is the
     specific gap this box named: it used to say "a PR that changes
     native-facing behaviour and ticks nothing still merges, and no check goes
-    red". It no longer does.
+    red". The check now exists, is wired into a job, and was demonstrated by
+    hand against throwaway repositories for all four exit codes. It has not run
+    on GitHub Actions, so "a bad PR is blocked" is the job's declared behaviour
+    and the script's measured behaviour, not yet an observed CI event.
     - The path list is `NATIVE_FACING_PATHS` in
       `scripts/require-native-evidence.mjs`, exported so it is testable, and
       derived by reading the bundle rather than guessing. Runtime-reachable:
@@ -323,13 +355,17 @@ Set a stable public contract after web validation, native validation, and toolin
       tablet had to either write a `decision.json` asserting no run was needed
       (false) or fail its own gate as though it had dodged the requirement. 3 is
       the difference between "unmet and scheduled" and "met" and "dodged".
-    - **CI surfaces 3 as a warning, not a failure, and 1/2 still fail.** The
-      `native-evidence` job captures the script's exit code, emits a
+    - **CI surfaces 3 as a warning, not a failure, and 1/2 still fail — as
+      written and statically parsed.** The `native-evidence` job captures the
+      script's exit code, emits a
       `::warning title=Native evidence PENDING — not a pass::` annotation and a
       job-summary block for 3, and exits with the code for anything else. So a
-      red `native-evidence` job always means missing or unreadable evidence, and
-      a green one with a `pending.json` in the range says in the annotation that
-      nothing was measured.
+      red `native-evidence` job would always mean missing or unreadable evidence,
+      and a green one with a `pending.json` in the range would say in the
+      annotation that nothing was measured. The shell was replayed locally
+      against the real repository (pending → step exit 0 with the annotation,
+      missing → step exit 1) and the YAML parses; the annotation itself has not
+      been rendered by GitHub, because no workflow has run there.
     - The reuse holes are closed. A capture whose recorded commit is at or
       before the range base does not count; neither does one whose native-facing
       files moved again after that commit. A manifest without its capture, a
@@ -503,13 +539,26 @@ Set a stable public contract after web validation, native validation, and toolin
 
 **Milestone complete when:** consumers can build and maintain a Solid Lynx app using documented APIs, with core behavior continuously validated in supported runtimes.
 
-**Status of this milestone:** complete for every claim the renderer can make. All
-five items are done. The cleanup box was retitled rather than left open — see its
+**Status of this milestone:** complete for every claim the renderer can make, on
+local evidence, with one box unticked. Four of the five items are done. The fifth
+— "Define supported Lynx and Solid version ranges and verify them in CI" — is
+ticked nowhere in this file: the ranges are defined and their commands pass
+locally, but no workflow has ever run on GitHub Actions, so the "in CI" half of
+that sentence is unearned. It is unticked rather than reworded because unticking
+is what the evidence supports and the original wording is still visible above.
+The cleanup box was retitled rather than left open — see its
 note above for why a stylesheet-cleanup claim could not have been closed by any
 amount of work here, and what replaced it.
 
+What that means for the milestone criterion: "core behavior continuously
+validated in supported runtimes" is true of this worktree and not yet true of a
+runner. Continuous validation is the workflow's job, and the workflow has been
+written, statically parsed, and replayed locally but never executed on GitHub.
+The first push is what converts this, and it changes no code.
+
 | Box | Where the honest limit is now recorded |
 | --- | --- |
+| Define supported Lynx and Solid version ranges and verify them in CI | **Unticked**, on the CI half only. The ranges are defined (`docs/compatibility.md` §5–§7) and their commands pass locally; no workflow has executed on GitHub Actions, so the "in CI" half is unearned. What earns the tick is a push plus one green `node-matrix` and one green `solid-matrix` run recorded with their URLs — one PR away. `docs/compatibility.md` §8, `docs/release.md` §7, and `README.md`'s status block all now say the same thing. |
 | Confirm deterministic root, listener, ref, and list-callback cleanup | Ticked as the narrower claim, with `test/renderer.test.ts:2086` as the new proof that a disposed root leaves no residual host state. Stylesheet cleanup is out of the claim (nothing is ever loaded: `docs/contract.md` §8) and native cleanup after `dispose()` is unmeasurable without a device (`docs/contract.md` §9, "Native disposal"). Both remain recorded as gaps in `docs/capabilities.md` and `docs/migration.md` §9.2. |
 
 The 0.3 native-only box is absent from this table because it is scope-excluded,

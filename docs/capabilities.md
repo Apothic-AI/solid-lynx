@@ -26,10 +26,11 @@ also [building.md](building.md).
 
 How a run is kept is now a checked requirement rather than a convention. A
 verifier-passing capture is stored at `docs/evidence/native/<date-or-id>/` beside
-a `manifest.json`, and `scripts/require-native-evidence.mjs` — run by the
-`native-evidence` CI job over every pull request — fails a change to
+a `manifest.json`, and `scripts/require-native-evidence.mjs` — wired into the
+`native-evidence` CI job to run over every pull request — fails a change to
 native-facing code that carries neither that nor an explicit recorded
-`decision.json`. A third record, `pending.json`, states that the run is
+`decision.json`. That job has not run on GitHub Actions yet; the failure above
+is the script's measured behaviour, not an observed CI event. A third record, `pending.json`, states that the run is
 scheduled and blocked on hardware; it is accepted when it covers every
 native-facing path in the change, and it makes the gate exit 3 ("pending, not a
 pass") rather than 0, so a release can be explicit about an absent measurement

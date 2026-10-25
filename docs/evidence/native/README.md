@@ -232,9 +232,11 @@ waiting on. It is the reason that range reports `verdict: pending` rather than
 
 ## What is machine-checked, and what is not
 
-Checked on every pull request by the `native-evidence` job
-(`.github/workflows/ci.yml`), and locally by
-`node scripts/require-native-evidence.mjs`:
+Wired into the `native-evidence` job (`.github/workflows/ci.yml`) to run on
+every pull request, and runnable locally as
+`node scripts/require-native-evidence.mjs`. The job has not yet executed on
+GitHub Actions — no workflow in this repository has — so what is established
+below is the script's measured behaviour and the job's declared wiring:
 
 - that a native-facing change was detected at all — the path list is in
   `scripts/require-native-evidence.mjs` as `NATIVE_FACING_PATHS`. For

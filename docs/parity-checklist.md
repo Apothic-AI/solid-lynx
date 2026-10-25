@@ -47,7 +47,8 @@ Once the run is stored, the requirement is machine-checked rather than trusted:
 node scripts/require-native-evidence.mjs --range <base>..HEAD
 ```
 
-That script is the `native-evidence` CI job. It fails a pull request that changes
+That script is wired into the `native-evidence` CI job (which has not itself run on
+GitHub Actions yet). It fails a pull request that changes
 native-facing code and carries no capture the verifier accepts and no recorded
 `decision.json` or `pending.json`; it re-runs the verifier against the stored
 bytes, so the manifest's verdict is checked against the capture beside it rather

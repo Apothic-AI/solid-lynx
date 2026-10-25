@@ -15,14 +15,20 @@ This repository has therefore
 what a publish would do, not a procedure anyone has completed. Read §5 before
 you read anything into the word "release".
 
-## 1. Pre-flight: the gate CI repeats
+## 1. Pre-flight: the gate CI would repeat
 
-`.github/workflows/ci.yml` has six jobs: `unit`, `node-matrix`, `solid-matrix`,
+`.github/workflows/ci.yml` defines six jobs: `unit`, `node-matrix`, `solid-matrix`,
 `browser`, `native-build`, `native-evidence`. `browser`, `native-build`, and
 `native-evidence` all `needs: unit`, so `unit` gates them; `solid-matrix` also
 has `needs: unit`. `node-matrix` has no `needs:` on purpose, so a failing matrix
 leg reads as the matrix rather than as the unit gate. Every step below runs the same command a developer runs locally;
 none needs a secret. Green means exit status 0 on that exact command.
+
+**No workflow has executed on GitHub Actions for this repository.** The file is
+validated by static parse and every command in it has been replayed locally at
+named commits — that is what the "Result here" column records — but the jobs
+themselves, their `needs:` edges, and every `actions/*` step are unexecuted. So a
+green row below means "this command passes here", never "CI ran it and passed".
 
 | CI job | Step in `ci.yml` | Command | Green means | Result here |
 | --- | --- | --- | --- | --- |
@@ -144,7 +150,8 @@ device or emulator is attached to a runner, so **no native behaviour is executed
 in CI** (`.github/workflows/ci.yml`, the comment above the `native-build` job,
 and [compatibility.md](compatibility.md#8-what-this-document-does-not-claim) §8).
 
-What CI *does* now check is that evidence exists. The `native-evidence` job runs
+What the workflow *does* now check, once it runs, is that evidence exists. The
+`native-evidence` job invokes
 `scripts/require-native-evidence.mjs` over a pull request's diff
 (`pull_request.base.sha..HEAD`) and fails it when the change touches
 native-facing code and carries none of:
@@ -163,13 +170,18 @@ native-facing code and carries none of:
   reviewed, and blocked — the card that will measure it, why it has not run, the
   physical dependency named, and every native-facing path it stands in for.
 
+**No workflow has executed on GitHub Actions for this repository**, so everything
+above is the job's wiring plus the script's measured behaviour, not an observed CI
+result. §7 records the whole list of what could not run.
+
 A `pending.json` is not a pass, and the gate does not report it as one. The
-script exits **3** for it, and the `native-evidence` job turns 3 into a workflow
-warning annotation plus a job-summary block reading "pending, not a pass", while
-exit 1 and exit 2 still fail the job. That split is deliberate: a red
-`native-evidence` job always means the evidence is missing or unreadable, never
-merely scheduled — and a green one with a `pending.json` in the range carries a
-warning that says no native behaviour in the pull request was verified. The
+script exits **3** for it, and the `native-evidence` job is written to turn 3 into
+a workflow warning annotation plus a job-summary block reading "pending, not a
+pass", while exit 1 and exit 2 still fail the job. That split is deliberate: a
+red `native-evidence` job would always mean the evidence is missing or
+unreadable, never merely scheduled — and a green one with a `pending.json` in
+the range would carry a warning that says no native behaviour in the pull
+request was verified. The
 two lie-adjacent outcomes this avoids are a `decision.json` asserting that no run
 is needed when one is (false), and an exit 1 that reports a scheduled
 requirement as though someone had dodged it.
@@ -290,8 +302,9 @@ node scripts/require-native-evidence.mjs --range <base>..HEAD
 ```
 
 Exit 0 is satisfied, 1 is missing or mismatched evidence, 2 is could not
-evaluate, and 3 is **pending, not a pass**. The `native-evidence` CI job runs the
-same command from the PR base and turns 3 into a warning annotation.
+evaluate, and 3 is **pending, not a pass**. The `native-evidence` CI job is
+written to run the same command from the PR base and to turn 3 into a warning
+annotation; neither has happened on a runner yet.
 
 **No capture is stored in this repository at this commit.** `docs/evidence/native/`
 holds its README, the capture-less `TEMPLATE/`, and one directory of pending
@@ -463,8 +476,13 @@ consumers may already have installed. That document does not exist yet.
 **What a release may not claim.**
 [compatibility.md §8](compatibility.md#8-what-this-document-does-not-claim),
 "What this document does not claim", is the list a release note has to stay
-inside: three Node lines in CI (`20.x`, `22.x`, `24.x` from the `node-matrix`
-job) rather than the exact `20.19.0` / `22.12.0` floors of the declared
+inside. The load-bearing one for this release: **no CI run exists.** No workflow
+has executed on GitHub Actions for any commit on this branch, so a release note
+may not say CI verified anything. What it may say is that the workflow is
+written and statically parsed, that its steps were replayed locally at named
+commits, and that the local gate passes. Beyond that: three Node lines
+(`20.x`, `22.x`, `24.x` from the `node-matrix` job, once it runs) rather than the
+exact `20.19.0` / `22.12.0` floors of the declared
 `^20.19.0 || >=22.12.0` range, every version inside the Solid peer range (from
 the `solid-matrix` job — locally green, not yet run on GitHub Actions), no
 web-core matrix, no native runtime in CI, no second native runtime and no device
@@ -489,7 +507,8 @@ per-capability version of the same statement.
 | `node scripts/require-native-evidence.mjs --range <base>..HEAD` against a real device capture | **not run** | No capture exists to point it at. The script's own four exit codes (0 satisfied, 1 missing, 2 could not evaluate, 3 pending-not-a-pass) were demonstrated against throwaway git repositories under `/tmp`, and its 50 host-free tests build their own repositories; the `native-evidence` job has not run on GitHub Actions, because no runner can be dispatched from this worktree. |
 | Stylesheet probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0), which reviews the sequence and touches nothing. |
 | List probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0). The list card has had a runner since `run-native-probe.sh` took a card argument — it is no longer loaded by hand — but a reviewed command sequence is not a device result. |
-| `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; CI runs it on a bare runner. |
+| Any job of `.github/workflows/ci.yml`, on GitHub Actions | **not run** | No workflow has ever executed for this repository: `gh run list` returns no runs, and the workflow file is not on `origin/master` (which sits at `e40d1c5`, 52 commits behind). The file is validated by static parse and its `run:` steps are replayed locally, which is not the same thing — the leg matrices, the `needs:` edges and every `actions/*` step are unexecuted. |
+| `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; a CI runner would install it because it starts bare. |
 | The `solid-matrix` job's steps, verbatim, on both legs | **run locally**, exit 0 | The job's `run:` blocks were extracted from the parsed YAML and executed in order for `solid-js` 1.9.16 / `babel-preset-solid` 1.9.16 and `solid-js` 1.9.17 / preset 1.9.16. Every command exited 0 and the tree was clean afterwards. What is **not** run is the workflow itself on GitHub Actions — no runner could be dispatched from this worktree, so the leg matrix, the `needs: unit` edge, and the `actions/*` steps are unverified until a push runs them. |
 | `pnpm publish` (real) | **not run**, deliberately | §5. The name belongs to another maintainer and this repository has no credential or release workflow. Only `--dry-run` was executed, and it uploaded nothing. |
 

@@ -251,9 +251,11 @@ that decide what an emitted bundle means: `@lynx-js/rspeedy` 0.18.0,
 `@rsbuild/plugin-babel` 2.1.0, `babel-preset-solid` 1.9.15, and `solid-js`
 1.9.15. `typescript`, `vite`, `vitest`, `@playwright/test`, and `@babel/core`
 keep caret ranges; their lockfile-resolved versions are what was actually run.
-`docs/compatibility.md` §8 states what the ranges do **not** claim: CI runs one
-Node version on one toolchain set, so it repeats the local gate rather than
-widening the supported set.
+`docs/compatibility.md` §8 states what the ranges do **not** claim: the workflow
+would repeat the local gate on one toolchain set rather than widening the
+supported set — and it has not run yet. No workflow has executed on GitHub
+Actions for any commit in this release, so the pinned set is verified locally
+and declared for CI, not verified by CI.
 
 ### Migration and compatibility guidance
 
@@ -448,8 +450,9 @@ Two documents that a contributor follows rather than a consumer:
   the pre-flight command list that mirrors CI step for step, the version bump in
   both `package.json` and `src/index.ts`, what CI cannot check (native, §3), the
   build-and-pack step, publishing, rollback, and an explicit section on what that
-document could not itself run. Its §1 exists so a release does not re-derive
-  which commands CI actually runs.
+  document could not itself run. Its §1 exists so a release does not re-derive
+  which commands the workflow is written to run — and §7 records that no job of
+  it has yet executed on GitHub Actions.
 - `.github/pull_request_template.md` (commit `e73168f`) puts the same checks in
   front of every pull request as boxes to tick, including the native-evidence
   question with its three honest answers and the hand-work steps on the A03. The

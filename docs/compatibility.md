@@ -28,14 +28,16 @@ not something this repository has tested. The new range is the intersection of
 the declared requirements of the three hard toolchain dependencies, and it
 matches the sentence already in the README.
 
-**What is actually verified:** the edges of the declared range, locally and (as
-of the `node-matrix` job) in CI. Locally this repository ran the unit gate —
-`pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` — to exit 0 on
-20.19.0, 20.20.2, 22.12.0, 22.23.3, and 24.22.1, each with 98 passing tests. CI
-runs the same three commands as three legs (`20.x`, `22.x`, `24.x` in
-`.github/workflows/ci.yml`), which resolve to the newest release on each line
-rather than to the floor. Node 21, 23, and 25 are outside the range by
-declaration and were never run.
+**What is actually verified:** the edges of the declared range, locally. This
+repository ran the unit gate — `pnpm install --frozen-lockfile`,
+`pnpm typecheck`, `pnpm test` — to exit 0 on 20.19.0, 20.20.2, 22.12.0,
+22.23.3, and 24.22.1, each with 98 passing tests. The `node-matrix` job in
+`.github/workflows/ci.yml` is written to run the same three commands as three
+legs (`20.x`, `22.x`, `24.x`), which resolve to the newest release on each line
+rather than to the floor — but **it has not run on GitHub Actions**: no workflow
+has, for any commit on this branch. So the Node range is verified here and
+declared for CI, not verified in CI. Node 21, 23, and 25 are outside the range
+by declaration and were never run.
 
 Note that `engines` is advisory unless a consumer's package manager enforces it.
 npm warns. pnpm 12.9.1 does **not** enforce it by default either: installing a
@@ -251,16 +253,20 @@ app to install.
 
 ## 8. What this document does not claim
 
-- **One axis of a matrix in CI, not a matrix of the supported set.** The
-  `node-matrix` job in `.github/workflows/ci.yml` runs the unit gate on `20.x`,
+- **One axis of a matrix, and no CI run yet.** Nothing in this repository has
+  executed on GitHub Actions — `gh run list` for the repository returns no runs,
+  and `.github/workflows/ci.yml` is not on `origin/master`. The `node-matrix`
+  job is *written* to run the unit gate on `20.x`,
   `22.x`, and `24.x`, so Node 20 (lower line) and Node 24 (admitted by the
-  open-ended `>=22.12.0`) are exercised instead of only Node 22. The
-  `solid-matrix` job runs the gate on `solid-js` 1.9.16 and 1.9.17, the two
-  published versions `^1.9.15` admits above the pin. Between them those are **the
+  open-ended `>=22.12.0`) would be exercised instead of only Node 22. The
+  `solid-matrix` job is written to run the gate on `solid-js` 1.9.16 and
+  1.9.17, the two published versions `^1.9.15` admits above the pin, and its
+  steps were replayed locally (§2). Between them those are **the
   Node and Solid axes only**. They do not test any `@lynx-js/web-core` other than
   0.26.2, any Lynx toolchain other than the pinned set in `package.json`, or any
-  OS other than `ubuntu-latest`. A green matrix narrows the Node and Solid claims;
-  it does not widen the supported set on any other axis.
+  OS other than `ubuntu-latest`. A green matrix would narrow the Node and Solid
+  claims; it would not widen the supported set on any other axis. There is no
+  green matrix yet — the local replays above are what exists.
 - **The Solid matrix tests the full admitted range; a green run is what licenses
   that sentence.** `^1.9.15` admits exactly `1.9.15`, `1.9.16`, and `1.9.17`
   (checked against the published list; `1.9.14` and below and every `2.x` and
@@ -303,10 +309,12 @@ app to install.
   [contract.md](contract.md) §12.
 - **The `20.x` / `22.x` / `24.x` matrix entries are line *tops*, and the floors
   were proven by hand instead.** `actions/setup-node` resolves `20.x` to the
-  newest 20 and `22.x` to the newest 22, not to `20.19.0` or `22.12.0`, so CI does
-  not itself prove the declared floors. Those floors were run locally before this
-  change: the unit gate exited 0 on both 20.19.0 and 22.12.0. Node 21, 23, and
-  25 sit outside `^20.19.0 || >=22.12.0` by declaration and were never run.
+  newest 20 and `22.x` to the newest 22, not to `20.19.0` or `22.12.0`, so a CI run
+  would not by itself prove the declared floors. Those floors were run locally
+  before this change: the unit gate exited 0 on both 20.19.0 and 22.12.0. Right
+  now the local run is the only evidence there is, because no CI run exists.
+  Node 21, 23, and 25 sit outside `^20.19.0 || >=22.12.0` by declaration and were
+  never run.
 
 ### Running the Node matrix locally
 
@@ -372,10 +380,15 @@ Because most entries above are exact versions, bumping one is a deliberate act:
    entry are the same commit, or the range publishes a version with no run behind
    it.
 
-CI (`.github/workflows/ci.yml`) repeats steps 1-2 on Node 22 plus both
-browser suites and the native build, the `node-matrix` job repeats the unit
-gate on the `20.x`, `22.x`, and `24.x` Node lines, and the `solid-matrix` job
-repeats it on the two published Solids above the pin. A green CI run is therefore
+`.github/workflows/ci.yml` is written to repeat steps 1-2 on Node 22 plus both
+browser suites and the native build, with the `node-matrix` job repeating the
+unit gate on the `20.x`, `22.x`, and `24.x` Node lines and the `solid-matrix`
+job repeating it on the two published Solids above the pin. **It has not run:**
+no workflow has executed on GitHub Actions for any commit on this branch. The
+`solid-matrix` steps were replayed locally (§2); `node-matrix`'s legs resolve
+to line tops that were not re-run here.
+
+Once it does run, a green CI run would be
 evidence for three Node lines and every version inside the Solid peer range, all
 on `ubuntu-latest` — not for the exact `20.19.0` / `22.12.0` floors, not for any
 other OS, and not for any other version axis. Step 3's native hand run is never
