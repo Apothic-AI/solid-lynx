@@ -21,21 +21,38 @@ publish and is in no published tarball. The unscoped npm name `solid-lynx`
 resolves to an unrelated package (MIT licence, a different maintainer, published
 2025-03-10); this project ships Apache-2.0 and is not that package.
 
-## Unreleased
+## 1.0.1 — 2026-10-25
 
-No version number is assigned to this section, and the reason is recorded rather
-than left implicit: **every commit since the publish changes no shipped code.**
-The published tarball's `dist/` is byte-identical to a build of this tree, so a
-republish under a new number would ship the same renderer, the same types, and
-the same exports — a version that moved without a byte changing, which is the
-kind of number this file exists to stop. The one caveat is documentation: `docs/`
-and `CHANGELOG.md` **are** in `files[]`, so the next tarball would carry different
-prose. That makes a republish *worth doing* for a consumer who reads documentation
-from the installed package instead of the repository; it does not make it a
-version. If one is cut for that reason, `1.0.1` is the number, and it is a
-release decision rather than a fix — nothing a consumer imports changes. See
-[release.md](docs/release.md) §2 for the check that keeps this honest at the next
-publish.
+Shipped code is unchanged. This release exists because **documentation is part of
+the package**: `docs/` and `CHANGELOG.md` are in `files[]`, so a consumer reading
+the installed package rather than the repository was being told something that had
+become incomplete. `git diff 1.0.0..1.0.1 -- src package.json tsconfig.build.json`
+is empty and `dist/` is byte-identical, so nothing you import changes.
+
+The reason 1.0.0's tarball needed replacing rather than merely documenting the
+change in git: `@lynx-js/web-core` 0.26.2 carries a boot defect that makes a card
+render nothing and report nothing, and **0.26.2 is the version this package
+supports**. A consumer hitting it had no way to learn from the package they
+installed that the defect was upstream, what it looked like, or what to do. That
+is a gap in a shipped artifact, which is a fix, so the number moves.
+
+What a consumer gets that they did not have at 1.0.0:
+
+- `docs/capabilities.md` describes the defect, its symptom (a card that never
+  renders with `page errors: none`, `console errors: none`, `failed requests:
+  none`), the cause, the versions that carry it (0.26.2 measured, 0.26.5 inspected
+  with the same `done` handler), and three options — patch it, pin differently, or
+  wait — with the honest statement that this package does not fix it for them.
+- `docs/compatibility.md` §3 and §7 record that every web result in this
+  repository was measured with a **local patch applied**, so a consumer's results
+  may differ from ours, and that 0.26.2 is supported *with that qualification*.
+- `docs/release.md` §2a tells a maintainer to check before the next publish that
+  the patch is still needed, still applies, and that shipped code is still what
+  the version number claims.
+
+Why the patch itself is not in this release: it lives in `pnpm-workspace.yaml`
+(`patchedDependencies`), which is not in `files[]`. It changes this repository's
+test harness, not the package.
 
 ### The web-core boot race is patched for the test harness, and disclosed to consumers
 

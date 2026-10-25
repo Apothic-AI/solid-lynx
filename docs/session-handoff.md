@@ -9,7 +9,7 @@ harness; the commands are prose and shell.
 - Repository: `/home/bitnom/Code/solid-lynx` (`master`), plus per-tranche git
   worktrees under `/home/bitnom/Code/solid-lynx-wt/`. Work in the worktree you
   were given: it sits on its own `wt/...` branch.
-- Version is `1.0.0` in `package.json` and `src/index.ts`, and the contract is
+- Version is `1.0.1` in `package.json` and `src/index.ts`, and the contract is
   frozen in [contract.md](contract.md). Check `git status --short --branch` and
   recent commits before editing, because `master` moves under a worktree while
   other tranches land.
