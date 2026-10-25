@@ -18,9 +18,22 @@
  *   that does not resolve can only fail. Adopting or replacing a stylesheet
  *   needs a stylesheet handle this probe has no contract for, so it is not
  *   attempted; see `unmeasured` in the summary stage.
+ * - The load stage is pointed at a real, served stylesheet with the argument
+ *   list the v2 card measured. `[url]` alone throws `LoadStyleSheet param size
+ *   should >= 2`, and every non-string second argument the v2 card tried throws
+ *   `LoadStyleSheet param 1 should be String`; only `[url, "utf-8"]` returned
+ *   instead of throwing. So the stage records both: the one-argument attempt
+ *   first, as the measured negative result, then the two-argument call as the
+ *   load that did not throw. The two-argument call is still inert: the served
+ *   stylesheet holds one rule that matches nothing on the card, and the engine
+ *   returns no handle either way (`null`), so nothing is owned and no lifecycle
+ *   is claimed.
  * - Each stage is logged on its own line. The native console bridge drops
  *   everything after the first newline, and a stage that fails hard must not
- *   take the earlier evidence with it.
+ *   take the earlier evidence with it. The bridge is also known to deliver a
+ *   line of up to 2,040 bytes intact, so the summary stage does not re-echo the
+ *   calls the earlier stages already logged: it would repeat the engine's error
+ *   text and push the line past that budget.
  */
 
 import { createLynxRoot, ensureLynxEnvironmentBasics } from "@apothic-ai/solid-lynx";
@@ -29,8 +42,10 @@ import {
   STYLESHEET_PAPI_NAMES,
   describeFunction,
   findStyleRelatedGlobals,
+  loadRealUrlCases,
   reportLine,
   safeCall,
+  type ProbeCall,
   type ProbeOperation,
 } from "./stylesheet-probe-report.js";
 
@@ -47,6 +62,16 @@ declare const lynx: {
 const CSS_URL = "http://127.0.0.1:8099/probe.css";
 /** A path the loopback server cannot resolve, so the load has to fail. */
 const MISSING_CSS_URL = "http://127.0.0.1:8099/__probe_missing__.css";
+/**
+ * The second parameter `__LoadStyleSheet` requires: an encoding label.
+ *
+ * Not inferred from the arity. The v2 card measured it: `[url, "utf-8"]` and
+ * `[url, url2]` returned `null`, while `[url]` threw "param size should >= 2" and
+ * `[url, null]`, `[url, 0]`, `[url, {}]`, `[url, function(){}]`, `[url, []]` all
+ * threw "param 1 should be String". `[url, url2]` is a second URL being read as a
+ * label, so it says a String is accepted rather than that this one string is.
+ */
+const CSS_ENCODING = "utf-8";
 
 const scope = globalThis as unknown as Record<string, unknown>;
 const operations = new Map<string, ProbeOperation>();
@@ -64,6 +89,31 @@ function record(name: string): ProbeOperation {
   operations.set(name, operation);
   return operation;
 }
+
+/** How many calls every stage has recorded so far. */
+function recordedCallCount(): number {
+  return [...operations.values()].reduce((total, operation) => total + operation.calls.length, 0);
+}
+
+/**
+ * The operations again, carrying only the calls recorded from `from` onward.
+ *
+ * A call belongs to the stage that made it. Re-reporting an earlier stage's call
+ * in a later one repeats the engine's error text, and the bridge is known to
+ * deliver only 2,040 bytes of a line intact — v1's own summary line was already
+ * 2,023 bytes of echoed calls when this was measured.
+ */
+function operationCalls(from: number): ProbeOperation[] {
+  let skip = from;
+  return [...operations.values()].map(operation => {
+    const dropped = Math.min(skip, operation.calls.length);
+    skip -= dropped;
+    return { ...operation, calls: operation.calls.slice(dropped) };
+  });
+}
+
+/** Where the summary stage starts reading, set after the last calling stage. */
+let callsBeforeSummary = 0;
 
 /**
  * Stage 1: what the host exposes.
@@ -110,17 +160,35 @@ function probeFailedLoad(): void {
 }
 
 /**
- * Stage 4: a load pointed at a real stylesheet.
+ * Stage 4: a load pointed at a real stylesheet, with the argument list the v2
+ * card measured to be acceptable.
  *
- * The only call that can change anything, and it changes this disposable card:
- * a small stylesheet with one rule that nothing on the card depends on. What it
- * proves is whether the call returns a handle at all and what that handle looks
- * like, which is the first step to any ownership contract.
+ * The only calls that can change anything, and they change this disposable
+ * card: a small stylesheet with one rule that nothing on the card depends on.
+ * Both calls are made, in this order, because the contrast is the evidence:
+ *
+ * 1. `[url]` — the one-argument form v1 shipped. It is recorded as a measured
+ *    negative result: the engine requires at least two parameters.
+ * 2. `[url, "utf-8"]` — the measured contract. It returned rather than threw on
+ *    the v2 run, and this is the load the verifier reads as having reached the
+ *    served stylesheet.
+ *
+ * Neither call returned a handle on the measured engine (`null`), so nothing
+ * here establishes ownership. What it establishes is that a load reached
+ * `probe.css`, which the one-argument attempt could not do.
  */
 function probeRealLoad(): void {
-  record("__LoadStyleSheet").calls.push(safeCall(scope["__LoadStyleSheet"], [CSS_URL]));
+  const { calls, cases } = loadRealUrlCases(scope["__LoadStyleSheet"], CSS_URL, CSS_ENCODING);
+  const load = record("__LoadStyleSheet");
+  load.calls.push(...calls);
+  callsBeforeSummary = recordedCallCount();
   console.log(reportLine("load-real-url", {
-    operations: [operations.get("__LoadStyleSheet")],
+    url: CSS_URL,
+    encoding: CSS_ENCODING,
+    operations: [load],
+    // Named so the capture says which case is which without the reader having to
+    // count array positions. The last of them is the two-argument load.
+    cases,
   }));
 }
 
@@ -128,10 +196,18 @@ function probeRealLoad(): void {
  * Stage 5: what was and was not exercised.
  *
  * Stated explicitly so the report cannot be read as claiming more than it did.
+ *
+ * Only the calls the stages after `load-missing-url` made are re-reported here,
+ * and only the fields that summarise them. Echoing every call again — including
+ * the engine's full error text from three earlier stages — put this line at 2,156
+ * bytes on the measured engine, past the 2,040 bytes the console bridge is known
+ * to deliver intact. A truncated summary is worse than a short one: it is the
+ * stage that would have said what was not measured.
  */
 function probeSummary(): void {
   console.log(reportLine("summary", {
-    operations: [...operations.values()],
+    operations: operationCalls(callsBeforeSummary).filter(operation => operation.calls.length > 0),
+    loadHandleReturned: hasReturnedHandle(operations.get("__LoadStyleSheet")),
     unmeasured: [
       {
         operation: "__AdoptStyleSheet",
@@ -148,10 +224,20 @@ function probeSummary(): void {
       {
         operation: "lifecycle",
         reason: "No ordering, scope, or ownership relationship between the three operations was"
-          + " proven, because at most one of them was exercisable.",
+          + " proven. The two-argument load returned without throwing, but it returned no handle,"
+          + " so nothing here owns a sheet, can remove one, or shows that a rule in one was"
+          + " applied.",
       },
     ],
   }));
+}
+
+/** Whether a call on the operation returned something that could be a handle. */
+function hasReturnedHandle(operation: ProbeOperation | undefined): boolean {
+  return (operation?.calls ?? []).some((call: ProbeCall) => {
+    const kind = call.returned?.kind;
+    return kind !== undefined && kind !== "null" && kind !== "undefined";
+  });
 }
 
 function renderCard(): void {

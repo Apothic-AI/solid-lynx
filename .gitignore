@@ -7,3 +7,6 @@ playwright-report/
 .dagr/
 /examples/lynx-for-web/site/public/*.bundle
 /examples/lynx-patterns/site/public/*.bundle
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

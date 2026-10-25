@@ -5,6 +5,7 @@ import {
   childIds,
   countChildren,
   describeKey,
+  describeListInventory,
   diffSnapshots,
   findListRelatedGlobals,
   keyOrder,
@@ -60,6 +61,129 @@ describe("native list probe recorder", () => {
       stage: "inventory",
       relatedGlobals: [],
     });
+  });
+});
+
+/**
+ * The `inventory` stage has to be able to say *which* binding it is describing.
+ *
+ * These tests exist because a real capture could not: both native bindings
+ * report `fn.name === ""`, and the card spread that over the name it had built
+ * the row from, so two operations arrived nameless. The verifier was right to
+ * call it a finding — an inventory that cannot name the missing binding is not
+ * evidence — so the rule is asserted here on both sides of the fix: the name the
+ * probe asked about survives, and the name the runtime reports is still recorded
+ * separately rather than dropped.
+ */
+describe("native list probe inventory", () => {
+  /** What a native binding looked like in the real capture, byte-shape included. */
+  const nativeBinding = () => {
+    // `function () { [native code] }` reports arity 3 and an empty name.
+    const fn = function () {
+      return undefined;
+    };
+    Object.defineProperty(fn, "length", { value: 3 });
+    Object.defineProperty(fn, "name", { value: "" });
+    return fn;
+  };
+
+  it("names every probed binding, including the ones the host lacks", () => {
+    // The measured engine's shape: two present bindings that report no own name
+    // and two globals that do not exist at all.
+    const scope = {
+      __CreateList: nativeBinding(),
+      __UpdateListCallbacks: nativeBinding(),
+    };
+
+    const entries = describeListInventory(scope);
+
+    expect(entries).toHaveLength(LIST_PAPI_NAMES.length);
+    for (const entry of entries) {
+      expect(typeof entry.name).toBe("string");
+      expect(entry.name).not.toBe("");
+    }
+    expect(entries.map(entry => entry.name)).toEqual([...LIST_PAPI_NAMES]);
+
+    // The absent ones are present in the report, named, and marked undefined —
+    // "asked and not there" is an answer, not an omission.
+    const absent = entries.filter(entry => entry.enumeratedAs === "absent");
+    expect(absent.map(entry => entry.name)).toEqual([
+      "__UpdateListComponents",
+      "__GetListComponents",
+    ]);
+    for (const entry of absent) expect(entry.typeof).toBe("undefined");
+
+    // A present binding keeps both names: the probed one, and the empty one the
+    // runtime reports, which is why the probed name has to be written last.
+    for (const entry of entries.filter(entry => entry.enumeratedAs === "own")) {
+      expect(entry.typeof).toBe("function");
+      expect(entry.arity).toBe(3);
+      expect(entry.fnName).toBe("");
+      expect(entry.name).not.toBe(entry.fnName);
+    }
+  });
+
+  it("cannot lose a name to a runtime that reports one of its own", () => {
+    // A binding whose `fn.name` is set — and deliberately not the probed name —
+    // must still be filed under the name the card asked about.
+    const alias = function __SomethingElseEntirely() {
+      return undefined;
+    };
+    const [entry] = describeListInventory({ __CreateList: alias }, ["__CreateList"]);
+    expect(entry?.name).toBe("__CreateList");
+    expect(entry?.fnName).toBe("__SomethingElseEntirely");
+  });
+
+  it("round-trips through the stage line the verifier reads", () => {
+    // The verifier requires a non-empty string `name` on every entry, so the
+    // assertion is made on the serialized payload rather than on the object.
+    const line = listReportLine("inventory", {
+      relatedGlobals: [],
+      operations: describeListInventory({ __CreateList: nativeBinding() }),
+      namedPresent: ["__CreateList"],
+      countingInstalled: true,
+    });
+    const parsed = JSON.parse(line.slice("[solid-lynx lp] ".length)) as {
+      operations: { name?: unknown }[];
+    };
+    expect(parsed.operations).toHaveLength(4);
+    for (const entry of parsed.operations) {
+      expect(typeof entry.name).toBe("string");
+      expect((entry.name as string).trim()).not.toBe("");
+    }
+  });
+
+  it("records a binding it could not read instead of dropping it", () => {
+    // A hostile global: reading it throws. The row still has its name, and the
+    // throw is recorded rather than thrown.
+    const scope = {} as Record<string, unknown>;
+    Object.defineProperty(scope, "__CreateList", {
+      enumerable: true,
+      get() {
+        throw new Error("host is gone");
+      },
+    });
+
+    const entries = describeListInventory(scope, ["__CreateList", "__GetListComponents"]);
+    expect(entries.map(entry => entry.name)).toEqual(["__CreateList", "__GetListComponents"]);
+    expect(entries[0]?.typeof).toBe("unreadable");
+    expect(entries[0]?.error).toContain("host is gone");
+    expect(entries[1]?.typeof).toBe("undefined");
+  });
+
+  it("reports the enumeration as unreadable when it cannot list own names", () => {
+    // A scope whose own-name enumeration throws still yields the probed names;
+    // the provenance field says the enumeration was the part that failed.
+    const scope = new Proxy({ __CreateList: nativeBinding() }, {
+      ownKeys() {
+        throw new Error("no own keys for you");
+      },
+    });
+
+    const entries = describeListInventory(scope, ["__CreateList"]);
+    expect(entries[0]?.name).toBe("__CreateList");
+    expect(entries[0]?.typeof).toBe("function");
+    expect(entries[0]?.enumeratedAs).toBe("unreadable");
   });
 });
 

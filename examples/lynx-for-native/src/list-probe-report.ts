@@ -12,6 +12,11 @@
  * record a native binding the same way and a later runner can report both.
  */
 
+import {
+  describeFunction,
+  type ProbeFunction,
+} from "./stylesheet-probe-report.js";
+
 export {
   describeFunction,
   describeValue,
@@ -38,6 +43,80 @@ export const LIST_PAPI_NAMES = [
 ] as const;
 
 export type ListPapiName = (typeof LIST_PAPI_NAMES)[number];
+
+/**
+ * One row of the list card's `inventory`: the probed name, plus what the
+ * runtime reported about the binding under it.
+ *
+ * `name` is the name this probe asked about, not the name the binding reports.
+ * `ProbeFunction.name` is `fn.name`, which for a native binding is the empty
+ * string (measured: `fn.length === 3`, `fn.name === ""`, own properties
+ * `length`/`name`), so it is kept as `fnName` and can never be mistaken for the
+ * probed name. `enumeratedAs` is where the name came from: `own` for one
+ * `Object.getOwnPropertyNames` returned, `absent` for one it did not, and
+ * `unreadable` when the enumeration itself threw.
+ */
+export interface ListInventoryEntry extends ProbeFunction {
+  name: string;
+  /** `fn.name`. Empty for a native binding, which is why it is not `name`. */
+  fnName?: string;
+  /** Where {@link ListInventoryEntry.name} came from. */
+  enumeratedAs: "own" | "absent" | "unreadable";
+}
+
+/**
+ * Describes every list binding the card records, present or absent.
+ *
+ * The name is written **last** on purpose. Spreading a function description
+ * over the name it was filed under loses the name: `{ name, ...description }`
+ * lets `description.name` — `fn.name`, empty for a native binding — overwrite
+ * it, which is how a real capture arrived with two nameless operations and could
+ * no longer say *which* binding was missing. A capture that cannot name the
+ * binding it probed is not evidence, so the probed name always wins.
+ *
+ * An absent binding is recorded as `{ typeof: "undefined" }` with its name
+ * present: the card asked, and "the host does not expose this" is an answer.
+ * Nothing here is inferred from a name and no binding is called.
+ */
+export function describeListInventory(
+  scope: object,
+  names: readonly string[] = LIST_PAPI_NAMES,
+): ListInventoryEntry[] {
+  let own: Set<string> | undefined;
+  try {
+    own = new Set(Object.getOwnPropertyNames(scope));
+  } catch {
+    own = undefined;
+  }
+
+  return names.map(name => {
+    let value: unknown;
+    let readError: string | undefined;
+    try {
+      value = (scope as Record<string, unknown>)[name];
+    } catch (error) {
+      readError = describeError(error);
+    }
+
+    const description = readError === undefined
+      ? describeFunction(value)
+      : ({ typeof: "unreadable", error: readError } satisfies ProbeFunction);
+    const { name: fnName, ...rest } = description as ProbeFunction;
+
+    const enumeratedAs: ListInventoryEntry["enumeratedAs"] = own === undefined
+      ? "unreadable"
+      : own.has(name)
+        ? "own"
+        : "absent";
+
+    return {
+      ...rest,
+      ...(typeof fnName === "string" ? { fnName } : {}),
+      enumeratedAs,
+      name,
+    };
+  });
+}
 
 /**
  * `typeof` of a value, never throwing.

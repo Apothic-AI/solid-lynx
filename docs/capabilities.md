@@ -77,7 +77,7 @@ pnpm exec playwright test --config test/browser/patterns.playwright.config.ts
 | Asynchronous content | supported, tested | not measured | Promise plus signal. No `createResource`, no streaming. |
 | Refs and imperative access | supported, tested | not measured | A ref receives the live Lynx node and is released with its Solid scope. |
 | CSS ids | supported, tested | not measured | `root.setCSSId()` assigns a compiled CSS id to a root's own page children. |
-| Stylesheet loading and lifecycle | unsupported, by inspection | not measured | web-core has no PAPI for it; native exposes `__LoadStyleSheet` and friends (observed, not measured), so there is nothing implemented to call. |
+| Stylesheet loading and lifecycle | unsupported, by inspection | load reached a stylesheet, no handle returned, lifecycle unmeasured | web-core has no PAPI for it, so there is nothing implemented to call. Native exposes `__LoadStyleSheet` and friends; the card measured that a `[url, "utf-8"]` load reaches `probe.css` and returns `null`, so no sheet is owned, nothing can be removed, and no rule is shown to be applied. |
 
 ## Findings
 
@@ -173,13 +173,17 @@ operations are absent. Nothing here establishes native list behavior.
 Real virtualization would need a host that asks for cells on its own, and native
 validation of both callbacks against the native list.
 
-A measurement card for that validation exists and has not been run on a device
-yet. `examples/lynx-for-native/src/list-probe.ts` builds through
-`pnpm native:build` as `dist/list-probe.lynx.bundle`; it shares its shape with the
-stylesheet probe (`[solid-lynx lp]` stages, one JSON line each, recorder helpers
-in `list-probe-report.ts` covered by `test/list-probe-report.test.ts`) so one
-runner drives all three cards. It is a measurement, not support: it calls
-`root.createList()` with three toy items and logs one line per stage:
+A measurement card for that validation **has been run**, on the same emulator
+engine as the stylesheet captures, and it measured the card rather than the
+host's recycling: the list rendered, the element tree and row model agreed across
+a materialize, a reorder and a shrink, and the host never called
+`enqueueComponent` during the run. `examples/lynx-for-native/src/list-probe.ts`
+builds through `pnpm native:build` as `dist/list-probe.lynx.bundle`; it shares its
+shape with the stylesheet probe (`[solid-lynx lp]` stages, one JSON line each,
+recorder helpers in `list-probe-report.ts` covered by
+`test/list-probe-report.test.ts`) so one runner drives all three cards. It is a
+measurement, not support: it calls `root.createList()` with three toy items and
+logs one line per stage:
 
 | Stage | What it does | Why that is allowed |
 | --- | --- | --- |
@@ -221,6 +225,29 @@ produced the stages. What the card cannot establish even when it runs is
 also recorded in its own `summary` stage: recycling driven by a viewport, scroll
 behavior, and cell reuse timing all need a scrolling list, and the card creates
 none.
+#### The inventory's names, and the two bindings that are absent
+
+A real capture found that this card's `inventory` stage could not name the
+binding it described. Every probed global was supposed to be recorded with its
+own name, but the card spread the runtime's description over the name it had
+filed the binding under, and a native binding reports `fn.name === ""`. On the
+measured engine `__CreateList` and `__UpdateListCallbacks` are present, report
+arity `3` and an empty `fn.name`, and arrived in the capture **nameless** — so a
+reader could no longer tell which binding a row described. The probed name is now
+written last and always wins (`describeListInventory`), while the name the
+runtime reports is kept separately as `fnName` and the row records where its name
+came from (`enumeratedAs`: `own`, `absent`, or `unreadable`). An inventory that
+cannot name the binding it probed is not evidence.
+
+That fix also makes the absent bindings legible, and the two that are absent on
+the measured engine are the two the summary stage already lists as inventoried
+only. **On the measured engine, `__UpdateListComponents` and
+`__GetListComponents` are absent**: both are listed in the card's inventory and
+both report `typeof: "undefined"`. That is a fact about the one engine this
+repository has measured (Lynx Explorer 4.1.0 on API 33 `x86_64`), and it is not
+generalised to all native hosts — another Lynx build may expose them. Neither was
+called, and neither is claimed to exist anywhere else; what the capture now says,
+unambiguously, is which two names the host does not expose.
 
 ### Gestures
 
@@ -402,7 +429,7 @@ stage that fails hard must not take earlier evidence with it:
 | `inventory` | `typeof`, `fn.length`, `fn.name`, `String(fn)` for each of the three | Reading a binding cannot mutate the card. `fn.length` is the declared parameter count, recorded as evidence about the binding and not read as a signature. |
 | `no-arguments` | Calls each of the three with no arguments | A call with no arguments cannot produce a stylesheet, so it cannot change anything; the error text is the only engine-authored statement of what the binding requires that exists without a handle. |
 | `load-missing-url` | `__LoadStyleSheet` pointed at a path the loopback server returns 404 for | The load has to fail, which separates "accepts a URL-shaped argument" from "rejects its argument" without letting anything load. |
-| `load-real-url` | `__LoadStyleSheet` pointed at a real, inert stylesheet next to the bundle | The only call that can change anything, and it changes a disposable card. It is the first step to any handle or ownership contract. |
+| `load-real-url` | `__LoadStyleSheet` called twice against a real, inert stylesheet next to the bundle: once as `[url]`, then as `[url, "utf-8"]` | The only calls that can change anything, and they change a disposable card. Both are recorded in this one stage, in this order, because the contrast is the evidence — see below. The verifier reads the last call, which is the two-argument load. |
 | `summary` | States explicitly what was not exercised and why | Keeps the report from being read as a claim about the unexercised operations. |
 | `done` | `status: "all stages logged"` | Says the card reached the end, so a capture that stops earlier is visibly short. |
 
@@ -479,12 +506,15 @@ checker that treated it as a finding would invert the card's purpose. A
 `lifecycle` payload whose `claim` reads as an applied rule or an owned sheet is a
 finding (`lifecycle-claim`).
 
-**v2's device run is pending.** The card, its recorder and its verifier are built
-and covered by host-free tests (`test/stylesheet-probe-v2-report.test.ts`, and the
-v2 cases in `test/native-probe-verify.test.ts`), but no `[solid-lynx ss2]` line
-has been captured from any engine. Nothing in this document about the second
-parameter, the style-object path, or a lifecycle is a measurement: those questions
-are exactly what the pending run is for.
+**v2 has now been run once on the same engine, and it answered the arity
+question.** A `[solid-lynx ss2]` capture was taken on Lynx Explorer 4.1.0 on API
+33 `x86_64`, and its `loadstyle-arity` stage produced the three distinct answers
+in the table above — which is where the encoding-string contract v1's
+`load-real-url` stage now uses comes from. Nothing about the style-object path or
+a lifecycle was answered by it: `style-object-path` found `__CreateStyleObject`
+existing but returning no opaque handle, so no setter was called with one, and
+`lifecycle` recorded reads of the card's own styles only. Those two questions
+remain what a further run is for.
 
 #### What can be verified by process
 
@@ -536,6 +566,57 @@ about their signatures, their ownership, or a lifecycle is measured. A verifier
 that accepts a synthetic fixture is not a device run, which is why
 `test/fixtures/native-probe/README.md` labels every fixture as not evidence.
 
+#### The second parameter, measured — and what v1 now records
+
+The v2 card's `loadstyle-arity` stage answered the question v1 left open by
+calling `__LoadStyleSheet` with a bounded list of second arguments on the same
+engine. Three distinct answers came back, and they are the contract v1's
+`load-real-url` stage now uses:
+
+| Case | Outcome | Engine answer |
+| --- | --- | --- |
+| `[url]` | threw | `LoadStyleSheet param size should >= 2` |
+| `[url, null]`, `[url, 0]`, `[url, {}]`, `[url, function(){}]`, `[url, []]` | threw | `LoadStyleSheet param 1 should be String` |
+| `[url, "utf-8"]`, `[url, url2]` | returned | `null` |
+
+The second parameter is therefore an **encoding/label string**, not an instance
+or context handle: everything that is not a String is rejected by name, and the
+one String that was tried was accepted. (`url2` is a second URL being read as a
+label, which says a String is accepted rather than that `"utf-8"` in particular
+is.) The v1 capture itself measures the negative half: its one-argument attempt
+threw, and it is kept in the capture as exactly that.
+
+With that measurement, v1's `load-real-url` stage records **both** calls, in
+this order:
+
+1. `[url]` — the one-argument form v1 shipped. Recorded as a **measured
+   negative result**: on the measured engine it throws `LoadStyleSheet param
+   size should >= 2`, so the engine requires a second, String parameter and one
+   URL is not enough to load anything.
+2. `[url, "utf-8"]` — the load, and the last call in the stage, so
+   `scripts/verify-native-probe.mjs` reads it as the one that reached the served
+   stylesheet. With the fix, v1 records a load of `probe.css` that **did not
+   throw**.
+
+Neither call returned a **handle**: the accepted form returns `null` on the
+measured engine, so there is still nothing to adopt, nothing to replace, and
+nothing owned. All three operations — `__LoadStyleSheet`, `__AdoptStyleSheet`,
+`__ReplaceStyleSheets` — remain **unmeasured for lifecycle**. A load that reaches
+a stylesheet says the binding accepts a URL and an encoding label; it does not
+say the sheet is owned, is applied, can be removed, or that a rule in it took
+effect. The card still loads a stylesheet whose single rule matches nothing it
+renders, so a successful load cannot change what the card observes.
+
+Two properties of the fix are checked without a device: the recorder helper that
+builds the two calls (`loadRealUrlCases` in `stylesheet-probe-report.ts`) is
+covered by `test/stylesheet-probe-report.test.ts`, including the order — the
+verifier judges the last call, so the two-argument load has to be it — and a
+host-free test in `test/native-probe-verify.test.ts` drives the real verifier
+with a capture built from that helper against an engine that behaves as the v2
+capture measured, and asserts exit 0. Green there proves the card produces an
+acceptable capture; it does not substitute for the device run that will produce
+the capture the claim rests on.
+
 #### Running it
 
 One runner drives all four native cards,
@@ -586,15 +667,16 @@ runs the right one for a stored manifest's `card`.
 
 **No card has been run on a device through this script.** Only `--dry-run` has
 been executed, for all four cards and for the wrapper (exit 0 each). A reviewed
-command sequence is not a measurement, so everything above about the three
-stylesheet operations, the second parameter, the style-object path — and
-everything about native list behaviour — remains unmeasured.
+command sequence is not a measurement, so everything the cards have measured was
+measured by opening a bundle in Lynx Explorer directly, not by a runner result.
 
-The one stylesheet capture that does exist (`v1-stylesheet-capture.log`) was
-taken outside this runner, by opening the bundle in Lynx Explorer on an Android
-emulator rather than on the pinned A03. It is treated as a measurement of the
-engine's behaviour — it is what the v2 card's questions come from — but it did
-not go through this script, so it does not make any line above a runner result.
+The native captures that do exist were all taken outside this runner, by opening
+the bundle in Lynx Explorer on an Android emulator rather than on the pinned A03:
+the v1 stylesheet capture (`v1-stylesheet-capture.log`), the v2 stylesheet capture
+(`stylesheet-v2-capture.log`), and the list capture (`list.log`). They are treated
+as measurements of the engine's behaviour — the v2 card's questions come from the
+v1 capture, and v1's `load-real-url` fix comes from the v2 one — but none of them
+went through this script, so none of them makes a line above a runner result.
 
 ## Remaining blockers
 
@@ -609,16 +691,23 @@ not go through this script, so it does not make any line above a runner result.
   changing the property path in `src/lynx-host.ts`, which is renderer behaviour
   rather than a platform capability, so it is left for a deliberate change.
 - List virtualization now has a renderer-side indexed row model
-  (`root.createList()`), measured against web-core. What is still missing is a
-  host that recycles cells and any native run at all: native list support is
-  unverified, not merely untested.
+  (`root.createList()`), measured against web-core. The native card has since run
+  on the emulator engine and recorded rows, element identity across a permuted
+  model, and a release on shrink — with the host asking for no cells and
+  recycling none. What is still missing is a host that recycles cells: native
+  list *recycling* is unverified, not merely untested.
+- The native list PAPI on the measured engine is three bindings, not four:
+  `__CreateList` and `__UpdateListCallbacks` exist and `__UpdateListComponents` and
+  `__GetListComponents` do not. That is one engine's inventory and is not
+  generalised; the card records the answer per run rather than assuming it.
 - Native `__SetCSSId` exists — the device inventory lists it — but
   `root.setCSSId()` has not been exercised on a device, so that path is still
   unmeasured even though the renderer already treats the PAPI as optional and
   fails loudly when a host lacks it.
 - Stylesheet loading has no PAPI on either host to verify, so the capability is
-  absent rather than blocked. It would have to be re-opened only if a host
-  exposed one. This is also why stylesheet *cleanup* is not a pending item
+  absent rather than blocked. On native, a load now reaches a stylesheet, but the
+  engine returns no handle, so there is still no ownership, removal, or applied
+  rule to measure. This is also why stylesheet *cleanup* is not a pending item
   anywhere: the renderer never loads one, so the 1.0 roadmap box now claims
   cleanup only for the resources it does acquire (see
   [ROADMAP.md](../ROADMAP.md) and `docs/contract.md` §9).

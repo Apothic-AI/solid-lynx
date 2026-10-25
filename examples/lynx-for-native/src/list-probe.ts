@@ -36,7 +36,7 @@ import {
   LIST_PAPI_NAMES,
   childIds,
   countChildren,
-  describeFunction,
+  describeListInventory,
   describeValue,
   diffSnapshots,
   findListRelatedGlobals,
@@ -45,7 +45,6 @@ import {
   observeRows,
   safeCall,
   safeTypeof,
-  type ProbeFunction,
   type RowObservation,
 } from "./list-probe-report.js";
 
@@ -68,9 +67,6 @@ const SHRUNK = ["alpha"] as const;
 const scope = globalThis as unknown as Record<string, unknown>;
 
 ensureLynxEnvironmentBasics();
-
-/** What the runtime reports about each named binding. No call is made for these. */
-const inventory = new Map<string, ProbeFunction>();
 
 /**
  * How often the host itself called each row callback, and how often the row
@@ -214,15 +210,16 @@ function stage<T>(name: string, run: () => T, fallback: T): T {
  * be measured at all.
  */
 function probeInventory(): void {
-  for (const name of LIST_PAPI_NAMES) {
-    inventory.set(name, describeFunction(scope[name]));
-  }
   console.log(listReportLine("inventory", {
     relatedGlobals: findListRelatedGlobals(globalThis),
-    // `typeof`, arity, name, and source are reported per binding. A native
-    // binding can report any arity regardless of what it requires, so arity is
-    // evidence about the binding and is not read as a signature.
-    operations: [...inventory].map(([name, description]) => ({ name, ...description })),
+    // One row per probed name, whether or not the host exposes it. Each row
+    // carries the name this probe asked about: a native binding reports
+    // `fn.name === ""`, so the name the runtime reports is recorded as `fnName`
+    // and the probed name is written last (`describeListInventory`). `typeof`,
+    // arity, and source are reported per binding. A native binding can report
+    // any arity regardless of what it requires, so arity is evidence about the
+    // binding and is not read as a signature.
+    operations: describeListInventory(scope),
     namedPresent: LIST_PAPI_NAMES.filter(name => typeof scope[name] === "function"),
     countingInstalled: counting,
   }));

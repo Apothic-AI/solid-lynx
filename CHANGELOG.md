@@ -19,6 +19,52 @@ this project ships Apache-2.0 and is not that package.
 
 ## Unreleased
 
+### Two probe-card defects the first real captures found, fixed in the cards
+
+Both were found by running the now real-format-capable verifier against captures
+taken on an API 33 `x86_64` emulator, not against fixtures. Neither is a checker
+change: `scripts/verify-native-probe.mjs` and `scripts/verify-native-parity.mjs`
+are untouched, the old captures still produce the same findings byte for byte,
+and the fix is that the rebuilt cards produce a capture the frozen rules accept.
+
+- **The list card could not name the bindings it probed.** Its `inventory` stage
+  built each row as `{ name, ...describeFunction(scope[name]) }`, and
+  `describeFunction` carries the runtime's own `fn.name` — which for a native
+  binding is `""`. The empty string overwrote the probed name, so
+  `__CreateList` and `__UpdateListCallbacks` arrived in the capture with
+  `"name":""` and a reader could no longer tell which binding a row described.
+  `describeListInventory()` now writes the probed name last so it always wins,
+  keeps the runtime's name separately as `fnName`, and records where the name
+  came from (`enumeratedAs`: `own`, `absent`, or `unreadable`). A binding that
+  exists but cannot be read is still named.
+- **The v1 stylesheet card's `load-real-url` stage never reached a stylesheet.**
+  It called `__LoadStyleSheet(url)` with one argument, and the engine throws
+  `LoadStyleSheet param size should >= 2` for that. The v2 card has since
+  measured the second parameter: `[url, "utf-8"]` returns `null` while
+  `[url, null]`, `[url, 0]`, `[url, {}]`, `[url, function(){}]` and `[url, []]`
+  throw `LoadStyleSheet param 1 should be String`, so it is an encoding label,
+  not a handle. The stage now records the one-argument call **first**, as the
+  measured negative result, then the two-argument call — which is the last call
+  in the stage and therefore the one the verifier reads — so v1 records a load of
+  `probe.css` that did not throw. No handle is returned either way, and all three
+  operations remain unmeasured for lifecycle.
+
+The `summary` stage no longer re-echoes calls the earlier stages already logged.
+Echoing them repeated the engine's error text and would have put that line at
+2,156 bytes, past the 2,040 bytes the native console bridge is measured to
+deliver intact; a truncated stage is worse than a short one.
+
+Tests: `test/list-probe-report.test.ts` asserts every `inventory.operations` entry
+has a non-empty string `name`, including the globals the host lacks, and that a
+binding reporting its own (different) `fn.name` still cannot displace the probed
+one. `test/stylesheet-probe-report.test.ts` pins the two-call order and outcomes.
+Two tests in `test/native-probe-verify.test.ts` build a capture from those real
+recorders, against an engine that behaves as the captures measured, and hand it
+to the unmodified verifier, which exits 0.
+
+Measured on this engine, and not generalised: `__UpdateListComponents` and
+`__GetListComponents` are **absent**. They are still inventoried, now by name.
+
 ### A probe capture can be verified by process, on both cards
 
 `ROADMAP.md` box 4 recorded the last mechanical gap in the stylesheet half: the

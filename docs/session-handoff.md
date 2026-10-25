@@ -67,13 +67,13 @@ is correct; that is not a regression, it is the file being older than you.
 ```bash
 pnpm typecheck                     # exit 0
 pnpm typecheck:consumer            # exit 0; test/consumer/tsconfig.json + tsconfig.dev.json
-pnpm test                          # exit 0; 271 tests in 12 files, after `pnpm build`
+pnpm test                          # exit 0; 303 tests in 12 files, after `pnpm build`
                                    #   and before `typecheck:consumer`:
                                    #   renderer 63, require-native-evidence 50,
-                                   #   native-probe-verify 51, native-parity-verify 19,
+                                   #   native-probe-verify 63, native-parity-verify 28,
                                    #   stylesheet-probe-v2-report 33,
-                                   #   list-probe-report 14, parity 9,
-                                   #   consumer-install 9, stylesheet-probe-report 7,
+                                   #   list-probe-report 19, parity 9,
+                                   #   consumer-install 9, stylesheet-probe-report 13,
                                    #   rspeedy 6, packaging 6, documented-counts 4
 pnpm build                         # exit 0
 pnpm pack --dry-run                # exit 0; 46 tarball entries (30 under dist/, 11 under docs/,
@@ -314,8 +314,8 @@ That is the correct answer, not a failure of the paperwork: nothing was measured
   `examples/lynx-for-native/src/list-probe.ts` both build through
   `pnpm native:build` (`dist/stylesheet-probe.lynx.bundle`,
   `dist/list-probe.lynx.bundle`) and their recorders are covered by host-free
-  tests (`test/stylesheet-probe-report.test.ts` 7 tests,
-  `test/list-probe-report.test.ts` 14 tests). **No device run of either card
+  tests (`test/stylesheet-probe-report.test.ts` 13 tests,
+  `test/list-probe-report.test.ts` 19 tests). **No device run of either card
   exists.** Until those runs exist, the three stylesheet operations are known to
   exist and nothing else about them is known, and native list behavior is
   unverified — no host has been seen to recycle a cell.

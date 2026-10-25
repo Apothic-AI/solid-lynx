@@ -179,6 +179,59 @@ export function safeCall(
 }
 
 /**
+ * One labelled case in a stage's bounded attempt list.
+ *
+ * `label` says which argument shape was tried, so an all-threw stage is still
+ * readable; the verifier labels v2's attempts the same way.
+ */
+export interface ProbeCase {
+  label: string;
+  outcome: "returned" | "threw";
+  threw?: { name: string; message: string };
+  returned?: ProbeValue;
+}
+
+/** The record of the two loads the `load-real-url` stage makes. */
+export interface RealLoadRecord {
+  /** The calls, in the order they were made. */
+  calls: ProbeCall[];
+  /** The same calls, labelled. */
+  cases: ProbeCase[];
+}
+
+/**
+ * Calls `__LoadStyleSheet` with the one-argument form, then with two arguments.
+ *
+ * Order is load-bearing twice over. It is the evidence: the one-argument call is
+ * the measured negative result (`LoadStyleSheet param size should >= 2`) and the
+ * two-argument call is the one that returned, so a reader sees the contrast in a
+ * single stage rather than being told about it. And it is what the verifier
+ * reads: `load-real-url` is judged on the *last* call recorded on the operation,
+ * so the two-argument load has to be it.
+ *
+ * The second argument is an encoding label, not a guess. The v2 card measured
+ * that `[url, "utf-8"]` returns while `[url, null]`, `[url, 0]`, `[url, {}]`,
+ * `[url, function(){}]` and `[url, []]` throw "param 1 should be String".
+ */
+export function loadRealUrlCases(
+  fn: unknown,
+  url: string,
+  encoding: string,
+): RealLoadRecord {
+  const calls = [safeCall(fn, [url]), safeCall(fn, [url, encoding])];
+  const labels = ["[url]", `[url, ${JSON.stringify(encoding)}]`];
+  return {
+    calls,
+    cases: calls.map((call, index) => {
+      const label = labels[index] ?? `[case ${index}]`;
+      return call.threw === undefined
+        ? { label, outcome: "returned", returned: call.returned }
+        : { label, outcome: "threw", threw: call.threw };
+    }),
+  };
+}
+
+/**
  * Every own global name that mentions a style or sheet.
  *
  * Recorded because the three probed names may not be the whole stylesheet

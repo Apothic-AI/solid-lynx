@@ -1216,3 +1216,208 @@ describe("verify-native-probe: the stylesheet v2 card", () => {
     expect(source).toContain(`const STYLESHEET_V2_LOAD_CASE_COUNT = ${cases.length};`);
   });
 });
+
+describe("verify-native-probe: the fixed cards, driven through the real verifier", () => {
+  /**
+   * These two tests are the fix's own proof, and they are the reason the fix is
+   * in the cards rather than in the checker.
+   *
+   * The verifier is the judge, so the cards are not declared fixed here: the
+   * capture is built by calling the *real* recorder helpers the cards use, and
+   * then handed to the unmodified `scripts/verify-native-probe.mjs` in a child
+   * process. Green means the production code paths produce a capture the frozen
+   * rules accept — not that a hand-written fixture does.
+   *
+   * The engine they are driven against behaves the way the stored captures
+   * measured it: native bindings report arity 3 and an empty `fn.name`, two of
+   * the four list globals do not exist, and `__LoadStyleSheet` throws
+   * "param size should >= 2" with one argument and returns `null` with
+   * `[url, "utf-8"]` (the v2 capture's `e0`/`e1` answers).
+   */
+  /** A native binding: arity 3, empty `fn.name`, native source text. */
+  const nativeBinding = (): unknown => {
+    const fn = function () { return undefined; };
+    Object.defineProperty(fn, "length", { value: 3 });
+    Object.defineProperty(fn, "name", { value: "" });
+    return fn;
+  };
+
+  /** `__LoadStyleSheet` as the v2 capture measured it. */
+  const measuredLoadStyleSheet = (...args: unknown[]): unknown => {
+    if (args.length < 2) throw new Error("LoadStyleSheet param size should >= 2");
+    if (typeof args[1] !== "string") throw new Error("LoadStyleSheet param 1 should be String");
+    return null;
+  };
+
+  it("accepts a stylesheet `load-real-url` stage built by the card's recorder", async () => {
+    const {
+      STYLESHEET_PAPI_NAMES: names,
+      loadRealUrlCases,
+      reportLine,
+    } = await import("../examples/lynx-for-native/src/stylesheet-probe-report.js");
+
+    const URL = "http://127.0.0.1:8099/probe.css";
+    const MISSING = "http://127.0.0.1:8099/__probe_missing__.css";
+    const { calls, cases } = loadRealUrlCases(measuredLoadStyleSheet, URL, "utf-8");
+    const inventory = names.map(name => ({
+      name,
+      function: {
+        typeof: "function",
+        arity: 0,
+        fnName: "",
+        source: "function () {\n    [native code]\n}",
+        hasPrototype: false,
+        ownPropertyNames: ["length", "name"],
+      },
+      calls: [],
+    }));
+    const withCalls = (loadCall: unknown) => inventory.map(entry => ({
+      ...entry,
+      calls: entry.name === "__LoadStyleSheet" ? [loadCall] : [],
+    }));
+    // `no-arguments` calls all three bindings, with the answers the v1 capture
+    // recorded: the two loads refuse for want of an argument, and
+    // `__ReplaceStyleSheets` returns `null` instead of throwing.
+    const noArgumentCalls = [
+      {
+        input: [],
+        threw: { name: "Error", message: "LoadStyleSheet param size should >= 2" },
+      },
+      { input: [], threw: { name: "Error", message: "AdoptStyleSheet param size should >= 1" } },
+      { input: [], returned: { kind: "null" } },
+    ];
+
+    const stages = [
+      // The inventory is the card's own recorder output, with the name kept apart
+      // from the empty `fn.name` the engine reports.
+      { probe: "native-stylesheet-papi", stage: "inventory", relatedGlobals: [], operations: inventory },
+      {
+        probe: "native-stylesheet-papi",
+        stage: "no-arguments",
+        operations: inventory.map((entry, index) => ({
+          ...entry,
+          calls: [noArgumentCalls[index]],
+        })),
+      },
+      {
+        probe: "native-stylesheet-papi",
+        stage: "load-missing-url",
+        operations: withCalls({
+          input: [{ kind: "string", value: MISSING }],
+          threw: { name: "Error", message: "LoadStyleSheet param size should >= 2" },
+        }),
+      },
+      // Exactly what `probeRealLoad` logs, from the same helper it calls.
+      {
+        probe: "native-stylesheet-papi",
+        stage: "load-real-url",
+        url: URL,
+        encoding: "utf-8",
+        operations: [{ name: "__LoadStyleSheet", function: { typeof: "function" }, calls }],
+        cases,
+      },
+      {
+        probe: "native-stylesheet-papi",
+        stage: "summary",
+        operations: [],
+        unmeasured: [{ operation: "lifecycle", reason: "no handle was returned" }],
+      },
+      { probe: "native-stylesheet-papi", stage: "done", status: "all stages logged" },
+    ];
+
+    const file = writeCapture(capture(stages.map(stage => realLine(SS, stage))));
+    const run = runVerifier(file);
+
+    expect(run.stdout).toContain("6 of 6 required stage(s) present");
+    expect(run.stderr).toBe("");
+    expect(run.stdout).not.toContain("[load-real-url-threw]");
+    expect(run.stdout).not.toContain("same-target");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: verified");
+  });
+
+  it("accepts a list inventory built by the card's recorder", async () => {
+    const {
+      LIST_PAPI_NAMES: names,
+      describeListInventory,
+      listReportLine,
+    } = await import("../examples/lynx-for-native/src/list-probe-report.js");
+
+    // The measured engine's shape: two present bindings with no own `fn.name`,
+    // and two globals that do not exist at all.
+    const scope = {
+      __CreateList: nativeBinding(),
+      __UpdateListCallbacks: nativeBinding(),
+    };
+
+    const stages = [
+      listReportLine("inventory", {
+        relatedGlobals: [],
+        operations: describeListInventory(scope),
+        namedPresent: names.filter(name => typeof (scope as Record<string, unknown>)[name]
+          === "function"),
+        countingInstalled: true,
+      }),
+      listReportLine("create", {
+        createListExposed: true,
+        updateListCallbacksExposed: true,
+        returnedHandle: true,
+        handleTypeof: "unknown",
+        modelItems: ["alpha"],
+        rowsAfterCreate: [],
+        children: { count: 0, truncated: false },
+        hostCallCounts: listCounters(0, 0),
+      }),
+      listReportLine("materialize", {
+        requested: [0],
+        requestedCount: 1,
+        materialized: 1,
+        children: { count: 1, truncated: false },
+        rows: [{ key: "alpha", item: "alpha" }],
+        hostAskedAfterUpdate: false,
+        hostAskedWhileMaterializing: false,
+        hostAskedOnItsOwn: false,
+        hostCallCounts: listCounters(0, 0),
+      }),
+      listReportLine("reorder", {
+        before: ["alpha"],
+        after: ["alpha"],
+        diff: { kept: ["alpha"], released: [] },
+        existingRowsMoved: 0,
+        identityMeasured: true,
+        keyedIdentityPreserved: true,
+        elementOrderChanged: false,
+        hostCallsDuring: { componentAtIndex: 0, enqueueComponent: 0 },
+      }),
+      listReportLine("shrunk", {
+        diff: { kept: [], released: ["alpha"] },
+        releasedRows: ["alpha"],
+        keptRows: [],
+        hostRecycled: false,
+        hostCallsDuring: { componentAtIndex: 0, enqueueComponent: 0 },
+        hostCallCounts: listCounters(0, 0),
+      }),
+      listReportLine("summary", {
+        measured: ["what the host exposes"],
+        unmeasured: [{ operation: "scroll behaviour", reason: "nothing here scrolls" }],
+        hostCallCounts: listCounters(0, 0),
+      }),
+      listReportLine("done", { status: "all stages logged" }),
+    ];
+
+    // The card emits `[solid-lynx lp] {json}`; a real capture adds the bridge's
+    // framing around it. Splitting the marker off keeps the payload the card
+    // actually produced.
+    const file = writeCapture(capture(stages.map(row => realLine(
+      LP,
+      JSON.parse(row.slice(row.indexOf(LP) + LP.length)) as Record<string, unknown>,
+    ))));
+    const run = runVerifier(file);
+
+    expect(run.stdout).toContain("7 of 7 required stage(s) present");
+    expect(run.stderr).toBe("");
+    expect(run.stdout).not.toContain("must be an object with a string `name`");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: verified");
+  });
+});
