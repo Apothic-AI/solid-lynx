@@ -80,7 +80,7 @@ other version is untested, not "probably fine".
 | `docs/building.md`, `docs/session-handoff.md` | Lynx Explorer **4.1.0** (`com.lynx.explorer`), engine **3.5** |
 | Device | SM-A037U, Android 13 (API 33), serial `R9WT911JVVH` |
 | APK digest recorded | SHA-256 `6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6`, `arm64-v8a` |
-| `docs/parity-checklist.md` | all twenty shared Element PAPI operations pass on this device |
+| `docs/parity-checklist.md` | all twenty shared Element PAPI operations were **reported** passing on this device on 2026-10-09; the capture is lost, so the column is reported, not reproduced |
 
 **Range: none — one version, tested once, by hand.** There is no native version
 matrix and no native *runtime* CI: `.github/workflows/ci.yml` builds the native
@@ -195,6 +195,11 @@ app to install.
 - **No cross-host stylesheet or list claims.** [capabilities.md](capabilities.md)
   remains authoritative, and it marks native per-capability results as not
   measured.
+- **No present-tense native parity claim.** The 2026-10-09 A03 run reported all
+  twenty Element PAPI operations passing, but its capture was left in `/tmp`.
+  [parity-checklist.md](parity-checklist.md) therefore marks the native column
+  reported, not reproduced, and a native pass may be cited only once a stored
+  capture verifies (`scripts/verify-native-parity.mjs`, exit 0).
 - **No @lynx-js/types version.** The package is not installed, so no version of
   the official typings is supported or claimed. See
   [contract.md](contract.md) §12.

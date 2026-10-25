@@ -46,8 +46,10 @@ Verified notes for this milestone:
   in Lynx Explorer 4.1.0 (`com.lynx.explorer`) on an SM-A037U, renders an
   `Increment` control and `Native parity count: 0`, and tapping increments the
   count through `bindtap` with no renderer error.
-- Native parity: all twenty shared Element PAPI operations pass on the device,
-  matching the web host and the fake PAPI; see `docs/parity-checklist.md`.
+- Native parity: the 2026-10-09 device run reported all twenty shared Element
+  PAPI operations passing, matching the web host and the fake PAPI. Its capture
+  is gone, so `docs/parity-checklist.md` marks the native column **reported, not
+  reproduced**; re-running the card and verifying the capture is what closes it.
 - Two defects were found and fixed by the device run: the native host returns
   element handles whose `typeof` is `"unknown"` (the host no longer validates
   creators with a DOM `typeof` check), and `__GetPageElement()` returns `null`

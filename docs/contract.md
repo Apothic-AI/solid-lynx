@@ -911,9 +911,11 @@ documented intention:
 - The `background:` namespace at dispatch time (it is type-checked only, in
   `test/consumer/jsx-dev-runtime.tsx`).
 - `replaceText` before insertion (the throw), and `host.createComment` semantics.
-- Every native runtime claim, except: the card loads, renders, a `bindtap`
-  counter updates, and all twenty parity operations pass
-  (`docs/parity-checklist.md`). The native stylesheet probe and native list
+- Every native runtime claim, except: the 2026-10-09 run reported the card
+  loading, rendering, a `bindtap` counter updating, and all twenty parity
+  operations passing. That run's capture was not kept, so
+  `docs/parity-checklist.md` marks the native column reported, not reproduced and
+  nothing here may be cited as a present pass. The native stylesheet probe and native list
   probe cards are built by `pnpm native:build` and covered by host-free recorder
   tests (`test/stylesheet-probe-report.test.ts`,
   `test/list-probe-report.test.ts`), but neither has been run on a device, so

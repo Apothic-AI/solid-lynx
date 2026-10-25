@@ -185,13 +185,17 @@ Recorded from the device run; per-operation rows are in
 - **Inline style read-back (harness defect, fixed).** Native keeps the style out
   of the `style` attribute; `__GetAttributeByName(node, "style")` returns `null`
   and the harness reported `inline-styles` as a failure. It now prefers
-  `__GetInlineStyles`, which native exposes. All twenty shared operations pass.
+  `__GetInlineStyles`, which native exposes. After that fix the run reported all
+  twenty shared operations passing.
 - **Rendering and events (confirmed).** The card renders an `Increment` button
   and `Native parity count: 0`; tapping increments the counter to 1 through
   `bindtap`, so flush and reactive text updates work on the device.
-- **Parity (confirmed).** The native card and host pass all twenty shared
-  Element PAPI operations. The per-operation results are recorded in
-  [parity-checklist.md](parity-checklist.md).
+- **Parity (reported on 2026-10-09, capture lost).** The native card and host
+  reported all twenty shared Element PAPI operations passing. The `logcat`
+  capture that carried the report was not copied out of `/tmp`, so
+  [parity-checklist.md](parity-checklist.md) records the native column as
+  reported, not reproduced. Keep the capture and verify it with
+  `node scripts/verify-native-parity.mjs <capture>` when re-running this.
 - **`processData is not a function` (observed host warning).** With
   `background: false` the bundle's `/app-service.js` is intentionally empty, and
   Explorer still invokes `processData` on it, so LogBox shows a red banner. It

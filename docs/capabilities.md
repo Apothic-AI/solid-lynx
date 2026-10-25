@@ -16,8 +16,11 @@ Statuses used here:
 | not measured | Not yet run against that host in this repository. |
 
 The shared Element PAPI parity card **has** run on a device: all twenty shared
-operations pass on Lynx Explorer 4.1.0 on an SM-A037U (see
-[parity-checklist.md](parity-checklist.md) and [building.md](building.md)). The
+operations were reported passing on Lynx Explorer 4.1.0 on an SM-A037U on
+2026-10-09. That run's capture was not kept, so
+[parity-checklist.md](parity-checklist.md) records the native column as
+**reported, not reproduced**, and `scripts/verify-native-parity.mjs` is what
+makes the next run checkable; see also [building.md](building.md). The
 capability probe below has only been run in a browser, so the Native column of
 the summary table stays `not measured`. `@lynx-js/types` is not a dependency of
 this repository, so native JSX typings remain unverified and are marked as such

@@ -38,10 +38,12 @@ pnpm native:build
 pnpm pack --dry-run
 ```
 
-The A03 run passed all 20 shared Element PAPI parity operations, rendered the
-native card, and verified a `bindtap` counter update. [parity-checklist.md](parity-checklist.md)
-contains the native per-operation results and separates unmeasured runtime
-behavior.
+The A03 run reported all 20 shared Element PAPI parity operations passing,
+rendered the native card, and verified a `bindtap` counter update. **Its logcat
+capture was left in `/tmp` and is gone**, so [parity-checklist.md](parity-checklist.md)
+marks the native column reported, not reproduced and separates unmeasured runtime
+behavior. `node scripts/verify-native-parity.mjs <capture>` is the check a fresh
+run has to pass before those rows can be cited as a present result.
 
 ## Native Device
 
