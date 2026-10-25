@@ -124,10 +124,6 @@ function manifestFor(dir: string, overrides: Record<string, unknown> = {}): stri
   }, null, 2)}\n`;
 }
 
-/** A synthetic capture file, named as the manifest expects. */
-const capturePathIn = (dir: string, name = "2026-11-20-smoke"): string =>
-  path.join(dir, "docs/evidence/native", name, "lynx_console-smoke-test.log");
-
 /**
  * Stores a capture plus a manifest, and commits them.
  *
