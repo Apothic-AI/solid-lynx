@@ -114,8 +114,8 @@ export interface LynxRoot {
 | `page` | stable | The element the root rendered into: the `page` option, or the element `__CreatePage` returned. | `test/renderer.test.ts` (implicitly, through the fake page; no test asserts `root.page` identity — **unverified as an identity assertion**) |
 | `renderer` | stable | The `LynxRenderer<LynxNode>` for this root (§4). Compiler-helper routing through it is tested. | `test/renderer.test.ts:527` |
 | `render(code)` | stable | Mounts the tree, returns the root's disposer. Throws `"A Solid Lynx root can only be rendered once"` while a tree is still mounted (`src/root.ts:163-166`). | `test/renderer.test.ts:377`, `:853` |
-| `setCSSId(cssId, entryName?)` | stable | See §8. | `test/renderer.test.ts:1302-1441`, `test/browser/lynx-for-web.test.ts:694-766` |
-| `dispose()` | stable | See §9. | `test/renderer.test.ts:561`, `:976`, `:1014` |
+| `setCSSId(cssId, entryName?)` | stable | See §8. | `test/renderer.test.ts:1439-1608`, `test/browser/lynx-for-web.test.ts:694-766` |
+| `dispose()` | stable | See §9. | `test/renderer.test.ts:561`, `:976`, `:1109`, `:1151` |
 | `flush()` | stable | Calls `host.flush()`, i.e. `__FlushElementTree()` immediately. | `test/renderer.test.ts:505`, `:733` |
 
 Two more `render` facts are stable and tested:
@@ -123,8 +123,9 @@ Two more `render` facts are stable and tested:
 - The returned disposer is the root's `dispose`, not a per-tree disposer
   (`src/root.ts:169`). Disposing twice does not throw: the second call has no
   renderer to dispose and no owned nodes left to remove (`src/root.ts:148-158`).
-  This reasoning follows from the code but is **not asserted by a test**; what
-  is tested is dispose-then-render-again (`test/renderer.test.ts:853`).
+  That is asserted by `test/renderer.test.ts:1109`, which also checks the second
+  call never reaches the host; dispose-then-render-again is
+  `test/renderer.test.ts:853`.
 - After `dispose()`, `render` is accepted again and mounts a fresh tree with
   fresh listeners (`test/renderer.test.ts:853`,
   `test/browser/lynx-for-web.test.ts:471`).
@@ -318,13 +319,13 @@ Frozen behaviour, each item traceable to a test:
 
 | Statement | Covered by |
 | --- | --- |
-| A callback ref receives the live Lynx PAPI node, not a DOM element, and its returned teardown runs when the owning Solid scope is disposed. | `test/renderer.test.ts:1083`, `:1130`; `test/browser/lynx-for-web.test.ts:630` |
-| `createLynxRef()` is callable as a `ref` value and holds `current`; `current` is cleared by its teardown. | `test/renderer.test.ts:1110`; `test/browser/lynx-for-web.test.ts:606` |
-| Disposing the root clears every ref it attached. | `test/renderer.test.ts:1163` |
-| An older attachment's teardown does not clear a newer attachment. | `test/renderer.test.ts:1197` |
-| Reconciliation that moves an element (keyed reorder) does not re-fire the ref. | `test/renderer.test.ts:1214` |
-| A ref returning a non-function does not throw at disposal. | `test/renderer.test.ts:1270` |
-| A ref run with no Solid owner registers no teardown and returns it to the caller. | `test/renderer.test.ts:1283` |
+| A callback ref receives the live Lynx PAPI node, not a DOM element, and its returned teardown runs when the owning Solid scope is disposed. | `test/renderer.test.ts:1220`, `:1267`; `test/browser/lynx-for-web.test.ts:630` |
+| `createLynxRef()` is callable as a `ref` value and holds `current`; `current` is cleared by its teardown. | `test/renderer.test.ts:1247`; `test/browser/lynx-for-web.test.ts:606` |
+| Disposing the root clears every ref it attached. | `test/renderer.test.ts:1300` |
+| An older attachment's teardown does not clear a newer attachment. | `test/renderer.test.ts:1334` |
+| Reconciliation that moves an element (keyed reorder) does not re-fire the ref. | `test/renderer.test.ts:1351` |
+| A ref returning a non-function does not throw at disposal. | `test/renderer.test.ts:1407` |
+| A ref run with no Solid owner registers no teardown and returns it to the caller. | `test/renderer.test.ts:1420` |
 | A `ref` never becomes an element attribute. | `docs/capabilities.md` "Refs and imperative access"; the type surface is enforced by `test/consumer/jsx-runtime.tsx` |
 
 Ordering, frozen and documented in `src/universal.ts` and
@@ -467,7 +468,7 @@ requires the node to already be inserted; otherwise it throws
 ### 7.5 Flush model
 
 Contract: **stable**. Mutations queue one microtask flush; `queueMicrotask` is
-used when present and a promise otherwise (`src/lynx-host.ts:184-200`). An
+used when present and a promise otherwise (`src/lynx-host.ts:195-210`). An
 explicit `flush()` clears the queue and calls `__FlushElementTree` immediately.
 This coalescing is covered by `test/renderer.test.ts:505`, `:733` and, against
 the real web host, by `test/browser/lynx-for-web.test.ts:569`.
@@ -475,7 +476,7 @@ the real web host, by `test/browser/lynx-for-web.test.ts:569`.
 ## 8. CSS ids
 
 Source: `src/root.ts:31-40`, `src/root.ts:56-158`; host side
-`src/lynx-host.ts:395-406`. Contract: **stable**.
+`src/lynx-host.ts:430-437`. Contract: **stable**.
 
 ```ts
 setCSSId(cssId: number | null, entryName?: string): void
@@ -485,14 +486,14 @@ Frozen behaviour:
 
 | Statement | Covered by |
 | --- | --- |
-| One batched `__SetCSSId(elements, cssId, entryName)` call for every element the root owns **directly in its page**. | `test/renderer.test.ts:1302`; `test/browser/lynx-for-web.test.ts:694` |
-| An element the root inserts into the page after the assignment gets the id on arrival. | `test/renderer.test.ts:1329`; browser `:789` |
-| A nested element is not included: the id goes on the subtree root and reaches the rest through the element tree. | `test/renderer.test.ts:1349` |
-| A later call replaces the recorded id. | `test/renderer.test.ts:1375`; browser `:789` |
-| `null` is forwarded untouched so the host resolves it. | `test/renderer.test.ts:1388`; browser `:821` |
-| A non-integer or negative id throws `TypeError` **before** anything is recorded, leaving the root unchanged. | `test/renderer.test.ts:1402` |
-| A host without `__SetCSSId` throws `"solid-lynx cannot assign a CSS id: this Lynx host does not implement Element PAPI __SetCSSId()"` instead of styling nothing. | `test/renderer.test.ts:1420` |
-| A second root sharing the page is never restyled by the first. | `test/renderer.test.ts:1441`; browser `:853` |
+| One batched `__SetCSSId(elements, cssId, entryName)` call for every element the root owns **directly in its page**. | `test/renderer.test.ts:1439`; `test/browser/lynx-for-web.test.ts:694` |
+| An element the root inserts into the page after the assignment gets the id on arrival. | `test/renderer.test.ts:1466`; browser `:719` |
+| A nested element is not included: the id goes on the subtree root and reaches the rest through the element tree. | `test/renderer.test.ts:1486` |
+| A later call replaces the recorded id. | `test/renderer.test.ts:1512`; browser `:719` |
+| `null` is forwarded untouched so the host resolves it. | `test/renderer.test.ts:1525`; browser `:747` |
+| A non-integer or negative id throws `TypeError` **before** anything is recorded, leaving the root unchanged. | `test/renderer.test.ts:1539` |
+| A host without `__SetCSSId` throws `"solid-lynx cannot assign a CSS id: this Lynx host does not implement Element PAPI __SetCSSId()"` instead of styling nothing. | `test/renderer.test.ts:1557` |
+| A second root sharing the page is never restyled by the first. | `test/renderer.test.ts:1608`; browser `:766` |
 
 Assignment is scoped by `page` identity: the adapter records a node as owned
 only when its insert parent is `=== page` (`src/root.ts:117-131`).
@@ -517,13 +518,14 @@ test. The migration guide repeats it from a consumer's point of view
 
 | Cleanup | Mechanism (source) | Proven by |
 | --- | --- | --- |
-| Root disposal removes the nodes the root rendered into its page, and only those. | `src/root.ts:148-158`; ownership recorded in `src/root.ts:86-116` | `test/renderer.test.ts:561`, `:1014`; browser `test/browser/lynx-for-web.test.ts:471` |
-| Root disposal releases every listener the root registered, in the slot it was filed in. | `src/lynx-host.ts:453-455` (detach subtree on remove), reached from `src/root.ts:149` | `test/renderer.test.ts:976` (compares add/remove slot tuples), `:821` |
-| Removing a subtree detaches its listeners; re-inserting registers them again. | `src/lynx-host.ts:266-276` | `test/renderer.test.ts:789` |
-| Root disposal clears every ref it attached. | `src/universal.ts:103-113` (`onCleanup`), `src/refs.ts:47-56` | `test/renderer.test.ts:1163`; browser `:690` |
+| Root disposal removes the nodes the root rendered into its page, and only those. | `src/root.ts:148-158`; ownership recorded in `src/root.ts:86-116` | `test/renderer.test.ts:561`, `:1151`; browser `test/browser/lynx-for-web.test.ts:471` |
+| Root disposal releases every listener the root registered, in the slot it was filed in. | `src/lynx-host.ts:484-494` (`removeNode` → `syncEventTree(node, false)`), reached from `src/root.ts:154` | `test/renderer.test.ts:976` (compares add/remove slot tuples), `:821` |
+| A registration is released through the same PAPI pair that filed it, and a host with no complete pair throws instead of filing a listener nothing can release. | `src/lynx-host.ts:247-292` (`resolveBindingPath`, `attachEvent`, `detachEvent`) | `test/renderer.test.ts:1014` (both directions), `:1081` |
+| Removing a subtree detaches its listeners; re-inserting registers them again. | `src/lynx-host.ts:297-306` (`syncEventTree`), called from `:481` and `:485` | `test/renderer.test.ts:789` |
+| Root disposal clears every ref it attached. | `src/universal.ts:103-113` (`onCleanup`), `src/refs.ts:47-56` | `test/renderer.test.ts:1300`; browser `:606` |
 | Disposal flushes the host (`__FlushElementTree`) once at the end. | `src/root.ts:157` | `test/renderer.test.ts:733` |
-| Roots sharing one page dispose independently. | `src/root.ts:86-116` | `test/renderer.test.ts:1014`; browser `:527` |
-| A disposed root can be rendered into again, with fresh listeners. | `src/root.ts:163-168` | `test/renderer.test.ts:853`; browser `:527` |
+| Roots sharing one page dispose independently. | `src/root.ts:86-116` | `test/renderer.test.ts:1151`; browser `:471` |
+| A disposed root can be rendered into again, with fresh listeners. | `src/root.ts:163-168` | `test/renderer.test.ts:853`; browser `:471` |
 
 **Not proven / not applicable:**
 

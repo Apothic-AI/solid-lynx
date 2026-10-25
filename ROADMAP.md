@@ -31,6 +31,35 @@ Validate native-specific behavior after the web path is working, while making So
 - [x] Run a native Lynx smoke test in Lynx Explorer or on an Android/iOS device.
 - [x] Compare native and web behavior for shared Element PAPI operations.
 - [ ] Verify native-only behavior such as dual-thread execution, worklets, and first-screen synchronization.
+      **Scope-excluded. A recorded decision, not pending work.**
+      This box will not close, and it is unticked on purpose: it asks this
+      renderer to verify behaviour the renderer does not own, so a tick would
+      claim a verification that cannot happen here. It is listed under
+      ["Out of scope for the renderer"](#out-of-scope-for-the-renderer) with a
+      cross-reference back to this note, and `docs/contract.md` §15 already
+      records the same position. One reason per case:
+  - **Worklets** are compiled and scheduled by Lynx's own build pipeline.
+    Nothing in `src/` names a worklet API, and `README.md:363` lists "dual-thread
+    worklet compilation and scheduling" as the toolchain's responsibility.
+  - **Dual-thread execution** is a build configuration, not renderer behaviour.
+    Every card in this repository declares `background: false`
+    (`examples/lynx-for-native/lynx.config.ts:63`, `:67`, `:71`;
+    `examples/lynx-patterns/lynx.config.ts:46`;
+    `examples/lynx-for-web/lynx.config.ts:41`), so no bundle here emits a
+    background thread to observe. `docs/building.md:204-206` says a
+    background-thread card is unverified and worklets are out of scope for this
+    package.
+  - **First-screen synchronization** is host paint scheduling — which flush a
+    device renders first — not renderer output. The renderer's half is the flush
+    model, which is frozen and covered (`docs/contract.md` §7.5:
+    `test/renderer.test.ts:505`, `:733`, `test/browser/lynx-for-web.test.ts:569`).
+    `docs/parity-checklist.md:196-198` already records the three: dual-thread and
+    worklets `not applicable` on web, first-screen `verified for web`, and all
+    three `not measured` on native.
+
+  What a future reader might still want from this box is a background-thread
+  card. That is a new capability request for the examples, not a verification of
+  this renderer, so it is not tracked by this milestone.
 - [x] Provide a reproducible Rspeedy integration, preferably as a small plugin or maintained configuration package.
 - [x] Document native and Lynx-for-Web build configurations and development workflows.
 - [x] Replace broad intrinsic JSX types with Lynx element and attribute types, using `@lynx-js/types` where compatible.
@@ -39,6 +68,12 @@ Validate native-specific behavior after the web path is working, while making So
 - [x] Expand tests for Solid control flow, keyed reconciliation, dynamic properties, event updates, and root isolation.
 
 **Milestone complete when:** a fresh example app can be built from documented instructions and common Lynx JSX usage receives useful TypeScript checking.
+
+**Status of this milestone:** met. Every box is either ticked or scope-excluded,
+and the completion criterion above does not depend on the excluded native-only
+box — it is about the example build and TypeScript checking, both of which are
+verified in CI. The device findings below are what the smoke run established, and
+none of them is restated as a present pass.
 
 Verified notes for this milestone:
 
@@ -56,26 +91,59 @@ Verified notes for this milestone:
   until `__CreatePage()` has been called (the example now creates the page).
 - Explorer still shows a `processData is not a function` banner because the
   documented main-thread-only build emits an empty `/app-service.js`; it does not
-  affect load, render, or tap. Dual-thread cards remain unverified.
+  affect load, render, or tap. Dual-thread cards remain unverified, and the
+  native-only box above is scope-excluded rather than pending: see "Out of scope
+  for the renderer".
 
 ## 0.4: Lynx platform capabilities
 
 Add platform features through explicit, testable adapters while keeping the core host contract small.
 
 - [ ] Integrate stylesheet loading, CSS ids, and stylesheet lifecycle where the Lynx PAPI requires it.
-  - CSS ids are done: `root.setCSSId()` drives `__SetCSSId` over a root's own page
-    children and is covered by fake-PAPI and browser tests.
-  - Stylesheet loading and lifecycle stay open. web-core exposes no PAPI that adds,
-    replaces, or removes a stylesheet, so it is documented as unsupported rather
-    than approximated. The A03 device run did observe native
-    `__LoadStyleSheet`/`__AdoptStyleSheet`/`__ReplaceStyleSheets` globals; their
-    semantics are unmeasured, so integrating them is still open.
-  - A measurement card for the three native operations is built
-    (`examples/lynx-for-native/src/stylesheet-probe.ts`, logging one
-    `[solid-lynx ss]` line per stage, calling only what cannot mutate the card).
-    Its A03 run has not happened yet, so nothing about their signatures or
-    lifecycle is claimed, and no renderer or web-side stylesheet API has been
-    added.
+  - **Done: CSS ids.** `root.setCSSId()` drives `__SetCSSId` over a root's own
+    page children. Covered by `test/renderer.test.ts:1439` (one batched call for
+    every page-level element), `:1466` (elements added later), `:1486` (nested
+    elements excluded), `:1512` (a later call replaces), `:1525` (`null`
+    forwarded), `:1539` (invalid id throws before recording), `:1557` (a host
+    without the PAPI throws instead of styling nothing), `:1608` (a second root
+    sharing the page is not restyled), and `:1578` (the recorded id survives a
+    remount); on the web host by `test/browser/lynx-for-web.test.ts:694`, `:719`,
+    `:747`, `:766`. The contract is `docs/contract.md` §8.
+  - **Open: runtime stylesheet loading and lifecycle.** Two separate gaps, and
+    they are not the same size:
+    - *Absent on web.* `@lynx-js/web-core` 0.26.2 exposes no PAPI that adds,
+      replaces, or removes a stylesheet — its set is `__AddClass`,
+      `__AddInlineStyle`, `__SetClasses`, `__SetCSSId`, `__SetInlineStyles`
+      (`docs/capabilities.md` "Stylesheet loading and lifecycle"). Integration
+      there would mean inventing an API the host does not have, so it is
+      documented as unsupported rather than approximated.
+    - *Unmeasured on native.* The A03 run did observe the
+      `__LoadStyleSheet`/`__AdoptStyleSheet`/`__ReplaceStyleSheets` globals in
+      the host inventory, but their signatures and lifecycle were never
+      exercised, so nothing about them is claimed and no renderer stylesheet API
+      exists to call (`docs/contract.md` §8 "Important limit", §9 "Not proven /
+      not applicable").
+  - **How the native half would be measured, and recorded.** The card is
+    `examples/lynx-for-native/src/stylesheet-probe.ts`, logging one
+    `[solid-lynx ss]` line per stage, calling only what cannot mutate the card
+    (`pnpm native:build` emits `dist/stylesheet-probe.lynx.bundle`). It is run
+    through the single native runner,
+    `examples/lynx-for-native/scripts/run-native-probe.sh stylesheet`, which
+    pins the A03 serial, serves the bundle on loopback, opens it in Explorer and
+    captures logcat; `run-native-probe.sh stylesheet --dry-run` reviews the
+    sequence without hardware. **`scripts/verify-native-parity.mjs` does not
+    verify these lines yet** — it reads only the `[solid-lynx parity]` marker
+    (`scripts/verify-native-parity.mjs:28`) and exits 2 on a capture carrying
+    only `[solid-lynx ss]` lines, which was re-checked for this revision. So the
+    measurement would be *recorded* by naming the capture path and reading its
+    `[solid-lynx ss]` stages against `docs/capabilities.md` "The native
+    stylesheet probe"; it would not be *verified by a process* until the
+    verifier grows a stylesheet mode or a sibling checker exists.
+  - **No run has happened.** `--dry-run` for all three cards (and the
+    `run-stylesheet-probe.sh` wrapper) exits 0, and `docs/capabilities.md`
+    records the probe as "This has not been run yet". A reviewed command
+    sequence is not a measurement. That is why the stylesheet half stays open
+    and the box stays unticked, even though its CSS-id half is done and tested.
 - [x] Add refs and imperative element access with deterministic cleanup.
 - [x] Evaluate native list virtualization and expose list callbacks if the Solid model can support them cleanly.
   - The renderer side is done: `root.createList()` creates the list through
@@ -115,11 +183,12 @@ Set a stable public contract after web validation, native validation, and toolin
     job runs `pnpm typecheck` (build, then `tsc --noEmit`, then the consumer
     fixtures), `pnpm typecheck:consumer` (`test/consumer/tsconfig.json` and
     `tsconfig.dev.json`, which assert the type-level rejections with
-    `@ts-expect-error`), and `pnpm test` (94 unit tests in 5 files: 58 in
-    `test/renderer.test.ts`, 14 in `test/list-probe-report.test.ts`, 9 in
-    `test/parity.test.ts`, 7 in `test/stylesheet-probe-report.test.ts`, 6 in
-    `test/rspeedy.test.ts`), so a contract item that loses its covering test or
-    its type rejection turns CI red.
+    `@ts-expect-error`), and `pnpm test` (117 unit tests in 6 files: 62 in
+    `test/renderer.test.ts`, 19 in `test/native-parity-verify.test.ts`, 14 in
+    `test/list-probe-report.test.ts`, 9 in `test/parity.test.ts`, 7 in
+    `test/stylesheet-probe-report.test.ts`, 6 in `test/rspeedy.test.ts`), so a
+    contract item that loses its covering test or its type rejection turns CI
+    red.
 - [ ] Define supported Lynx and Solid version ranges and verify them in CI.
   - **Node half: done, and verified in CI.** `docs/compatibility.md` §5–§7
     (commit `5ecace6`) defines the set: exact pins for `solid-js` 1.9.15,
@@ -132,50 +201,142 @@ Set a stable public contract after web validation, native validation, and toolin
     `20.x`, `22.x`, and `24.x` — the two declared Node lines plus the major the
     open-ended `>=22.12.0` admits, chosen because no manifest in the graph caps
     `engines.node`. Locally the same gate exits 0 on 20.19.0, 20.20.2, 22.12.0,
-    22.23.3, 24.22.1, and 26.1.0, 98 tests each.
-  - **Solid half: still not verified, so the box stays open.** The box says
-    "Lynx **and Solid** version ranges", and the Solid range is asserted rather
-    than exercised. `peerDependencies.solid-js` is `^1.9.15`, which admits
-    `solid-js` 1.9.16 and 1.9.17 — both now published — and this repository has
-    run neither: `devDependencies.solid-js` and `babel-preset-solid` are pinned
-    at exactly 1.9.15, so every check resolves 1.9.15 and no other. A Solid
-    matrix was considered and rejected in this change: this repo resolves one
-    Solid through `babel-preset-solid`, so a second version needs a dependency
-    swap in the job, not a matrix axis, and nobody has run that swap
-    (`docs/compatibility.md` §8, `.github/workflows/ci.yml` comment above
-    `node-matrix`).
-  - Remaining gap, precisely: either CI gains a job that installs `solid-js`
-    1.9.16/1.9.17 over the pinned set and runs the gate, or the peer range is
-    narrowed to `1.9.15` so the published claim matches the one version actually
-    run. Until one of those happens, the Solid half of this box is a declaration
-    with no check behind it.
+    22.23.3, 24.22.1, and 26.1.0. Those runs recorded 98 tests each, which is
+    what this repository had at the time; the suite is 117 today, because
+    `test/native-parity-verify.test.ts` (19 tests) landed in commit `af237ca`
+    afterwards. The 117 figure was re-measured on Node 22.23.3 / pnpm 12.9.1 for
+    this revision; the other five Node lines were not re-run, so their 117 is an
+    expectation, not a result.
+  - **Solid half: not verified, so the box stays open.** The box says "Lynx
+    **and Solid** version ranges", and the Solid range is asserted, not exercised.
+    The three facts that decide it:
+    - The installed `solid-js` is **1.9.15** — `package.json:76` pins it exactly
+      and `pnpm-lock.yaml:2584` resolves `solid-js@1.9.15`, as does
+      `babel-preset-solid@1.9.15` (`pnpm-lock.yaml:4173-4178`).
+    - The declared range is `^1.9.15` (`package.json:59`), which admits up to
+      `<2`. npm has **1.9.16** (published 2026-10-06) and **1.9.17** (2026-10-07,
+      and `latest`) inside that range. Both are outside what this repository has
+      ever installed.
+    - No CI job installs either. `.github/workflows/ci.yml` has four jobs —
+      `unit`, `node-matrix`, `browser`, `native-build` — and none of them touches
+      `solid-js`; every job runs `pnpm install --frozen-lockfile` against the
+      same pins, so every check resolves 1.9.15 and no other.
+
+    A Solid matrix was considered and rejected: this repository resolves exactly
+    one Solid through `babel-preset-solid`, so a second version needs a
+    dependency swap inside a job rather than a matrix axis
+    (`.github/workflows/ci.yml:87-91`, `docs/compatibility.md` §8).
+  - **The two honest ways to close it.** Neither has happened.
+    - *Narrow the claim.* Change `peerDependencies.solid-js` from `^1.9.15` to
+      `1.9.15`, so the published promise is the one version that is run. This is
+      a one-line change plus `pnpm-lock.yaml` and `docs/compatibility.md` §2/§7;
+      it makes the box true by making the claim smaller. Cost: consumers on
+      1.9.16/1.9.17 hit a peer warning for a version that probably works.
+    - *Widen the evidence.* Add a CI job that installs `solid-js` 1.9.16 and
+      1.9.17 over the pinned set — a `pnpm add -D solid-js@1.9.17`-style
+      override, or a second lockfile resolved against it — and runs
+      `pnpm typecheck && pnpm test`. This also has to move `babel-preset-solid`:
+      1.9.15's own peer range is `^1.9.15`, while 1.9.16's is `^1.9.16`, so a
+      real 1.9.16/1.9.17 leg is a compiler swap too, not only a runtime swap.
+      That is why nobody has done it casually.
+    - Until one of those lands, the Solid half is a declaration with no check
+      behind it, and only the Node half is verified.
 - [ ] Require native and web compatibility checks for changes to shared behavior.
-  - Not satisfied, and the gap is a native runtime in CI. The `browser` job does
-    run both web suites on every pull request — `PLAYWRIGHT_PORT=4186 pnpm
-    web:test` (17 tests) and `PLAYWRIGHT_PORT=4200` with
-    `test/browser/patterns.playwright.config.ts` (9 tests) — so web is checked.
-  - Native is not: the `native-build` job only compiles the bundle with `pnpm
-    native:build` and uploads `examples/lynx-for-native/dist`. No device or
-    emulator is attached, and the job's own comment says native runtime
-    behaviour stays a manual check. Nothing in CI fails when a change breaks
-    native rendering, tap dispatch, or the `[solid-lynx parity]` report, so
-    nothing *requires* a native check.
+  - **Web half: enforced.** The `browser` job runs both suites on every pull
+    request — `PLAYWRIGHT_PORT=4186 pnpm web:test` (17 tests) and
+    `PLAYWRIGHT_PORT=4200` with `test/browser/patterns.playwright.config.ts`
+    (9 tests) — and a red suite fails the PR.
+  - **Native half: cannot run in CI, and does not.** The `native-build` job only
+    compiles the bundles with `pnpm native:build` and uploads
+    `examples/lynx-for-native/dist`; no device or emulator is attached, and the
+    job's own comment (`.github/workflows/ci.yml:165-167`) says native runtime
+    behaviour is not covered. Nothing in CI fails when a change breaks native
+    rendering, tap dispatch, or the `[solid-lynx parity]` report.
+  - **What now exists in place of automation: a recorded, verifiable native run.**
+    Three pieces, all present:
+    1. `examples/lynx-for-native/scripts/run-native-probe.sh smoke` produces the
+       capture (pinned serial, loopback serve, Explorer deep link, logcat).
+    2. `scripts/verify-native-parity.mjs <capture>` turns that capture into an
+       exit code — 0 verified, 1 findings, 2 could not evaluate — by parsing the
+       `[solid-lynx parity]` line and checking it against `parityOperationIds`
+       from `dist/parity.js`. Its own logic is tested host-free against capture
+       fixtures (`test/native-parity-verify.test.ts`, 19 tests).
+    3. `.github/pull_request_template.md:22-39` asks every PR to tick one of
+       "Not required" or "Required and done", and lists what a required run
+       must record: `adb -s R9WT911JVVH get-state` returning `device`, the
+       `[solid-lynx parity]` line recorded in `docs/parity-checklist.md`, the
+       stylesheet probe reviewed if that PAPI moved, `docs/capabilities.md`
+       updated with what the run showed, and the captures in
+       `/tmp/solid-lynx-logs` read rather than only produced.
+  - **What is enforced, exactly, and what is not.** The template checklist and
+    the verifier are both **convention**: the template is prose a contributor
+    ticks by hand, and the verifier is a command someone has to remember to run
+    on a capture someone has to keep. No workflow invokes
+    `verify-native-parity.mjs`; `rg` finds no reference to it under
+    `.github/` or in any test other than its own host-free suite. So a PR that
+    changes native-facing behaviour and ticks nothing still merges, and no check
+    goes red. The box's word is "Require", and nothing requires anything yet.
+  - What would actually close it: a CI job that at minimum fails when the
+    template's native section is unaddressed, and ideally a stored capture under
+    `docs/evidence/` (which does not exist yet — no capture has survived) that
+    the verifier is run against on every change to `src/lynx-host.ts` or the
+    examples' native entries. Neither exists. This box stays unticked.
 - [ ] Confirm deterministic root, listener, and stylesheet cleanup.
-  - Root, listener, and ref cleanup are proven; the stylesheet half cannot be.
-    `docs/contract.md` §9 names the mechanism and the covering test for each:
-    node removal and per-root ownership (`test/renderer.test.ts:561`, `:1014`;
-    browser `test/browser/lynx-for-web.test.ts:471`), listener-slot release on
-    disposal (`:976`, `:821`), subtree detach and restore (`:789`), ref release
-    (`:1163`; browser `:690`), one flush at the end of disposal (`:733`),
-    independent disposal of roots sharing a page (`:1014`; browser `:527`), and
-    remount with fresh listeners (`:853`; browser `:527`).
-  - Stylesheet cleanup is unconfirmable in this release: the renderer never loads
-    a stylesheet (`docs/contract.md` §8, §9 "Not proven / not applicable"), and
-    the native stylesheet lifecycle is **unmeasured** — the probe card exists
-    (`examples/lynx-for-native/src/stylesheet-probe.ts`, built by `pnpm
-    native:build`) but has not run on a device. Native cleanup after `dispose()`
-    is unmeasured for the same reason. This box stays open until at least the
-    stylesheet probe has a device run.
+  - **Proven: root, listener, and ref cleanup.** `docs/contract.md` §9 names the
+    mechanism and the covering test for each. The line numbers below are this
+    tree's, not the ones §9 cited when it was written: commits `380284f` and
+    `8b01d05` both inserted tests above the ref and CSS-id blocks, pushing those
+    blocks down by 137 lines in `test/renderer.test.ts`. So a cite copied from a
+    1.0.0-era note can be wrong by exactly that much — the CSS-id batch test was
+    at `:1302` and is at `:1439`. `docs/contract.md` §2, §6, §7.5, §8, and §9
+    were corrected to these numbers in the same change as this note, and every
+    citation in this file was re-checked against the working tree.
+    - node removal and per-root ownership — `test/renderer.test.ts:561`, `:1151`;
+      browser `test/browser/lynx-for-web.test.ts:471`
+    - listener-slot release on disposal — `test/renderer.test.ts:976`, `:821`
+    - subtree detach and restore — `test/renderer.test.ts:789`
+    - ref release — `test/renderer.test.ts:1300`; browser `:606`, `:630`
+    - one flush at the end of disposal — `test/renderer.test.ts:733`
+    - independent disposal of roots sharing a page — `test/renderer.test.ts:1151`;
+      browser `:471`
+    - remount with fresh listeners — `test/renderer.test.ts:853`; browser `:471`
+  - **Strengthened in this release, beyond what §9 previously cited.** Two real
+    additions, both in 1.0.0 and both with failing-first tests:
+    - *The listener half got an actual fix, not just a test.* Commit `380284f`
+      ("fix: release a listener through the API pair that filed it") changed
+      `src/lynx-host.ts`: `attachEvent` used to pick its PAPI pair at attach time
+      while `detachEvent` picked again at release time with a different
+      preference order, so a host exposing `__AddEventListener` without
+      `__RemoveEventListener` bound through the listener API and released through
+      `__AddEvent` — leaking the original slot. A registration now records the
+      pair that filed it (`src/lynx-host.ts:256-292`) and release uses that pair;
+      when no complete pair exists, attach throws instead of filing a listener
+      nothing can release. Covered by `test/renderer.test.ts:1014` (both
+      directions) and `:1081` (removal API missing). This was a genuine defect in
+      what the box calls "deterministic listener cleanup", found and closed rather
+      than re-described.
+    - *Two gaps the contract admitted are now covered.* Commit `8b01d05` added
+      `test/renderer.test.ts:1109` (double-dispose: the second `dispose()` does not
+      reach the host and does not throw — previously `docs/contract.md` §2 said
+      this was "not asserted by a test") and `:1578` (a CSS id assigned before
+      disposal still styles the element after a remount, which pins the
+      "no un-assign call is made or needed" claim in §9).
+  - **Not provable: stylesheet cleanup.** The renderer never loads a stylesheet,
+    so there is nothing for it to clean up (`docs/contract.md` §8, §9 "Not proven
+    / not applicable": a CSS id only selects among stylesheets the toolchain
+    already compiled in, and `setCSSId` makes no un-assign call because disposal
+    removes the elements). The native lifecycle is **unmeasured**: the probe card
+    exists (`examples/lynx-for-native/src/stylesheet-probe.ts`, built by `pnpm
+    native:build`) and would be run through
+    `examples/lynx-for-native/scripts/run-native-probe.sh stylesheet`, but no
+    device run has happened — only `--dry-run`. Native cleanup after `dispose()`
+    is unmeasured for the same reason (`docs/contract.md` §9 "Native disposal").
+  - **So the box stays unticked.** Two thirds of its sentence are proven and one
+    third is not merely untested but *absent* on web and *unmeasured* on native;
+    ticking it would collapse that distinction, which is the whole reason the box
+    exists. Closing it needs either a device run of the stylesheet probe or an
+    explicit narrowing of the box to root/listener cleanup — and narrowing it is
+    a decision nobody has recorded, so this revision does not take it.
 - [x] Publish migration and compatibility guidance for breaking changes.
   - `docs/migration.md` (commit `002b786`) is the consumer-side guide: refs,
     CSS ids, event props, JSX types, the `<list>` → `root.createList()` move,
@@ -188,9 +349,20 @@ Set a stable public contract after web validation, native validation, and toolin
 
 **Milestone complete when:** consumers can build and maintain a Solid Lynx app using documented APIs, with core behavior continuously validated in supported runtimes.
 
-**Status of this milestone:** not complete. Two of the five items are done; the
-remaining three are blocked on a version matrix and a native runtime in CI, and
-on the native stylesheet measurement.
+**Status of this milestone:** not complete. Two of the five items are done. The
+other three stay open for three different reasons, and this revision records
+which is which rather than one shared blocker:
+
+| Box | Why it is still open |
+| --- | --- |
+| Define supported Lynx and Solid version ranges and verify them in CI | Node half verified (`node-matrix`); the Solid half is a declaration, because `^1.9.15` admits the published 1.9.16/1.9.17 and no job installs them. Closes by narrowing the peer range or adding a Solid leg. |
+| Require native and web compatibility checks for changes to shared behavior | Web is enforced in CI. Native cannot run in CI; the recorded-run mechanism (`run-native-probe.sh smoke` + `verify-native-parity.mjs`) and the PR template exist, but both are convention — nothing red fails a PR. |
+| Confirm deterministic root, listener, and stylesheet cleanup | Root, listener, and ref cleanup are proven and were strengthened in 1.0.0 (`380284f`, `8b01d05`). Stylesheet cleanup is absent on web and unmeasured on native, so the box cannot close on evidence. |
+
+Only one of the three is waiting on a contributor decision: the Solid peer range.
+The other two need work nobody has done (a Solid CI leg; a stylesheet device run),
+not a ruling. The 0.3 native-only box is absent from this table because it is
+scope-excluded, not pending.
 
 ## Out of scope for the renderer
 
@@ -200,3 +372,12 @@ These remain the responsibility of the surrounding Lynx app framework or toolcha
 - Rspeedy bundling internals beyond Solid-specific integration
 - Lynx's dual-thread worklet compiler and runtime scheduling
 - Native modules and platform services
+- Verifying dual-thread execution, worklets, and first-screen synchronization in
+  this repository. The 0.3 box that used to read as pending work is recorded
+  here as a scope decision instead (see the 0.3 note above). Worklets are
+  compiled by Lynx's toolchain; dual-thread execution is a build configuration no
+  card here emits (`background: false` everywhere); first-screen synchronization
+  is host paint scheduling. `docs/contract.md` §15 records the same position, and
+  `docs/parity-checklist.md:196-198` already carries the row-level version:
+  dual-thread and worklets `not applicable` on web, first-screen `verified for
+  web`, and all three `not measured` on native.
