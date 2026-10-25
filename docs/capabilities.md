@@ -247,7 +247,7 @@ a materialize, a reorder and a shrink, and the host never called
 builds through `pnpm native:build` as `dist/list-probe.lynx.bundle`; it shares its
 shape with the stylesheet probe (`[solid-lynx lp]` stages, one JSON line each,
 recorder helpers in `list-probe-report.ts` covered by
-`test/list-probe-report.test.ts`) so one runner drives all three cards. It is a
+`test/list-probe-report.test.ts`) so one runner drives every native card. It is a
 measurement, not support: it calls `root.createList()` with three toy items and
 logs one line per stage:
 

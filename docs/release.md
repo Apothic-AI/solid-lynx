@@ -219,28 +219,31 @@ section are non-negotiable: every ADB command is pinned with
 `adb -s R9WT911JVVH`, and the tablet `19779010` is in use by another agent and
 must not be targeted.
 
-**Review any of the three cards without hardware.** One runner is committed at
+**Review any of the cards without hardware.** One runner is committed at
 `examples/lynx-for-native/scripts/run-native-probe.sh` and takes the card as its
 argument:
 
 ```bash
 examples/lynx-for-native/scripts/run-native-probe.sh smoke --dry-run
 examples/lynx-for-native/scripts/run-native-probe.sh stylesheet --dry-run
+examples/lynx-for-native/scripts/run-native-probe.sh stylesheet2 --dry-run
 examples/lynx-for-native/scripts/run-native-probe.sh list --dry-run
 ```
 
 | Card | Bundle | Console prefix |
 | --- | --- | --- |
 | `smoke` | `main.lynx.bundle` | `[solid-lynx parity]` |
-| `stylesheet` | `stylesheet-probe.lynx.bundle` | `[solid-lynx ss]` |
+| `stylesheet` (v1) | `stylesheet-probe.lynx.bundle` | `[solid-lynx ss]` |
+| `stylesheet2` (v2) | `stylesheet-probe-v2.lynx.bundle` | `[solid-lynx ss2]` |
 | `list` | `list-probe.lynx.bundle` | `[solid-lynx lp]` |
 
-The bundle stem is accepted too (`main`, `stylesheet-probe`, `list-probe`), and
-the old entry point `examples/lynx-for-native/scripts/run-stylesheet-probe.sh`
-remains as a thin wrapper that execs the general script with `stylesheet`. An
-unknown card is a usage error and exits 2 without touching a device.
+The bundle stem is accepted too (`main`, `stylesheet-probe`,
+`stylesheet-probe-v2`, `list-probe`), and the old entry point
+`examples/lynx-for-native/scripts/run-stylesheet-probe.sh` remains as a thin
+wrapper that execs the general script with `stylesheet`. An unknown card is a
+usage error and exits 2 without touching a device.
 
-All four dry runs (three cards plus the wrapper) ran here: exit 0. Each prints
+All four dry runs (four cards, plus the wrapper) ran here: exit 0. Each prints
 the `get-state`, `pnpm native:build`, the loopback
 `python3 -m http.server 8099`, `adb reverse tcp:8099`, the
 `lynx://open?url=.../<card>.lynx.bundle?v=<stamp>` deep link, the
@@ -251,10 +254,12 @@ the A03 is not attached.
 
 A real run that captures no line for the chosen prefix exits 5 and points at the
 log and the screenshot instead of reporting a result, so an empty capture cannot
-be read as a measurement. **However, no dry run is a device result.** No device
-run of any of the three cards is recorded anywhere in this tree, and
-`docs/capabilities.md` says so for the stylesheet and list probes in as many
-words.
+be read as a measurement. **However, no dry run is a device result, and no card
+has ever been run through this script.** The runs that do exist were taken outside
+it, by opening the bundles in Lynx Explorer on an API 33 `x86_64` emulator, and
+three of them are stored as records (`docs/capabilities.md` says exactly what each
+one did and did not measure). **No A03 run of any card is recorded anywhere in
+this tree.**
 
 ### The native smoke step
 
