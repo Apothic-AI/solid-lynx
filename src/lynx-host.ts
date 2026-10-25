@@ -89,7 +89,18 @@ interface RegisteredEvent {
   name: string;
   namespace?: string;
   attached: boolean;
+  /**
+   * The PAPI pair this registration was filed through.
+   *
+   * A host keys a listener slot by name and bind type inside its own table, so
+   * binding through one pair and unbinding through the other leaves the slot in
+   * place. The pair is fixed when the registration is attached and reused when
+   * it is released.
+   */
+  path?: EventBindingPath;
 }
+
+type EventBindingPath = "listener" | "addEvent";
 
 const builtInCreators: Record<string, keyof LynxPapi> = {
   view: "__CreateView",
@@ -224,39 +235,59 @@ export function createGlobalLynxHost(
     return element;
   };
 
+  /**
+   * The pair a new registration is filed with.
+   *
+   * The listener pair is preferred, but only when both halves exist: a listener
+   * filed through `__AddEventListener` can only be released through
+   * `__RemoveEventListener`. A host exposing the add call alone is served by
+   * `__AddEvent`, which both binds and unbinds. When no complete pair exists
+   * this throws rather than filing a listener nothing can release.
+   */
+  const resolveBindingPath = (): EventBindingPath => {
+    if (typeof papi.__AddEventListener === "function"
+      && typeof papi.__RemoveEventListener === "function") {
+      return "listener";
+    }
+    if (typeof papi.__AddEvent === "function") return "addEvent";
+    throw new Error("solid-lynx requires __AddEvent() or __AddEventListener()");
+  };
+
   const attachEvent = (node: LynxNode, record: RegisteredEvent) => {
     if (record.attached) return;
-    const addEventListener = papi.__AddEventListener;
-    if (typeof addEventListener === "function") {
-      addEventListener(
+    const path = resolveBindingPath();
+    if (path === "listener") {
+      papi.__AddEventListener!(
         node,
         record.name,
         record.listener,
         eventListenerOptions(record.type, record.namespace),
       );
-    } else if (typeof papi.__AddEvent === "function") {
-      papi.__AddEvent(node, record.type, record.name, {
+    } else {
+      papi.__AddEvent!(node, record.type, record.name, {
         type: "worklet",
         value: record.listener,
       });
-    } else {
-      throw new Error("solid-lynx requires __AddEvent() or __AddEventListener()");
     }
+    record.path = path;
     record.attached = true;
   };
 
   const detachEvent = (node: LynxNode, record: RegisteredEvent) => {
     if (!record.attached) return;
     record.attached = false;
-    if (typeof papi.__RemoveEventListener === "function") {
-      papi.__RemoveEventListener(
+    const path = record.path;
+    record.path = undefined;
+    // Released through the pair that filed it, never the other one.
+    if (path === "listener") {
+      papi.__RemoveEventListener!(
         node,
         record.name,
         record.listener,
         eventListenerOptions(record.type, record.namespace),
       );
-    } else if (typeof papi.__AddEvent === "function") {
-      papi.__AddEvent(node, record.type, record.name, undefined);
+    } else {
+      papi.__AddEvent!(node, record.type, record.name, undefined);
     }
   };
 

@@ -1011,6 +1011,101 @@ describe("solid-lynx", () => {
     expect(slots("remove")).toEqual(slots("add"));
   });
 
+  it("pairs each registration with the detach call for the API it was filed through", () => {
+    // A host may expose `__AddEventListener` without `__RemoveEventListener`
+    // (and `__AddEvent` alongside it), or the reverse. Attaching through one API
+    // and detaching through the other leaves the registration in the slot it was
+    // filed in, because a host keys a registration by name and bind type inside
+    // the table that API owns — so the slot table is what the fake records.
+    const slotKey = (node: FakeNode, type: string, name: string) =>
+      `${type.toLowerCase()}:${name}`;
+
+    const attachOnly = createFakePapi();
+    const listenerSlots = new Map<FakeNode, Set<string>>();
+    const slotsFor = (node: FakeNode) => {
+      let slots = listenerSlots.get(node);
+      if (!slots) {
+        slots = new Set();
+        listenerSlots.set(node, slots);
+      }
+      return slots;
+    };
+    // Only the listener API is present, plus `__AddEvent`; `__RemoveEventListener`
+    // is absent, so the only way to release a listener registered through
+    // `__AddEventListener` is not to file it there in the first place.
+    const addEventListener = attachOnly.papi.__AddEventListener!;
+    const addEventCalls: string[] = [];
+    attachOnly.papi.__AddEventListener = (node, name, listener, options) => {
+      addEventListener(node, name, listener, options);
+      slotsFor(node as FakeNode).add(slotKey(node as FakeNode, listenerEventType(options), name));
+    };
+    delete attachOnly.papi.__RemoveEventListener;
+    attachOnly.papi.__AddEvent = (node: FakeNode, type: string, name: string, payload?: unknown) => {
+      if (payload === undefined) {
+        addEventCalls.push(`remove:${type}:${name}`);
+        slotsFor(node).delete(slotKey(node, type, name));
+        return;
+      }
+      addEventCalls.push(`add:${type}:${name}`);
+      slotsFor(node).add(slotKey(node, type, name));
+    };
+
+    const attachRoot = createLynxRoot({
+      page: attachOnly.page,
+      papi: attachOnly.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+    attachRoot.render(() => {
+      const view = attachRoot.renderer.createElement("view");
+      attachRoot.renderer.setProp(view, "bindtap", () => undefined);
+      attachRoot.renderer.setProp(view, "global-bind:tap", () => undefined);
+      return view;
+    });
+    const attachedView = attachOnly.page.children[0]!;
+    expect([...slotsFor(attachedView)].sort()).toEqual(["bindevent:tap", "global-bindevent:tap"]);
+
+    attachRoot.dispose();
+
+    // Every registration went through `__AddEvent`, which is the same API the
+    // host exposes for removal, so disposal releases both slots.
+    expect([...slotsFor(attachedView)]).toEqual([]);
+    expect(addEventCalls).toEqual([
+      "add:bindEvent:tap",
+      "add:global-bindEvent:tap",
+      "remove:bindEvent:tap",
+      "remove:global-bindEvent:tap",
+    ]);
+  });
+
+  it("registers through the listener API when only the removal API is missing", () => {
+    // The mirror case: `__AddEventListener` is absent, so `__AddEvent` attaches.
+    // `__RemoveEventListener` being present must not make disposal call an API
+    // that never saw the registration.
+    const fake = createFakePapi();
+    const calls: string[] = [];
+    delete fake.papi.__AddEventListener;
+    fake.papi.__AddEvent = (node: FakeNode, type: string, name: string, payload?: unknown) => {
+      calls.push(`${payload === undefined ? "remove" : "add"}:${type}:${name}`);
+    };
+
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: fake.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+    root.render(() => {
+      const view = root.renderer.createElement("view");
+      root.renderer.setProp(view, "bindtap", () => undefined);
+      return view;
+    });
+
+    root.dispose();
+
+    expect(calls).toEqual(["add:bindEvent:tap", "remove:bindEvent:tap"]);
+  });
+
   it("keeps roots that share a page independent through render and disposal", () => {
     const fake = createFakePapi();
     const first = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 11 });
