@@ -408,3 +408,5 @@ answer. Two habits keep that honest, and both are cheap:
 
 Nothing here is a substitute for the run. It is what makes an absent run fail a
 CHECK instead of a convention.
+
+<!-- temporary: exercising the native-evidence gate on a real pull request; reverted before merge -->
