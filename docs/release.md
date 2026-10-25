@@ -29,10 +29,10 @@ exact command.
 | `unit` | Install | `pnpm install --frozen-lockfile` | lockfile and `package.json` agree; no resolution step | exit 0 |
 | `unit` | Type check | `pnpm typecheck` | `tsc -p tsconfig.build.json`, then `tsc --noEmit`, then both consumer fixtures | exit 0 |
 | `unit` | Type check consumer fixtures | `pnpm typecheck:consumer` | `test/consumer/tsconfig.json` and `test/consumer/tsconfig.dev.json` compile against the built `dist/` | exit 0 |
-| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **94 tests in 5 files** |
+| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **121 tests in 7 files** |
 | `unit` | Build | `pnpm build` | `dist/` is written | exit 0 |
-| `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 33 entries |
-| `node-matrix` | Install / Type check / Unit tests, on `20.x`, `22.x`, `24.x` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` | the unit gate passes at the top of each declared Node line | exit 0 on 20.20.2, 22.23.3, 24.22.1 locally (98 tests each; the floors 20.19.0 and 22.12.0 also exit 0) |
+| `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 43 entries |
+| `node-matrix` | Install / Type check / Unit tests, on `20.x`, `22.x`, `24.x` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` | the unit gate passes at the top of each declared Node line | exit 0 on 20.20.2, 22.23.3, 24.22.1 locally (98 tests each at that commit — the count predates `test/packaging.test.ts`, which was added afterwards and is not re-measured here; the floors 20.19.0 and 22.12.0 also exit 0) |
 | `browser` | Install Chromium | `pnpm exec playwright install --with-deps chromium` | Chromium present for Playwright | **not run** — the browser was already installed in this worktree; CI runs it because the runner starts bare |
 | `browser` | Lynx-for-Web suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | builds the web bundle, serves it, drives it in Chromium | exit 0, **17 passed** (54.2s) |
 | `browser` | Pattern suite | `PLAYWRIGHT_PORT=4200 pnpm exec playwright test --config test/browser/patterns.playwright.config.ts` | the separate `examples/lynx-patterns` suite passes | exit 0, **9 passed** (41.5s) |
@@ -92,9 +92,12 @@ that exists elsewhere is not evidence about this branch. If the file exists, add
 an entry at the top whose heading names the version; if it does not, creating it
 is part of the release commit. Either way:
 
-- `CHANGELOG.md` is **not** in the published tarball. `package.json` `files` is
-  `["dist", "README.md", "LICENSE"]`, so a changelog is repository documentation
-  only. Verified in the `pnpm pack --dry-run` listing in §4.
+- `CHANGELOG.md` **is** in the published tarball, together with `docs/` and
+  `ROADMAP.md`: `package.json` `files` is
+  `["dist", "docs", "CHANGELOG.md", "README.md", "ROADMAP.md", "LICENSE"]`.
+  The README links to every one of those files, and `test/packaging.test.ts`
+  fails if any link a consumer can see stops resolving inside the tarball.
+  Verified in the `pnpm pack --dry-run` listing in §4.
 
 Prove the version agrees before committing. Three commands, each run here with
 exit 0:
@@ -152,8 +155,8 @@ section are non-negotiable: every ADB command is pinned with
 must not be targeted.
 
 **Review any of the three cards without hardware.** One runner is committed at
-[`examples/lynx-for-native/scripts/run-native-probe.sh`](../examples/lynx-for-native/scripts/run-native-probe.sh)
-and takes the card as its argument:
+`examples/lynx-for-native/scripts/run-native-probe.sh` and takes the card as its
+argument:
 
 ```bash
 examples/lynx-for-native/scripts/run-native-probe.sh smoke --dry-run
@@ -260,27 +263,44 @@ present-tense pass, and it may not upgrade anything else from "unmeasured".
 
 ```bash
 pnpm build          # tsc -p tsconfig.build.json -> dist/     exit 0
-pnpm pack --dry-run # list the tarball without writing it     exit 0, 33 entries
+pnpm pack --dry-run # list the tarball without writing it     exit 0, 43 entries
 ```
 
-`pnpm pack --dry-run` ran here and listed **33 entries**: 30 files under
-`dist/` (`*.js` and `*.d.ts` for every `src/` module), plus `LICENSE`,
-`package.json`, `README.md`. It ends with `Tarball Details` /
-`solid-lynx-0.1.0.tgz` and writes no file (`git status` was clean afterwards).
+`pnpm pack --dry-run` ran here and listed **43 entries**: 30 files under
+`dist/` (`*.js` and `*.d.ts` for every `src/` module), the eight files in
+`docs/`, `CHANGELOG.md`, `ROADMAP.md`, plus `LICENSE`, `package.json`,
+`README.md`. It ends with `Tarball Details` / `solid-lynx-1.0.0.tgz` and writes
+no file (`git status` was clean afterwards).
 
 What ends up in the tarball is decided by `files` in `package.json`:
-`["dist", "README.md", "LICENSE"]`. `package.json` and the `LICENSE` also ship
-because npm always includes them. There is no `prepack` or `prepare` script, so
-`pnpm pack` does **not** rebuild `dist/` — run `pnpm build` first, or the tarball
-carries whatever was last built.
+`["dist", "docs", "CHANGELOG.md", "README.md", "ROADMAP.md", "LICENSE"]`.
+`package.json` and the `LICENSE` also ship because npm always includes them.
+There is no `prepack` or `prepare` script, so `pnpm pack` does **not** rebuild
+`dist/` — run `pnpm build` first, or the tarball carries whatever was last
+built.
+
+Why the documentation ships at all: the README tells a reader to consult the
+contract, the compatibility ranges, the migration guide, the capability matrix,
+and the changelog, and every one of those is a relative link. If the files are
+not in the tarball those links are dead for exactly the audience that needs
+them. `docs/` is 180 KiB of markdown, and the whole tarball compresses to
+111 KiB, so the documentation costs about 75 KiB over the network, and
+the shipped docs cross-link each other — `contract.md`, `compatibility.md`,
+`capabilities.md` and `migration.md` all point at `building.md` or
+`parity-checklist.md` — so the directory ships whole rather than as a hand-picked
+subset that would leave second-hop links dangling. Shipping only the four
+consumer-facing documents plus `CHANGELOG.md` leaves fifteen such links dead;
+shipping the whole directory leaves none. The three links in `docs/`
+that pointed at repository-only files (`examples/…/run-native-probe.sh`,
+`run-stylesheet-probe.sh`) were rewritten as plain code spans, and
+`test/packaging.test.ts` now enforces both rules: every relative link in every
+shipped markdown file resolves to a shipped file with an existing heading, or it
+fails.
 
 What does **not** ship, and this surprises people reading the repo:
 
 - `src/`, `test/`, `examples/`, `scripts/` — none of it. The parity verifier is
   a repository tool, not a published one, so a consumer never gets it.
-- `docs/` — including `docs/contract.md`, so a consumer reading the published
-  package gets `README.md` and the type declarations, not the contract.
-- `CHANGELOG.md`, even once it exists.
 - `tsconfig.json`, `tsconfig.build.json`, `vitest.config.ts`,
   `playwright.config.ts`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.github/`.
 
@@ -298,7 +318,7 @@ registry credential wired into any workflow here.
 
 What the command would do, if it were ever run deliberately:
 
-- `pnpm publish` packs the same 33 entries §4 lists and uploads them to
+- `pnpm publish` packs the same 43 entries §4 lists and uploads them to
   `https://registry.npmjs.org/` as `solid-lynx@<package.json version>`. A dry
   run was executed here to confirm the target and that nothing was uploaded:
   `pnpm publish --dry-run --no-git-checks` printed

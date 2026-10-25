@@ -41,12 +41,14 @@ out of your own output rather than out of this file — these numbers are dated.
 ```bash
 pnpm typecheck                     # exit 0
 pnpm typecheck:consumer            # exit 0; test/consumer/tsconfig.json + tsconfig.dev.json
-pnpm test                          # exit 0; 98 tests in 5 files (test/renderer.test.ts 62,
-                                   #   test/list-probe-report.test.ts 14, test/parity.test.ts 9,
-                                   #   test/stylesheet-probe-report.test.ts 7, test/rspeedy.test.ts 6)
+pnpm test                          # exit 0; 121 tests in 7 files (test/renderer.test.ts 62,
+                                   #   test/native-parity-verify.test.ts 19, test/list-probe-report.test.ts 14,
+                                   #   test/parity.test.ts 9, test/stylesheet-probe-report.test.ts 7,
+                                   #   test/rspeedy.test.ts 6, test/packaging.test.ts 4)
 pnpm build                         # exit 0
-pnpm pack --dry-run                # exit 0; 33 tarball entries (30 under dist/, plus
-                                   #   LICENSE, package.json, README.md) as solid-lynx-1.0.0.tgz
+pnpm pack --dry-run                # exit 0; 43 tarball entries (30 under dist/, 8 under docs/,
+                                   #   plus LICENSE, package.json, README.md, CHANGELOG.md,
+                                   #   ROADMAP.md) as solid-lynx-1.0.0.tgz
 pnpm native:build                  # exit 0; dist/main.lynx.bundle, dist/stylesheet-probe.lynx.bundle,
                                    #   dist/list-probe.lynx.bundle
 PLAYWRIGHT_PORT=4230 pnpm web:test # exit 0; 17 browser tests in 54.7s

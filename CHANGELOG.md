@@ -21,6 +21,32 @@ The first stable release. It freezes the public contract, pins the dependency se
 the contract was verified against, and adds the automation and the native
 measurement instrumentation that the contract requires.
 
+### The published package carries the documentation it links to
+
+`package.json` `files` was `["dist", "README.md", "LICENSE"]`, so the tarball's
+README linked to the contract, the compatibility ranges, the migration guide,
+the capability matrix, the changelog and the roadmap nine times across thirteen
+links, and every one of those targets was absent from the package. The links
+resolved from a repository checkout and were dead for anyone who installed from
+npm.
+
+`files` is now
+`["dist", "docs", "CHANGELOG.md", "README.md", "ROADMAP.md", "LICENSE"]`, which
+grows the tarball from 33 entries / 37,168 B packed / 128,510 B unpacked to 43
+entries / 112,941 B packed / 355,712 B unpacked — 75 KiB more over the wire, for
+a README whose links all work. `docs/` ships whole rather than as the four consumer-facing
+documents, because the shipped docs cross-link `building.md` and
+`parity-checklist.md`; an explicit four-file list left fifteen second-hop links
+dangling. Three links in `docs/` pointed at repository-only probe scripts under
+`examples/`; they are plain code spans now, and the `version` constant cited in
+`docs/contract.md` was corrected from `0.1.0` to `1.0.0`.
+
+`test/packaging.test.ts` keeps it honest without a network or a device: it asks
+`pnpm pack --dry-run --json` for the real file list and fails when a relative
+link in a shipped markdown file resolves to a file that is not shipped, escapes
+the package root, or names a heading that does not exist. Run against the old
+`files[]`, it reports all nine dead README targets by file and line.
+
 ### The public contract is frozen
 
 `docs/contract.md` (commit `0d77793`) records every public signature — host,
@@ -120,9 +146,10 @@ Observed in this repository on Node 22.23.3 with pnpm 12.9.1:
 
 - `pnpm typecheck`, `pnpm typecheck:consumer`, `pnpm test`, `pnpm build`, and
   `pnpm pack --dry-run` all exit 0.
-- `pnpm test` reports **94 unit tests in 5 files** (`test/renderer.test.ts` 58,
-  `test/list-probe-report.test.ts` 14, `test/parity.test.ts` 9,
-  `test/stylesheet-probe-report.test.ts` 7, `test/rspeedy.test.ts` 6), after
+- `pnpm test` reports **121 unit tests in 7 files** (`test/renderer.test.ts` 62,
+  `test/native-parity-verify.test.ts` 19, `test/list-probe-report.test.ts` 14,
+  `test/parity.test.ts` 9, `test/stylesheet-probe-report.test.ts` 7,
+  `test/rspeedy.test.ts` 6, `test/packaging.test.ts` 4), after
   `pnpm build` and before `pnpm typecheck:consumer`.
 - The native runtime evidence is unchanged from 0.x: one hand run on Lynx
   Explorer 4.1.0 / engine 3.5 on an SM-A037U, where the card loads, renders,

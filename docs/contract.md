@@ -54,7 +54,7 @@ directly from `solid-js` (`src/index.ts:16-25`). `Portal` and `Dynamic` are
 the import fails at build time (see [building.md](building.md), "Known
 limitation", and `docs/capabilities.md`, "Overlays and portals").
 
-`version` (`src/index.ts:70`) is the string `"0.1.0"`. It is exported, it is
+`version` (`src/index.ts:72`) is the string `"1.0.0"`. It is exported, it is
 **provisional**, and no test asserts it.
 
 ## 2. `createLynxRoot(options?)`

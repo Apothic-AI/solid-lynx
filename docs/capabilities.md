@@ -365,8 +365,8 @@ signatures and lifecycle remain unmeasured.
 #### Running it
 
 One runner drives all three native cards,
-[`examples/lynx-for-native/scripts/run-native-probe.sh`](../examples/lynx-for-native/scripts/run-native-probe.sh),
-and the card is its argument:
+`examples/lynx-for-native/scripts/run-native-probe.sh` in the repository, and
+the card is its argument:
 
 ```bash
 examples/lynx-for-native/scripts/run-native-probe.sh stylesheet --dry-run
@@ -379,8 +379,8 @@ examples/lynx-for-native/scripts/run-native-probe.sh stylesheet --dry-run
 | list probe | `list` (`list-probe`) | `list-probe.lynx.bundle` | `[solid-lynx lp]` |
 
 The former entry point,
-[`examples/lynx-for-native/scripts/run-stylesheet-probe.sh`](../examples/lynx-for-native/scripts/run-stylesheet-probe.sh),
-is kept as a thin wrapper that execs the general script with `stylesheet`, so
+`examples/lynx-for-native/scripts/run-stylesheet-probe.sh`, is kept in the
+repository as a thin wrapper that execs the general script with `stylesheet`, so
 earlier instructions still work. An unknown card is a usage error and exits 2.
 
 `--dry-run` prints every command in the order a real run executes it and touches

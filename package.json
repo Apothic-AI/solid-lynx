@@ -42,7 +42,10 @@
   },
   "files": [
     "dist",
+    "docs",
+    "CHANGELOG.md",
     "README.md",
+    "ROADMAP.md",
     "LICENSE"
   ],
   "scripts": {
