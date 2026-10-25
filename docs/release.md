@@ -37,7 +37,7 @@ green row below means "this command passes here", never "CI ran it and passed".
 | `unit` | Install | `pnpm install --frozen-lockfile` | lockfile and `package.json` agree; no resolution step | exit 0 |
 | `unit` | Type check | `pnpm typecheck` | `tsc -p tsconfig.build.json`, then `tsc --noEmit`, then both consumer fixtures | exit 0 |
 | `unit` | Type check consumer fixtures | `pnpm typecheck:consumer` | `test/consumer/tsconfig.json` and `test/consumer/tsconfig.dev.json` compile against the built `dist/` | exit 0 |
-| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **268 tests in 12 files** |
+| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **271 tests in 12 files** |
 | `unit` | (inside `pnpm test`) | `test/documented-counts.test.ts` | every document that states this suite's size agrees with the measured size | exit 0; a stale count in README, CHANGELOG, ROADMAP or `docs/` is a test failure, not a review note |
 | `unit` | Build | `pnpm build` | `dist/` is written | exit 0 |
 | `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 46 entries |
