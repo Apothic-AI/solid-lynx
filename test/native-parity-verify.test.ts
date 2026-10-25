@@ -78,7 +78,171 @@ function passingReport(): Record<string, unknown> {
 const captureOf = (report: unknown): string =>
   `I lynx_console: [solid-lynx parity] ${truthyJson(report)}\n`;
 
+/**
+ * The framing a real capture carries, exactly as Lynx Explorer writes it.
+ *
+ * `smoke.log` line 182 is the source of this shape: logcat columns, the console
+ * bridge's opening double quote, the thread tag, the card's own message prefix,
+ * the marker, the JSON, then the bridge's closing quote. The payload has no
+ * escaped quotes in it, which is why the closing quote is the last character.
+ */
+const realLine = (
+  report: unknown,
+  thread: "main-thread" | "background" = "main-thread",
+  messagePrefix = "[main-thread.js] ",
+): string =>
+  "10-25 08:41:39.887  5650  5685 I lynx    :"
+  + ` [715D09544CF0:INFO:lynx_console.cc(230)] "${messagePrefix}[solid-lynx parity] `
+  + `${truthyJson(report)}"\n`;
+
 describe("verify-native-parity", () => {
+  it("verifies a real capture, wrapped in the console bridge's framing", () => {
+    // The fixture is the real smoke.log trimmed to its report line plus three
+    // surrounding logcat lines, copied byte for byte. It is the shape the
+    // synthetic fixtures never had, and the shape that used to be rejected as
+    // truncated because the trailing bridge quote was parsed as JSON.
+    const run = runVerifier(fixture("real-format-smoke.log"));
+
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: verified");
+    expect(run.stdout).toContain(`${parityOperationIds.length} operation(s) pass`);
+    expect(run.stdout).toContain("thread main-thread.js");
+  });
+
+  it("parses the payload between the first `{` and the last `}`, and treats the rest as framing", () => {
+    // Same report, three framings: bare (the old fixture shape), and the real
+    // bridge shape from either thread. All three must reach exit 0, because a
+    // report is the JSON span and nothing about the wrapper changes its meaning.
+    const report = passingReport();
+    const shapes = [
+      captureOf(report),
+      realLine(report),
+      realLine(report, "background", "[background.js] "),
+    ];
+
+    for (const shape of shapes) {
+      const run = runVerifier(writeCapture(shape));
+      expect(run.status, `framing should not matter: ${shape.slice(0, 90)}`).toBe(0);
+      expect(run.stdout).toContain("verdict: verified");
+    }
+  });
+
+  it("names the thread that logged the report, so a background log is not read as the main one", () => {
+    const background = runVerifier(writeCapture(
+      realLine(passingReport(), "background", "[background.js] "),
+    ));
+
+    expect(background.status).toBe(0);
+    expect(background.stdout).toContain("thread background.js");
+    expect(background.stdout).not.toContain("thread main-thread.js");
+  });
+
+  it("reports a duplicated marker from the two threads as two reports, not one", () => {
+    // A card can log from the main thread and again from the background thread.
+    // Both lines carry a self-contained report, so the capture holds two and the
+    // verifier must evaluate both. Silently keeping the last would let a clean
+    // background report hide a failing main-thread one.
+    const good = passingReport();
+    const short = passingReport() as {
+      operations: Record<string, unknown>[];
+      summary: Record<string, number>;
+    };
+    short.operations.pop();
+    short.summary = { pass: short.operations.length, fail: 0, unsupported: 0 };
+
+    const run = runVerifier(writeCapture(
+      realLine(good, "main-thread", "[main-thread.js] ")
+        + realLine(short, "background", "[background.js] "),
+    ));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("reports:    2");
+    expect(run.stdout).toContain("report 1 of 2");
+    expect(run.stdout).toContain("report 2 of 2");
+    expect(run.stdout).toContain("thread main-thread.js");
+    expect(run.stdout).toContain("thread background.js");
+    // The short background report is the finding, and the clean main-thread
+    // report does not excuse it.
+    expect(run.stdout).toContain("missing-operation");
+  });
+
+  it("verifies two complete reports from the two threads as two verified reports", () => {
+    // The other half of the rule: two lines is two reports even when both are
+    // clean, so the count is visible rather than collapsing to 1.
+    const run = runVerifier(writeCapture(
+      realLine(passingReport(), "main-thread", "[main-thread.js] ")
+        + realLine(passingReport(), "background", "[background.js] "),
+    ));
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("reports:    2");
+    expect(run.stdout).toContain(`verdict: verified — ${parityOperationIds.length * 2}`);
+    expect(run.stdout).toContain("none is dropped in favour of the last");
+  });
+
+  it("still calls a real capture cut mid-JSON truncated, not mis-framed", () => {
+    // The load-bearing case the framing fix could have broken: the braces are
+    // unbalanced, so this is truncation. It must not be reported as a framing
+    // problem, and the bridge's closing quote must not make a cut line look
+    // complete.
+    const whole = realLine(passingReport());
+    // Drop the final `}` but keep the bridge's closing quote: the line still
+    // ends with a quote, so only a balance scan can see that it is cut.
+    const cut = whole.replace(/\}(?="\n$)/, "");
+    expect(cut).not.toBe(whole);
+    expect(cut.endsWith('"\n')).toBe(true);
+    const run = runVerifier(writeCapture(cut));
+
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("truncated");
+    expect(run.stderr).toMatch(/never closed|still open/);
+    // Never a framing complaint about the wrapper quote.
+    expect(run.stderr).not.toContain("no JSON follows it");
+    expect(run.stdout).toContain("could not evaluate");
+  });
+
+  it("cuts a real fixture mid-JSON and still reports truncation", () => {
+    // The same case against the stored real-format fixture, by byte count, so
+    // the demo in the task can be reproduced from a test.
+    const whole = readFileSync(fixture("real-format-smoke.log"), "utf8");
+    const line = whole.split("\n").find(entry => entry.includes("[solid-lynx parity]")) ?? "";
+    const cutAt = line.indexOf('"summary"');
+    expect(cutAt).toBeGreaterThan(0);
+    const run = runVerifier(writeCapture(`${line.slice(0, cutAt)}\n`));
+
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("truncated");
+    expect(run.stderr).toMatch(/never closed|still open/);
+  });
+
+  it("fails a line that carries the marker but no `{`, and says which", () => {
+    const run = runVerifier(writeCapture(
+      "10-25 08:41:39.887  5650  5685 I lynx    :"
+        + " [715D09544CF0:INFO:lynx_console.cc(230)] \"[main-thread.js] [solid-lynx parity]\"\n",
+    ));
+
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("no JSON follows it");
+    expect(run.stderr).toContain("no `{` after the marker");
+    expect(run.stdout).toContain("could not evaluate");
+  });
+
+  it("keeps framing apart from malformed JSON: a balanced span is not called truncated", () => {
+    // Braces balance, so JSON.parse is what rejects it. Reporting that as
+    // truncation would blame the bridge for a capture that is simply wrong.
+    const run = runVerifier(writeCapture(
+      "10-25 08:41:39.887  5650  5685 I lynx    :"
+        + " [715D09544CF0:INFO:lynx_console.cc(230)] \"[main-thread.js] [solid-lynx parity]"
+        + " {\"label\" native}\"\n",
+    ));
+
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("does not parse");
+    expect(run.stderr).toContain("not a truncation");
+    expect(run.stderr).not.toContain("never closed");
+  });
+
   it("verifies a good capture and prints every operation in checklist order", () => {
     const run = runVerifier(fixture("good-capture.log"));
 

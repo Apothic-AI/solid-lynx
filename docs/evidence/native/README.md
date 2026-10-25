@@ -15,6 +15,54 @@ One directory per run, named by date or any stable id. A directory holds exactly
 one of three records, and never two: the question "was this measured?" must have
 one answer.
 
+### What a real capture looks like
+
+This is the shape the verifiers originally got wrong, and the reason they once
+rejected every real capture while passing their own fixtures: the fixtures were
+written with a bare marker and JSON, and the device never writes that. Lynx
+Explorer logs through the native console bridge, which emits one logcat line per
+`console.log` and wraps the message in double quotes, with the logging thread
+named in front of it:
+
+```
+10-25 08:41:39.887  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx parity] {"label":"native",...}"
+|____________ logcat columns _____________________|   |__ thread tag __| |_____ marker ____|  |____ JSON ____| |
+                                                      ^                                                   ^       ^
+                                                      bridge's opening quote                              payload bridge's closing quote
+```
+
+So a stored capture line is: **logcat columns, an opening `"`, a
+`[main-thread.js] ` or `[background.js] ` prefix, the card's message, the marker,
+the JSON, and a closing `"`**. There are no backslash-escaped quotes inside that
+JSON: the bridge does not re-encode it, which is why the closing quote is the
+line's last character.
+
+The verifiers read the payload as the span from the first `{` after the marker to
+the last `}` on the line. Everything outside that span is framing and is ignored:
+the logcat columns, the bridge's quotes, the thread prefix, and trailing
+whitespace. The JSON check itself is not relaxed — that span goes to
+`JSON.parse` unchanged.
+
+**Truncation is not "the line does not end with `}`".** Every real capture ends
+with the bridge's closing quote, so that test would call complete captures
+truncated. Instead the verifiers scan the payload span for an unbalanced brace or
+an unterminated string *before* parsing. A capture cut mid-write leaves its
+braces unbalanced and is reported as truncated; a span whose braces balance but
+which JSON rejects is reported as malformed, not truncated. The distinction
+matters because the two failures have different causes and different remedies.
+
+**One marker line is one report, and two lines are two reports.** A card can log
+from the main thread and from the background thread, so the same marker may
+legitimately appear twice. Each line is parsed and evaluated on its own, and both
+are labelled with the thread that logged them; neither is dropped in favour of the
+other. For the smoke card that means two captured reports, both checked. For a
+probe card it means the repeated stage is reported as a `duplicate-stage` finding,
+because a stage is expected exactly once.
+
+A stored capture should therefore carry real logcat framing. A file holding only
+a bare `[solid-lynx parity] {...}` line is a fixture shape, and while the
+verifiers still read it, nothing in this directory should be shaped like one.
+
 ```
 docs/evidence/native/<date-or-id>/
   manifest.json                a run happened, and here is the log it produced
@@ -82,6 +130,12 @@ What each verifier checks, per card:
 
 Neither probe check infers a signature: an `arity` (which is `fn.length`) is only
 ever checked for being a number, never compared with an expected parameter count.
+
+What neither verifier can do is see the device. Both read the framing above and
+the JSON inside it; a capture whose framing is real but whose payload was written
+by hand verifies exactly like one that came off a tablet. That is why a stored
+capture carries its `manifest.json`, and why the reviewer's question — which card
+run produced this? — is still the reviewer's.
 
 That is the difference between this directory and a note in `/tmp`: the record
 is re-derived from the stored bytes on every check, so editing either half makes
@@ -267,6 +321,23 @@ below is the script's measured behaviour and the job's declared wiring:
 **Not checked, and cannot be:** that a device was attached. `device.getState`
 is a string someone typed from their own terminal. CI has no Android device and
 no emulator; the `native-build` job compiles the bundle and executes nothing.
+
+The concrete forgery, stated plainly because a check that overstates itself is
+worse than no check: take the fixture at
+`test/fixtures/native-parity/good-capture.log`, copy it into a new evidence
+directory, write a manifest naming the current commit and `"getState": "device"`,
+and this check is satisfied — exit 0 — with no device anywhere. It was tried
+against this exact script and it passed. The probe fixtures are just as
+forgeable: `test/fixtures/native-probe/stylesheet-good.log` verifies clean as a
+`stylesheet` capture for the same reason, and its README says so. What such a
+record cannot survive is the next person asking which card run produced it,
+because the capture is byte-identical to a fixture that ships in this repository
+and its lines say nothing about when or where they were taken.
+
+The framing does not change that. The `real-format-*.log` fixtures reproduce what
+the bridge actually writes, so a verifier now reads a real capture the same way
+it reads a fixture — but reproducing the framing is not evidence that a device
+produced any given line, and nothing here claims otherwise.
 
 The concrete forgery, stated plainly because a check that overstates itself is
 worse than no check: take the fixture at

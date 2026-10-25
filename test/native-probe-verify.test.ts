@@ -94,6 +94,23 @@ function writeCapture(text: string): string {
 const line = (marker: string, payload: Record<string, unknown>): string =>
   `I lynx_console: ${marker} ${JSON.stringify(payload)}\n`;
 
+/**
+ * The framing a real capture carries, exactly as Lynx Explorer writes it.
+ *
+ * `stylesheet.log` line 173 and `list.log` line 181 are the sources of this
+ * shape: logcat columns, the console bridge's opening double quote, the thread
+ * tag, the card's own message prefix, the marker, the JSON, then the bridge's
+ * closing quote.
+ */
+const realLine = (
+  marker: string,
+  payload: Record<string, unknown>,
+  thread: "main-thread" | "background" = "main-thread",
+): string =>
+  "10-25 08:41:42.002  5650  5685 I lynx    :"
+  + ` [715D09544CF0:INFO:lynx_console.cc(230)] "[${thread}.js] ${marker} `
+  + `${JSON.stringify(payload)}"\n`;
+
 const capture = (lines: string[]): string => lines.join("");
 
 /* ---------------------------------------------------------------- stage shapes
@@ -265,6 +282,38 @@ function listCapture(options: {
   ];
   const final = options.mutate ? options.mutate(stages) : stages;
   return capture(final.map(stage => line(LP, stage)));
+}
+
+/**
+ * The same two captures, written the way a real capture is framed.
+ *
+ * The payloads are built by the same builders, so only the framing differs —
+ * which is exactly the variable these tests are about.
+ */
+function realStyledCapture(
+  marker: string,
+  payloads: Record<string, unknown>[],
+  thread: "main-thread" | "background" = "main-thread",
+): string {
+  return capture(payloads.map(payload => realLine(marker, payload, thread)));
+}
+
+/** A full stylesheet capture in real framing. */
+function realStylesheetCapture(): string {
+  const synthetic = stylesheetCapture();
+  return capture(synthetic.split("\n").filter(Boolean).map(row => {
+    const payload = row.slice(row.indexOf(SS) + SS.length).trim();
+    return realLine(SS, JSON.parse(payload) as Record<string, unknown>);
+  }));
+}
+
+/** A full list capture in real framing. */
+function realListCapture(): string {
+  const synthetic = listCapture();
+  return capture(synthetic.split("\n").filter(Boolean).map(row => {
+    const payload = row.slice(row.indexOf(LP) + LP.length).trim();
+    return realLine(LP, JSON.parse(payload) as Record<string, unknown>);
+  }));
 }
 
 /** The stage names a card actually emits, read out of its source. */
@@ -654,6 +703,165 @@ describe("verify-native-probe: a capture holding more than one card", () => {
     expect(run.stdout).toContain("`inventory`");
     expect(run.stdout).toContain("`summary`");
     expect(run.stdout).toContain("`done`");
+  });
+});
+
+describe("verify-native-probe: the console bridge's framing", () => {
+  it("verifies a stage line wrapped in the bridge's quotes and thread tag", () => {
+    // Real captures carry logcat columns, an opening quote, a thread tag, the
+    // card's message prefix, the marker, the JSON, and a closing quote. The
+    // verifier used to parse everything after the marker, so the closing quote
+    // made every real line look truncated while being complete.
+    const run = runVerifier(writeCapture(realStylesheetCapture()));
+
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: verified");
+    expect(run.stdout).toContain("thread(s) main-thread.js");
+  });
+
+  it("verifies a list capture in real framing", () => {
+    const run = runVerifier(writeCapture(realListCapture()));
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: verified");
+    expect(run.stdout).toContain("7 required stage(s) present");
+  });
+
+  it("verifies a stage logged from the background thread", () => {
+    const stages = stylesheetCapture().split("\n").filter(Boolean)
+      .map(row => JSON.parse(row.slice(row.indexOf(SS) + SS.length).trim()));
+    const run = runVerifier(writeCapture(
+      capture(stages.map(stage => realLine(SS, stage, "background"))),
+    ));
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("thread(s) background.js");
+  });
+
+  it("reports a stage logged from both threads as two reports, not one", () => {
+    // A card that logs a stage from the main thread and again from the
+    // background thread has logged it twice. The verifier must say so rather
+    // than silently keeping whichever line came last.
+    const stages = stylesheetCapture().split("\n").filter(Boolean)
+      .map(row => JSON.parse(row.slice(row.indexOf(SS) + SS.length).trim()));
+    const run = runVerifier(writeCapture(
+      capture(stages.flatMap(stage => [
+        realLine(SS, stage, "main-thread"),
+        realLine(SS, stage, "background"),
+      ])),
+    ));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[duplicate-stage]");
+    // Both lines are named, so the reader can see it was the two threads.
+    expect(run.stdout).toContain("main-thread.js");
+    expect(run.stdout).toContain("background.js");
+    expect(run.stdout).toContain("two reports rather than one");
+    expect(run.stdout).toContain("thread(s) main-thread.js, background.js");
+  });
+
+  it("still calls a real capture cut mid-JSON truncated, not mis-framed", () => {
+    // The case the framing fix could have swallowed: the payload's braces are
+    // unbalanced, so this is truncation. It must not be reported as a framing
+    // problem, and the bridge's closing quote must not make a cut line look
+    // complete.
+    const stages = stylesheetCapture().split("\n").filter(Boolean)
+      .map(row => JSON.parse(row.slice(row.indexOf(SS) + SS.length).trim()));
+    const whole = realLine(SS, stages[4]);
+    const cut = whole.replace(/\}(?="\n$)/, "");
+    expect(cut).not.toBe(whole);
+
+    const run = runVerifier(writeCapture(
+      capture(stages.slice(0, 4).map(stage => realLine(SS, stage))) + cut,
+    ));
+
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("truncated");
+    expect(run.stderr).toMatch(/never closed|still open/);
+    expect(run.stderr).not.toContain("no JSON follows it");
+    expect(run.stdout).toContain("could not evaluate");
+  });
+
+  it("cuts a real fixture mid-JSON and still reports truncation", () => {
+    const whole = readFileSync(fixture("real-format-stylesheet.log"), "utf8");
+    const line = whole.split("\n")
+      .find(entry => entry.includes(SS) && entry.includes('"summary"')) ?? "";
+    expect(line).not.toBe("");
+    const cutAt = line.indexOf('"unmeasured"');
+    expect(cutAt).toBeGreaterThan(0);
+
+    const run = runVerifier(writeCapture(`${line.slice(0, cutAt)}\n`));
+
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("truncated");
+    expect(run.stderr).toMatch(/never closed|still open/);
+  });
+
+  it("fails a line that carries the marker but no `{`, and says which", () => {
+    const run = runVerifier(writeCapture(
+      "10-25 08:41:42.002  5650  5685 I lynx    :"
+        + ` [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] ${SS}"\n`,
+    ));
+
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("no JSON follows it");
+    expect(run.stderr).toContain("no `{` after the marker");
+    expect(run.stdout).toContain("could not evaluate");
+  });
+
+  it("reads both real-format fixtures: the framing is neutral, the findings are the payload's", () => {
+    // These two fixtures are `stylesheet.log` and `list.log` trimmed and copied
+    // byte for byte. They are the regression this whole change exists for: before
+    // the extraction rule they exited 2 ("does not parse") and no real capture
+    // could be verified at all. They must now be READ — every stage found — and
+    // the verdict must be whatever their own payload says, because buying a green
+    // tick by loosening a check would delete the evidence.
+    //
+    // Their payloads do not pass, and that is a device/card result, not a framing
+    // one: re-running the identical JSON with no wrapper produces the identical
+    // findings. See `real-format-*` in this directory's README.
+    const stylesheet = runVerifier(fixture("real-format-stylesheet.log"));
+    expect(stylesheet.status, "every stage must be found through the framing").toBe(1);
+    expect(stylesheet.stdout).toContain("6 of 6 required stage(s) present");
+    expect(stylesheet.stdout).toContain("thread(s) main-thread.js");
+    // The real device rejects the mutating load, so the capture cannot record a
+    // load that reached the served stylesheet.
+    expect(stylesheet.stdout).toContain("[load-real-url-threw]");
+    expect(stylesheet.stdout).not.toContain("does not parse");
+
+    const list = runVerifier(fixture("real-format-list.log"));
+    expect(list.status, "every stage must be found through the framing").toBe(1);
+    expect(list.stdout).toContain("7 of 7 required stage(s) present");
+    expect(list.stdout).toContain("thread(s) main-thread.js");
+    // A native binding reports `fn.name === ""`, and the card spreads the
+    // description over the name it already has, so two rows arrive nameless.
+    expect(list.stdout).toContain("must be an object with a string `name`");
+    expect(list.stdout).not.toContain("does not parse");
+  });
+
+  it("reports both real-format fixtures as findings rather than as unreadable captures", () => {
+    // The distinction the exit codes carry: 1 means the bytes were read and
+    // disagree with the checklist, 2 means nothing was read. Both of these are 1
+    // now; before the framing fix they were 2.
+    for (const name of ["real-format-stylesheet.log", "real-format-list.log"]) {
+      const run = runVerifier(fixture(name));
+      expect(run.status, `${name} should be readable`).not.toBe(2);
+      expect(run.stderr, `${name} should not be a parse failure`).not.toContain("does not parse");
+    }
+  });
+
+  it("keeps framing apart from malformed JSON: a balanced span is not called truncated", () => {
+    const run = runVerifier(writeCapture(
+      "10-25 08:41:42.002  5650  5685 I lynx    :"
+        + ` [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] ${SS}`
+        + " {\"probe\" native}\"\n",
+    ));
+
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain("does not parse");
+    expect(run.stderr).toContain("not a truncation");
+    expect(run.stderr).not.toContain("never closed");
   });
 });
 

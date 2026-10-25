@@ -38,6 +38,12 @@
  * It reads a text file and nothing else: no device, no adb, no network, no
  * build. A capture that was cut short, mistyped, or assembled by hand is a
  * finding or an unreadable capture — never a pass.
+ *
+ * Like its parity sibling, the payload is not "everything after the marker". A
+ * real capture is written by the Lynx console bridge, which wraps the card's
+ * message in a double quote and prefixes the thread that logged it; the JSON is
+ * the span from the first `{` after the marker to the last `}` on the line, and
+ * the rest is framing. See `extractCaptures` and `unbalancedReason`.
  */
 
 import { readFileSync } from "node:fs";
@@ -191,6 +197,15 @@ const CARDS = Object.freeze({
  */
 const CARD_ORDER = ["stylesheet2", "stylesheet", "list"];
 
+/**
+ * The thread tag the console bridge puts in front of a logged message.
+ *
+ * A card can log from the main thread or from the background thread. Each tagged
+ * line is one stage report; the stage rules below are unchanged by which thread
+ * wrote it.
+ */
+const THREAD_TAG = /\[(main-thread|background)\.js\]/g;
+
 const USAGE = `verify-native-probe — check a captured native probe log
 
 Usage:
@@ -198,17 +213,39 @@ Usage:
   node ${NODE_LABEL} --help
 
 What it does
-  Two cards log one JSON line per stage instead of one report per run:
+  Two cards log one JSON line per stage instead of one report per run. A fixture
+  can hold a stage line bare:
 
     [solid-lynx ss] {"probe":"native-stylesheet-papi","stage":"inventory",...}
     [solid-lynx lp] {"probe":"native-list-papi","stage":"inventory",...}
 
+  A real capture cannot, because Lynx Explorer writes console output through the
+  native console bridge, which wraps the message in double quotes and prefixes
+  the thread that logged it:
+
+    10-25 08:41:42.002  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx ss] {...}"
+
+  So a real line is logcat columns, an opening quote, a \`[main-thread.js] \` or
+  \`[background.js] \` prefix, the marker, the JSON, then a closing quote.
+
   A run is recorded by keeping those lines in a log file. This script then
   (\`<capture.log>\` may be a logcat dump or a file holding only the stage lines):
 
-  1. extracts every line carrying one of the two markers and parses the JSON
-     after it, once per stage;
-  2. checks each card's required stages are all present, exactly once each, in
+  1. extracts every line carrying one of the two markers and parses the JSON on
+     it, once per stage. The payload is the span from the first \`{\` after the
+     marker to the last \`}\` on the line; the logcat columns, the bridge's
+     wrapping quotes, the thread prefix, and trailing whitespace are framing.
+
+     Truncation is decided by scanning that span for an unbalanced brace or an
+     unterminated string before JSON.parse runs, never by whether the line ends
+     with \`}\` — a real capture ends with the bridge's closing quote, so the only
+     honest truncation signal is an unbalanced payload;
+
+  2. labels every stage with the thread that logged it. A card may log from the
+     main thread and the background thread, and two lines carrying one stage is
+     two reports, not one: the duplicate is reported rather than collapsed to
+     the last line;
+  3. checks each card's required stages are all present, exactly once each, in
      the order the card emits them:
 
        stylesheet  inventory, no-arguments, load-missing-url, load-real-url,
@@ -217,7 +254,7 @@ What it does
 
      (a stage the card emitted that this list does not know is reported as an
      extra and is not a finding, so a newer card still verifies);
-  3. checks the fields that make each stage's answer readable:
+  4. checks the fields that make each stage's answer readable:
        - stylesheet: the missing-URL stage called __LoadStyleSheet and threw,
          the next stage called it with a different, absolute URL and returned,
          and \`summary.unmeasured\` names what was not exercised;
@@ -225,7 +262,7 @@ What it does
          "the probe materialized this row", and \`shrunk\`/\`summary\` record
          whether enqueueComponent was ever called — a recorded 0 is an answer,
          a missing answer is a finding;
-  4. checks the card's own derived fields against the fields they are derived
+  5. checks the card's own derived fields against the fields they are derived
      from, so an edited capture is caught rather than believed.
 
   It does not infer a signature. \`fn.length\` is the parameter count a
@@ -318,11 +355,99 @@ function isText(value) {
   return typeof value === "string" && value.trim() !== "";
 }
 
+/* --------------------------------------------------------- payload extraction
+ *
+ * The console bridge's framing is the same for both cards, and it is the shape
+ * this script originally missed. Lynx Explorer writes a card's `console.log` as
+ * one logcat line:
+ *
+ *   10-25 08:41:42.002  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx ss] {...}"
+ *   |____________ logcat columns _____________________|   |__ thread tag __| |____ marker ___|  |JSON|  |
+ *                                                        ^                                       ^        ^
+ *                                                        bridge's opening quote                  payload  bridge's closing quote
+ *
+ * The rules that follow from it:
+ *
+ *   1. The payload is the span from the first `{` after the marker to the last
+ *      `}` on the line. Everything outside it is framing: the logcat columns,
+ *      the bridge's wrapping `"`, a `[main-thread.js] ` or `[background.js] `
+ *      prefix, and trailing whitespace. A synthetic line with a bare marker
+ *      extracts the same span, so both shapes parse.
+ *   2. The JSON check is not loosened: the span goes to JSON.parse as-is.
+ *   3. Truncation is measured by scanning the span for an unbalanced brace or an
+ *      unterminated string, before JSON.parse, because "the line does not end
+ *      with `}`" cannot distinguish the bridge's closing quote from a lost tail.
+ *   4. A marker on more than one line is more than one report. A card that logs
+ *      the same stage from the main thread and the background thread has logged
+ *      two stages, and the existing `duplicate-stage` rule reports that — it is
+ *      never silently collapsed to the last line.
+ */
+
 /**
- * Every line carrying a probe marker, with the JSON text that follows it.
+ * The thread that logged a line, from the tag the bridge puts ahead of the
+ * marker. The last such tag before the marker wins, so an unrelated bracket in
+ * the logcat columns cannot be read as the thread.
+ */
+function threadOf(line, markerAt) {
+  const before = line.slice(0, markerAt);
+  const tags = [...before.matchAll(THREAD_TAG)];
+  return tags.length === 0 ? "(unthreaded)" : `${tags[tags.length - 1][1]}.js`;
+}
+
+/**
+ * The first way a payload span cannot be a complete JSON value, or `null` when
+ * it is balanced.
+ *
+ * A scan, not a parse: it runs before JSON.parse so a genuinely truncated line
+ * reports truncation rather than a generic parse error, and it reads the span
+ * the way a JSON tokenizer would — brackets stack, and a quote opens a string
+ * unless it is escaped inside one.
+ */
+function unbalancedReason(span) {
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+
+  for (const char of span) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "{" || char === "[") {
+      stack.push(char);
+      continue;
+    }
+    if (char === "}" || char === "]") {
+      const open = stack.pop();
+      if (open === undefined) {
+        return `a \`${char}\` on the line closes a value that was never opened`;
+      }
+      const fits = (open === "{" && char === "}") || (open === "[" && char === "]");
+      if (!fits) {
+        return `a \`${char}\` closes a \`${open}\` that was opened before it`;
+      }
+    }
+  }
+
+  if (inString) return "a string is still open where the line stops";
+  if (stack.length > 0) {
+    return `${stack.length} \`${stack[stack.length - 1]}\` never closed before the line stops`;
+  }
+  return null;
+}
+
+/**
+ * Every line carrying a probe marker, with the payload span and the framing
+ * around it.
  *
  * A line carrying both markers cannot happen with these cards (each card writes
- * one prefix), so the first marker found decides; the payload's own \`probe\`
+ * one prefix), so the first marker found decides; the payload's own `probe`
  * field is checked against that card afterwards, which is what catches a line
  * whose prefix and payload disagree.
  */
@@ -334,11 +459,28 @@ function extractCaptures(text) {
       const card = CARDS[key];
       const at = line.indexOf(card.marker);
       if (at < 0) continue;
+      const markerEnd = at + card.marker.length;
+      const openAt = line.indexOf("{", markerEnd);
+      const closeAt = openAt < 0 ? -1 : line.lastIndexOf("}");
+      const hasClosingBrace = openAt >= 0 && closeAt >= openAt;
       captures.push({
         lineNumber: index + 1,
         card: key,
         marker: card.marker,
-        payload: line.slice(at + card.marker.length).trim(),
+        thread: threadOf(line, at),
+        // When the closing brace is missing the payload runs to the end of the
+        // line, so the balance scan can say what is still open.
+        payload: openAt < 0
+          ? ""
+          : hasClosingBrace ? line.slice(openAt, closeAt + 1) : line.slice(openAt),
+        // The text after the marker with the payload cut out of it: the
+        // bridge's quotes, a thread tag left after the marker, whitespace.
+        framing: openAt < 0
+          ? line.slice(markerEnd)
+          : line.slice(markerEnd, openAt)
+            + (hasClosingBrace ? line.slice(closeAt + 1) : ""),
+        hasOpeningBrace: openAt >= 0,
+        hasClosingBrace,
         line,
       });
       return;
@@ -351,10 +493,39 @@ function extractCaptures(text) {
 function parseCaptures(captures, capturePath) {
   return captures.map(capture => {
     const where = `${capturePath}:${capture.lineNumber}`;
-    if (capture.payload === "") {
+
+    if (!capture.hasOpeningBrace) {
+      const after = capture.framing.trim();
       throw new CannotEvaluate(
-        `${where}: the ${capture.marker} marker is there but no JSON follows it.`
-          + " Run the card again and capture the whole line; nothing was verified.",
+        `${where}: the ${capture.marker} marker is there but no JSON follows it: the line`
+          + ` has no \`{\` after the marker${after === "" ? "" : ` (it carries ${describeValue(
+            after.length > 40 ? `${after.slice(0, 39)}…` : after)})`}. Run the card again`
+          + " and capture the whole line; nothing was verified.",
+      );
+    }
+
+    if (!capture.hasClosingBrace) {
+      throw new CannotEvaluate(
+        `${where}: the JSON after ${capture.marker} does not parse because it is`
+          + ` truncated: the \`{\` after the marker is never closed`
+          + ` (${unbalancedReason(capture.payload) ?? "no closing brace remains on the line"}).`
+          + " The line is truncated: a complete stage balances its braces, so the capture"
+          + " stopped early or the console bridge dropped the tail. Nothing was verified;"
+          + " a capture that cannot be parsed is not a result.",
+      );
+    }
+
+    // The scan comes before the parse so that a real truncation is named as one.
+    // A span whose braces balance but which JSON still rejects is malformed, not
+    // truncated, and saying so keeps the two failures apart.
+    const unbalanced = unbalancedReason(capture.payload);
+    if (unbalanced !== null) {
+      throw new CannotEvaluate(
+        `${where}: the JSON after ${capture.marker} does not parse because it is`
+          + ` truncated: ${unbalanced}. The line is truncated: a complete stage balances`
+          + " its braces, and the console bridge drops everything after the first"
+          + " newline, so a line that stops early looks like this. Nothing was verified;"
+          + " a capture that cannot be parsed is not a result.",
       );
     }
 
@@ -363,15 +534,9 @@ function parseCaptures(captures, capturePath) {
       stage = JSON.parse(capture.payload);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // A complete stage line always ends with `}`. Anything else means the
-      // console bridge (which drops everything after the first newline) or the
-      // capture cut the line short, which is the common failure and worth naming.
-      const hint = capture.payload.endsWith("}")
-        ? ""
-        : " The line is truncated: a complete stage ends with `}`, so the capture"
-          + " stopped early or the console bridge dropped the tail.";
       throw new CannotEvaluate(
-        `${where}: the JSON after ${capture.marker} does not parse (${message}).${hint}`
+        `${where}: the JSON after ${capture.marker} does not parse (${message}). Its`
+          + " braces balance, so this is not a truncation: the payload is malformed."
           + " Nothing was verified; a capture that cannot be parsed is not a result.",
       );
     }
@@ -379,7 +544,7 @@ function parseCaptures(captures, capturePath) {
     if (!isPlainObject(stage) || typeof stage.stage !== "string" || stage.stage.trim() === "") {
       throw new CannotEvaluate(
         `${where}: the JSON after ${capture.marker} parses but is not a probe stage`
-          + " (expected an object with a string \`stage\`). Nothing was verified.",
+          + " (expected an object with a string `stage`). Nothing was verified.",
       );
     }
 
@@ -1305,10 +1470,19 @@ function evaluateCard(cardKey, stages, capturePath) {
       continue;
     }
     if (present.has(stageName)) {
+      const first = present.get(stageName);
+      const sameThread = first.thread === capture.thread;
       out.add(
         "duplicate-stage",
-        `\`${stageName}\` appears on more than one line. A card logs one line per stage,`
-          + " so a repeat means the card rendered twice — two runs in one capture, not one.",
+        `\`${stageName}\` appears on more than one line (${first.thread} at line`
+          + ` ${first.lineNumber}, then ${capture.thread} at line ${capture.lineNumber}).`
+          + (sameThread
+            ? " Two lines from one thread is the card having rendered twice — two runs in"
+              + " one capture, not one."
+            : " A card that logs the same stage from both threads has reported it twice,"
+              + " and that is two reports rather than one: neither line is dropped in"
+              + " favour of the other.")
+          + " A stage is expected exactly once.",
         stageName,
       );
       continue;
@@ -1518,9 +1692,11 @@ function describeStage(stage) {
 }
 
 function renderDetail(result, capturePath) {
+  const threads = [...new Set(result.stages.map(capture => capture.thread))];
   const lines = [`  ${capturePath} — ${result.card.card} card,`
     + ` ${result.stages.length} stage line(s),`
-    + ` ${result.missing.length} missing`];
+    + ` ${result.missing.length} missing,`
+    + ` thread(s) ${threads.join(", ")}`];
   for (const finding of result.findings) {
     lines.push(`  - [${finding.kind}] ${finding.message}`);
   }
@@ -1594,8 +1770,10 @@ async function main(argv) {
   ].join("\n");
 
   const tables = results.map((result, index) => {
+    const threads = [...new Set(result.stages.map(capture => capture.thread))];
     const title = `card ${index + 1} of ${results.length} — ${result.card.card}`
-      + ` — ${capturePath}:${result.lineNumbers.join(",")}`;
+      + ` — ${capturePath}:${result.lineNumbers.join(",")}`
+      + ` — thread(s) ${threads.join(", ")}`;
     return [title, renderTable(result)].join("\n");
   });
 

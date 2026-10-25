@@ -14,6 +14,15 @@
  *   3. reject any operation that is not `pass`, or `unsupported` with a reason.
  *
  * It reads a text file and nothing else: no device, no adb, no network.
+ *
+ * The payload is not "everything after the marker". A real capture is written by
+ * the Lynx console bridge, which wraps the card's message in a double quote and
+ * prefixes it with the thread that logged it (see `extractCaptures`). The JSON is
+ * the span from the first `{` after the marker to the last `}` on the line;
+ * everything else on that line is framing. Until this rule existed the script
+ * only ever read hand-written fixtures in `test/fixtures/`, which carry a bare
+ * marker and JSON with no wrapping quote, so every real capture was rejected as
+ * truncated while parsing correctly by eye.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -26,6 +35,15 @@ const EXIT_FINDINGS = 1;
 const EXIT_COULD_NOT_EVALUATE = 2;
 
 const MARKER = "[solid-lynx parity]";
+
+/**
+ * The thread tag the console bridge puts in front of a logged message.
+ *
+ * A card can log from the main thread or from the background thread, and the
+ * same marker may legitimately appear from both. Each tagged line is one report
+ * — see `threadOf` and the duplicate-marker rule below.
+ */
+const THREAD_TAG = /\[(main-thread|background)\.js\]/g;
 
 /** Statuses the harness can emit. */
 const STATUSES = ["pass", "fail", "unsupported"];
@@ -48,16 +66,27 @@ Usage:
   node ${PARITY_NODE_LABEL} --help
 
 What it does
-  examples/lynx-for-native logs one line per run, shaped like
+  examples/lynx-for-native logs one line per run. A fixture can hold it bare:
 
     [solid-lynx parity] {"label":"native","operations":[...],"summary":{...}}
 
-  A native run is recorded by keeping that line in a log file. This script then
+  A real capture cannot, because Lynx Explorer writes it through the native
+  console bridge, which wraps the message in double quotes and prefixes the
+  thread that logged it:
+
+    10-25 08:41:39.887  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx parity] {...}"
+
+  So a real line is logcat columns, an opening \`"\`, a \`[main-thread.js] \` or
+  \`[background.js] \` prefix, the marker, the JSON, then a closing \`"\`. A native
+  run is recorded by keeping that line in a log file. This script then
   (\`<capture.log>\` may be a logcat dump, a console capture, or a file holding
   nothing but the line):
 
   1. extracts every line containing the [solid-lynx parity] marker and parses
-     the JSON after it;
+     the JSON on it: the span from the first \`{\` after the marker to the last
+     \`}\` on the line. Everything outside that span is framing — the logcat
+     columns, the console bridge's wrapping quotes, the \`[main-thread.js] \` or
+     \`[background.js] \` prefix, and trailing whitespace;
   2. compares the operations in each captured report against
      \`parityOperationIds\` imported from the built package (dist/parity.js),
      and reports any operation that is missing or unrecognised;
@@ -66,6 +95,17 @@ What it does
 
   It also checks that each report's \`summary\` counters match its own rows, so a
   capture whose summary was edited or truncated is a finding rather than a pass.
+
+  Truncation is decided by scanning the payload span for an unbalanced brace or
+  an unterminated string before JSON.parse runs, never by whether the line ends
+  with \`}\`: a real capture ends with the bridge's closing quote, and only an
+  unbalanced span is truncation.
+
+  Two marker lines are two reports. A card can log from the main thread and
+  again from the background thread, and a report is self-contained, so each line
+  is parsed and evaluated on its own under the thread that logged it. Nothing is
+  replaced by the last line: both are checked, and a defect in either is a
+  finding.
 
   The host \`label\` in the report is printed but not enforced: the harness can be
   run under any label, and it is the reader's job to know which host was
@@ -80,8 +120,9 @@ Exit codes
   2  could not evaluate
                      there was nothing to evaluate, or nothing trustworthy to
                      read: an unreadable file, a capture with no
-                     [solid-lynx parity] line, JSON that does not parse, or a
-                     missing dist/parity.js (run \`pnpm build\` first)
+                     [solid-lynx parity] line, a marker with no \`{\` after it, a
+                     payload that is truncated or malformed, or a missing
+                     dist/parity.js (run \`pnpm build\` first)
 
   These follow the same discipline as dagr: 0 means the artefact is clean, 1
   means the artefact was read and has findings, 2 means it could not be read at
@@ -168,16 +209,134 @@ async function loadExpectedOperations() {
   return ids;
 }
 
-/** Every line carrying the marker, with the JSON text that follows it. */
+/* --------------------------------------------------------- payload extraction
+ *
+ * A real capture is framed, and that framing is what the first version of this
+ * script got wrong. Lynx Explorer writes a `console.log` through the native
+ * console bridge, which emits one logcat line shaped like this:
+ *
+ *   10-25 08:41:39.887  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx parity] {...}"
+ *   |____________ logcat columns _____________________|  |__ thread tag __| |____ marker ____|  |JSON|  |
+ *                                                        ^                                       ^        ^
+ *                                                        bridge's opening quote                  payload  bridge's closing quote
+ *
+ * Three things follow from that shape, and all three are rules rather than
+ * guesses:
+ *
+ *   1. The payload is the span from the first `{` after the marker to the last
+ *      `}` on the line. Everything outside it is framing: the logcat columns,
+ *      the bridge's wrapping `"`, a `[main-thread.js] ` or `[background.js] `
+ *      prefix, and trailing whitespace. A fixture with a bare marker and JSON
+ *      still extracts the same span, which is why both shapes parse.
+ *   2. The JSON check itself is not loosened: the span goes to JSON.parse as-is,
+ *      and anything malformed is still a `could not evaluate`.
+ *   3. Truncation is measured by scanning the span for an unbalanced brace or an
+ *      unterminated string, before JSON.parse is attempted. "The line does not
+ *      end with `}`" cannot tell framing from truncation, because every real
+ *      capture ends with the bridge's closing quote. A real truncation — the
+ *      console bridge dropping the tail, or a capture cut mid-write — leaves
+ *      braces unbalanced or a string open, and that is what is reported.
+ *
+ * A marker on more than one line is two reports, not one: each line is parsed
+ * and evaluated on its own, and the report is labelled with the thread that
+ * logged it. The parity report is self-contained, so two lines mean two complete
+ * reports and both are checked; nothing is silently dropped in favour of the
+ * last line.
+ */
+
+/**
+ * The thread that logged a line, from the tag the console bridge puts in the
+ * message ahead of the marker. The last tag before the marker wins, so a stray
+ * bracket earlier in the logcat columns cannot be mistaken for it.
+ */
+function threadOf(line, markerAt) {
+  const before = line.slice(0, markerAt);
+  const tags = [...before.matchAll(THREAD_TAG)];
+  return tags.length === 0 ? "(unthreaded)" : `${tags[tags.length - 1][1]}.js`;
+}
+
+/**
+ * The first way a JSON span cannot be a complete value, or `null` when it is
+ * balanced.
+ *
+ * This is a scan, not a parse: it runs before JSON.parse so that a genuinely
+ * truncated line reports truncation instead of a generic parse error, and it
+ * reads the span the same way a JSON tokenizer would — braces and brackets
+ * stack, and a quote opens a string unless it is escaped inside one.
+ */
+function unbalancedReason(span) {
+  const stack = [];
+  let inString = false;
+  let escaped = false;
+
+  for (const char of span) {
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "{" || char === "[") {
+      stack.push(char);
+      continue;
+    }
+    if (char === "}" || char === "]") {
+      const open = stack.pop();
+      if (open === undefined) {
+        return `a \`${char}\` on the line closes a value that was never opened`;
+      }
+      const fits = (open === "{" && char === "}") || (open === "[" && char === "]");
+      if (!fits) {
+        return `a \`${char}\` closes a \`${open}\` that was opened before it`;
+      }
+    }
+  }
+
+  if (inString) return "a string is still open where the line stops";
+  if (stack.length > 0) {
+    return `${stack.length} \`${stack[stack.length - 1]}\` never closed before the line stops`;
+  }
+  return null;
+}
+
+/**
+ * Every line carrying the marker, with the payload span and its framing.
+ *
+ * `payload` is the JSON span; `framing` is the rest of the line after the
+ * marker, so a reader of an error message can see what was treated as framing
+ * without re-reading the capture.
+ */
 function extractCaptures(text) {
   const lines = text.split(/\r?\n/);
   const captures = [];
   lines.forEach((line, index) => {
     const at = line.indexOf(MARKER);
     if (at < 0) return;
+    const markerEnd = at + MARKER.length;
+    const openAt = line.indexOf("{", markerEnd);
+    const closeAt = openAt < 0 ? -1 : line.lastIndexOf("}");
+    const hasClosingBrace = openAt >= 0 && closeAt >= openAt;
     captures.push({
       lineNumber: index + 1,
-      payload: line.slice(at + MARKER.length).trim(),
+      thread: threadOf(line, at),
+      // When the closing brace is missing the payload runs to the end of the
+      // line, so the balance scan can say what is still open rather than the
+      // report guessing at "truncated" from a missing character.
+      payload: openAt < 0
+        ? ""
+        : hasClosingBrace ? line.slice(openAt, closeAt + 1) : line.slice(openAt),
+      // The text after the marker with the payload cut out of it: the bridge's
+      // quotes, a thread tag left after the marker, trailing whitespace.
+      framing: openAt < 0
+        ? line.slice(markerEnd)
+        : line.slice(markerEnd, openAt)
+          + (hasClosingBrace ? line.slice(closeAt + 1) : ""),
+      hasOpeningBrace: openAt >= 0,
+      hasClosingBrace,
       line,
     });
   });
@@ -200,10 +359,40 @@ function describeValue(value) {
 /** Parses every capture, or throws because the capture cannot be evaluated. */
 function parseCaptures(captures, capturePath) {
   return captures.map(capture => {
-    if (capture.payload === "") {
+    const where = `${capturePath}:${capture.lineNumber}`;
+
+    if (!capture.hasOpeningBrace) {
+      const after = capture.framing.trim();
       throw new CannotEvaluate(
-        `${capturePath}:${capture.lineNumber}: the ${MARKER} marker is there but no JSON`
-          + " follows it. Run the card again and capture the whole line; nothing was verified.",
+        `${where}: the ${MARKER} marker is there but no JSON follows it: the line has no`
+          + ` \`{\` after the marker${after === "" ? "" : ` (it carries ${describeValue(
+            after.length > 40 ? `${after.slice(0, 39)}…` : after)})`}. Run the card again and`
+          + " capture the whole line; nothing was verified.",
+      );
+    }
+
+    if (!capture.hasClosingBrace) {
+      throw new CannotEvaluate(
+        `${where}: the JSON after ${MARKER} does not parse because it is truncated: the`
+          + ` \`{\` after the marker is never closed (${unbalancedReason(capture.payload)
+            ?? "no closing brace remains on the line"}). The line is truncated: a complete`
+          + " report balances its braces, so the capture stopped early or the console"
+          + " bridge dropped the tail. Nothing was verified; a capture that cannot be"
+          + " parsed is not a result.",
+      );
+    }
+
+    // The scan comes first, so a real truncation is named as one. A complete
+    // report whose braces balance but which JSON still rejects is malformed, not
+    // truncated, and saying so keeps the two failures apart.
+    const unbalanced = unbalancedReason(capture.payload);
+    if (unbalanced !== null) {
+      throw new CannotEvaluate(
+        `${where}: the JSON after ${MARKER} does not parse because it is truncated:`
+          + ` ${unbalanced}. The line is truncated: a complete report balances its braces,`
+          + " and the console bridge drops everything after the first newline, so a line"
+          + " that stops early looks like this. Nothing was verified; a capture that"
+          + " cannot be parsed is not a result.",
       );
     }
 
@@ -212,23 +401,16 @@ function parseCaptures(captures, capturePath) {
       report = JSON.parse(capture.payload);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // A complete report always ends with `}`. Anything else means the console
-      // bridge (which drops everything after the first newline) or the capture
-      // cut the line short, which is the common failure and worth naming.
-      const hint = capture.payload.endsWith("}")
-        ? ""
-        : " The line is truncated: a complete report ends with `}`, so the capture"
-          + " stopped early or the console bridge dropped the tail.";
       throw new CannotEvaluate(
-        `${capturePath}:${capture.lineNumber}: the JSON after ${MARKER} does not parse`
-          + ` (${message}).${hint} Nothing was verified; a capture that cannot be parsed`
-          + " is not a result.",
+        `${where}: the JSON after ${MARKER} does not parse (${message}). Its braces`
+          + " balance, so this is not a truncation: the payload is malformed. Nothing was"
+          + " verified; a capture that cannot be parsed is not a result.",
       );
     }
 
     if (!isPlainObject(report) || !Array.isArray(report.operations)) {
       throw new CannotEvaluate(
-        `${capturePath}:${capture.lineNumber}: the JSON after ${MARKER} parses but is not a`
+        `${where}: the JSON after ${MARKER} parses but is not a`
           + " parity report (expected an object with an `operations` array). Nothing was verified.",
       );
     }
@@ -388,7 +570,8 @@ function renderTable(result, expectedIds) {
 function renderDetail(result, capturePath) {
   const report = result.capture.report;
   const lines = [`  ${capturePath}:${result.capture.lineNumber}`
-    + ` — host ${labelOf(report)}, ${result.rows.length} operation(s)`];
+    + ` — thread ${result.capture.thread} — host ${labelOf(report)},`
+    + ` ${result.rows.length} operation(s)`];
 
   for (const finding of result.findings) {
     lines.push(`  - [${finding.kind}] ${finding.message}`);
@@ -457,12 +640,17 @@ async function main(argv) {
     "native parity verification",
     `  capture:    ${capturePath}`,
     `  checklist:  ${PARITY_MODULE_LABEL} (${expectedIds.length} operations)`,
-    `  reports:    ${totals.reports}`,
+    `  reports:    ${totals.reports}${totals.reports > 1
+      ? " (one per marker line; none is dropped in favour of the last)"
+      : ""}`,
+    `  lines:      ${results.map(result => `${result.capture.thread} at line `
+      + `${result.capture.lineNumber}`).join("; ")}`,
   ].join("\n");
 
   const tables = results.map((result, index) => {
     const title = `report ${index + 1} of ${results.length}`
       + ` — ${capturePath}:${result.capture.lineNumber}`
+      + ` — thread ${result.capture.thread}`
       + ` — host ${labelOf(result.capture.report)}`;
     return [title, renderTable(result, expectedIds)].join("\n");
   });
