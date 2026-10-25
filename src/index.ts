@@ -69,4 +69,4 @@ export type {
   LynxTextareaAttributes,
 } from "./jsx-types.js";
 
-export const version = "0.1.0";
+export const version = "1.0.0";

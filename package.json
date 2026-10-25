@@ -1,6 +1,6 @@
 {
   "name": "solid-lynx",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A Solid renderer for Lynx Element PAPI",
   "license": "Apache-2.0",
   "repository": {
