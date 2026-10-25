@@ -314,13 +314,12 @@ described either.
 
 ### The native stylesheet probe
 
-A measurement card for the three native stylesheet operations now exists and
-builds: `examples/lynx-for-native/src/stylesheet-probe.ts`, built as
-`dist/stylesheet-probe.lynx.bundle` by `pnpm native:build` and loaded on a
-device through `lynx://open?url=...` exactly like the parity card. It records
-one JSON line per stage under a `[solid-lynx ss]` prefix, because the native
-console bridge drops everything after the first newline and a stage that fails
-hard must not take earlier evidence with it:
+A measurement card for the three native stylesheet operations exists:
+`examples/lynx-for-native/src/stylesheet-probe.ts`. It is built by
+`pnpm native:build` and loaded on a device through `lynx://open?url=...` like the
+parity card. It records one JSON line per stage under a `[solid-lynx ss]` prefix,
+because the native console bridge drops everything after the first newline and a
+stage that fails hard must not take earlier evidence with it:
 
 | Stage | What it does | Why that is allowed |
 | --- | --- | --- |
@@ -342,10 +341,37 @@ was not attached over adb (`adb -s R9WT911JVVH get-state` reported
 `device 'R9WT911JVVH' not found` while a Samsung device was present on the USB
 bus). So this section records what the probe *will* measure, and the paragraph
 above is unchanged: the three names are known to exist on the A03, and their
-signatures and lifecycle remain unmeasured. Run
-`/tmp/solid-lynx-logs/run-stylesheet-probe.sh` once the device is attached; it
-serves `dist` on loopback, opens the probe card, captures `lynx_console`, and
-removes only the server it started and its reverse port.
+signatures and lifecycle remain unmeasured.
+
+#### Running it
+
+The runner is committed at
+[`examples/lynx-for-native/scripts/run-stylesheet-probe.sh`](../examples/lynx-for-native/scripts/run-stylesheet-probe.sh):
+
+```bash
+examples/lynx-for-native/scripts/run-stylesheet-probe.sh --dry-run
+```
+
+`--dry-run` prints every command in the order a real run executes it and touches
+no device, so the sequence can be reviewed without hardware. Drop the flag to do
+the run: the script builds with `pnpm native:build`, serves
+`examples/lynx-for-native/dist` on `127.0.0.1:8099`, adds
+`adb -s R9WT911JVVH reverse tcp:8099`, opens
+`lynx://open?url=http://127.0.0.1:8099/stylesheet-probe.lynx.bundle?v=<run
+stamp>`, captures `logcat -d -s lynx_console` and a screenshot into
+`/tmp/solid-lynx-logs`, and prints the `[solid-lynx ss]` lines.
+
+It is pinned to the A03 serial `R9WT911JVVH`: it never enumerates devices, it
+refuses to run if `DEVICE_SERIAL`, `ADB_SERIAL`, or `ANDROID_SERIAL` is set to
+anything else, and it exits 3 with a message if `adb -s R9WT911JVVH get-state`
+is not `device`, changing nothing. It traps `EXIT` so it kills only the server it
+started (from the pid file it wrote) and removes only its own `tcp:8099`
+reverse, then prints `adb reverse --list`. `LOOPBACK_PORT` and `LOG_DIR` override
+the port and output directory.
+
+A run that captures no `[solid-lynx ss]` line says so and points at the log and
+screenshot rather than reporting a result; the script does not parse the stages,
+so reading the capture is still the measurement.
 
 ## Remaining blockers
 

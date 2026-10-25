@@ -22,7 +22,7 @@ export default defineConfig({
       // A second, disposable card used to measure the native stylesheet PAPI on
       // a device. It shares this config and this toolchain rather than having
       // its own build, so a measurement runs against the same setup as the
-      // parity smoke.
+      // parity smoke. `scripts/run-stylesheet-probe.sh` loads it.
       "stylesheet-probe": "./src/stylesheet-probe.ts",
     },
   },
