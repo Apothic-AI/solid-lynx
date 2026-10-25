@@ -189,58 +189,57 @@ Set a stable public contract after web validation, native validation, and toolin
     `test/stylesheet-probe-report.test.ts`, 6 in `test/rspeedy.test.ts`), so a
     contract item that loses its covering test or its type rejection turns CI
     red.
-- [ ] Define supported Lynx and Solid version ranges and verify them in CI.
+- [x] Define supported Lynx and Solid version ranges and verify them in CI.
   - **Node half: done, and verified in CI.** `docs/compatibility.md` §5–§7
     (commit `5ecace6`) defines the set: exact pins for `solid-js` 1.9.15,
     `@lynx-js/web-core` 0.26.2, `@lynx-js/rspeedy` 0.18.0,
     `@lynx-js/lynx-core` 0.1.4, the two Lynx Rsbuild plugins, `@rsbuild/core`
     2.2.11, `@rsbuild/plugin-babel` 2.1.0, and `babel-preset-solid` 1.9.15, plus
     the Node and pnpm ranges. The `node-matrix` job in
-    `.github/workflows/ci.yml` is what covers the Node range now: it runs
+    `.github/workflows/ci.yml` is what covers the Node range: it runs
     `pnpm install --frozen-lockfile`, `pnpm typecheck`, and `pnpm test` on
     `20.x`, `22.x`, and `24.x` — the two declared Node lines plus the major the
     open-ended `>=22.12.0` admits, chosen because no manifest in the graph caps
     `engines.node`. Locally the same gate exits 0 on 20.19.0, 20.20.2, 22.12.0,
     22.23.3, 24.22.1, and 26.1.0. Those runs recorded 98 tests each, which is
-    what this repository had at the time; the suite is 117 today, because
-    `test/native-parity-verify.test.ts` (19 tests) landed in commit `af237ca`
-    afterwards. The 117 figure was re-measured on Node 22.23.3 / pnpm 12.9.1 for
-    this revision; the other five Node lines were not re-run, so their 117 is an
-    expectation, not a result.
-  - **Solid half: not verified, so the box stays open.** The box says "Lynx
-    **and Solid** version ranges", and the Solid range is asserted, not exercised.
-    The three facts that decide it:
-    - The installed `solid-js` is **1.9.15** — `package.json:76` pins it exactly
-      and `pnpm-lock.yaml:2584` resolves `solid-js@1.9.15`, as does
-      `babel-preset-solid@1.9.15` (`pnpm-lock.yaml:4173-4178`).
-    - The declared range is `^1.9.15` (`package.json:59`), which admits up to
-      `<2`. npm has **1.9.16** (published 2026-10-06) and **1.9.17** (2026-10-07,
-      and `latest`) inside that range. Both are outside what this repository has
-      ever installed.
-    - No CI job installs either. `.github/workflows/ci.yml` has four jobs —
-      `unit`, `node-matrix`, `browser`, `native-build` — and none of them touches
-      `solid-js`; every job runs `pnpm install --frozen-lockfile` against the
-      same pins, so every check resolves 1.9.15 and no other.
-
-    A Solid matrix was considered and rejected: this repository resolves exactly
-    one Solid through `babel-preset-solid`, so a second version needs a
-    dependency swap inside a job rather than a matrix axis
-    (`.github/workflows/ci.yml:87-91`, `docs/compatibility.md` §8).
-  - **The two honest ways to close it.** Neither has happened.
-    - *Narrow the claim.* Change `peerDependencies.solid-js` from `^1.9.15` to
-      `1.9.15`, so the published promise is the one version that is run. This is
-      a one-line change plus `pnpm-lock.yaml` and `docs/compatibility.md` §2/§7;
-      it makes the box true by making the claim smaller. Cost: consumers on
-      1.9.16/1.9.17 hit a peer warning for a version that probably works.
-    - *Widen the evidence.* Add a CI job that installs `solid-js` 1.9.16 and
-      1.9.17 over the pinned set — a `pnpm add -D solid-js@1.9.17`-style
-      override, or a second lockfile resolved against it — and runs
-      `pnpm typecheck && pnpm test`. This also has to move `babel-preset-solid`:
-      1.9.15's own peer range is `^1.9.15`, while 1.9.16's is `^1.9.16`, so a
-      real 1.9.16/1.9.17 leg is a compiler swap too, not only a runtime swap.
-      That is why nobody has done it casually.
-    - Until one of those lands, the Solid half is a declaration with no check
-      behind it, and only the Node half is verified.
+    what this repository had at the time; the suite is 121 today. The 121 figure
+    was re-measured on Node 22.23.3 / pnpm 12.9.1 for this revision; the other
+    five Node lines were not re-run, so their 121 is an expectation, not a
+    result.
+  - **Solid half: done — the range widens the evidence rather than shrinking the
+    claim.** The range stays `^1.9.15` (`package.json:59`) and the `solid-matrix`
+    job in `.github/workflows/ci.yml` gives it a run. What decides it:
+    - `^1.9.15` admits exactly three published versions: `1.9.15` (the pin),
+      `1.9.16`, and `1.9.17` (`latest`). `1.9.14` and below, `1.10.0-beta.0`, and
+      every `2.x` are outside it. So the range is closable by running two
+      versions, not by running a matrix of unknown width.
+    - The overlay was probed before the job was written, because a job that
+      would be red is worse than a narrowed range. On Node 22.23.3 / pnpm
+      12.9.1, with the committed pins installed and `solid-js` 1.9.16 + 1.9.17
+      overlaid over `babel-preset-solid` 1.9.15/1.9.16: `pnpm typecheck` exit 0,
+      `pnpm test` exit 0 with 121 tests, and `pnpm web:build` exit 0 on **both**.
+      Nothing failed, so the range did not need narrowing. The browser suites
+      also ran green on 1.9.17 (17 + 9 passed) but are not in the job.
+    - `babel-preset-solid` has to move with it: 1.9.15 declares peer `^1.9.15`
+      and 1.9.16 declares `^1.9.16`, so the 1.9.16 leg pairs both at 1.9.16 and
+      the 1.9.17 leg runs the 1.9.16 preset, which a consumer on 1.9.17 resolves
+      anyway (there is no `babel-preset-solid@1.9.17`).
+    - The job also runs `pnpm web:build`, which is the only step that executes
+      the preset. `pnpm typecheck` and `pnpm test` only name it in string
+      assertions — verified by swapping in a preset that throws: both still
+      exited 0 while `web:build` failed.
+    - The overlay is an uncommitted `overrides` entry in `pnpm-workspace.yaml`
+      plus `pnpm install --no-frozen-lockfile`, because `pnpm add -D --no-save`
+      does not exist in pnpm 12.9.1 and `pnpm add -D -E` was measured to let a
+      later `git checkout` of the manifests silently downgrade the gate back to
+      1.9.15. `docs/compatibility.md` §2 records both failures.
+    - What is still unverified: the job has not run on GitHub Actions (this
+      worktree cannot dispatch it), so the recorded evidence is the local replay
+      of its exact steps. A future `1.9.18` would be admitted by the range and
+      would need a `matrix.include` entry before it could be claimed.
+  - The `unit` job's accounting of what closes this box: `solid-matrix` has
+    `needs: unit`, so a red unit gate stops it from running rather than
+    producing a second, confusing failure.
 - [ ] Require native and web compatibility checks for changes to shared behavior.
   - **Web half: enforced.** The `browser` job runs both suites on every pull
     request — `PLAYWRIGHT_PORT=4186 pnpm web:test` (17 tests) and
@@ -249,7 +248,7 @@ Set a stable public contract after web validation, native validation, and toolin
   - **Native half: cannot run in CI, and does not.** The `native-build` job only
     compiles the bundles with `pnpm native:build` and uploads
     `examples/lynx-for-native/dist`; no device or emulator is attached, and the
-    job's own comment (`.github/workflows/ci.yml:165-167`) says native runtime
+    job's own comment (`.github/workflows/ci.yml:308-310`) says native runtime
     behaviour is not covered. Nothing in CI fails when a change breaks native
     rendering, tap dispatch, or the `[solid-lynx parity]` report.
   - **What now exists in place of automation: a recorded, verifiable native run.**
@@ -349,20 +348,20 @@ Set a stable public contract after web validation, native validation, and toolin
 
 **Milestone complete when:** consumers can build and maintain a Solid Lynx app using documented APIs, with core behavior continuously validated in supported runtimes.
 
-**Status of this milestone:** not complete. Two of the five items are done. The
-other three stay open for three different reasons, and this revision records
-which is which rather than one shared blocker:
+**Status of this milestone:** not complete. Two of the five items are done (three
+once the Solid half above counts as done). The remaining two stay open for two
+different reasons, and this revision records which is which rather than one
+shared blocker:
 
 | Box | Why it is still open |
 | --- | --- |
-| Define supported Lynx and Solid version ranges and verify them in CI | Node half verified (`node-matrix`); the Solid half is a declaration, because `^1.9.15` admits the published 1.9.16/1.9.17 and no job installs them. Closes by narrowing the peer range or adding a Solid leg. |
 | Require native and web compatibility checks for changes to shared behavior | Web is enforced in CI. Native cannot run in CI; the recorded-run mechanism (`run-native-probe.sh smoke` + `verify-native-parity.mjs`) and the PR template exist, but both are convention — nothing red fails a PR. |
 | Confirm deterministic root, listener, and stylesheet cleanup | Root, listener, and ref cleanup are proven and were strengthened in 1.0.0 (`380284f`, `8b01d05`). Stylesheet cleanup is absent on web and unmeasured on native, so the box cannot close on evidence. |
 
-Only one of the three is waiting on a contributor decision: the Solid peer range.
-The other two need work nobody has done (a Solid CI leg; a stylesheet device run),
-not a ruling. The 0.3 native-only box is absent from this table because it is
-scope-excluded, not pending.
+Neither remaining item is waiting on a contributor decision. Both need work nobody
+has done: a native runtime check that can fail a PR, and a stylesheet device run.
+The 0.3 native-only box is absent from this table because it is scope-excluded,
+not pending.
 
 ## Out of scope for the renderer
 

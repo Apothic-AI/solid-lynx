@@ -78,17 +78,22 @@ explicit table of what deterministic cleanup proves and what it does not.
 ### Continuous integration
 
 `.github/workflows/ci.yml` (commit `a7d225c`) runs on `pull_request`, on `push`
-to `master`, and on `workflow_dispatch`, with three jobs:
+to `master`, and on `workflow_dispatch`, with five jobs:
 
 | Job | Steps |
 | --- | --- |
 | `unit` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm typecheck:consumer`, `pnpm test`, `pnpm build`, `pnpm pack --dry-run` |
+| `node-matrix` | The unit gate on `20.x`, `22.x`, `24.x` |
+| `solid-matrix` | The unit gate plus `pnpm web:build` with `solid-js` 1.9.16 and 1.9.17 overlaid on the pins, on `needs: unit` |
 | `browser` | Chromium install, then the Lynx-for-Web suite (`PLAYWRIGHT_PORT=4186 pnpm web:test`) and the pattern suite (`PLAYWRIGHT_PORT=4200`, `test/browser/patterns.playwright.config.ts`) |
 | `native-build` | `pnpm native:build`, uploading `examples/lynx-for-native/dist` |
 
 `native-build` compiles the bundle and attaches no device or emulator, and the
 workflow's own header comment says so: native runtime behaviour is still verified
-by hand.
+by hand. `solid-matrix` is what puts a run behind the `^1.9.15` peer range — it
+was green locally on both legs before it was added, but has not yet run on GitHub
+Actions. How the overlay works, and the two `pnpm add` routes that were tried and
+failed, are in [compatibility.md](docs/compatibility.md) §2.
 
 ### Indexed list row model
 

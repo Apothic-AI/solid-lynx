@@ -17,12 +17,12 @@ you read anything into the word "release".
 
 ## 1. Pre-flight: the gate CI repeats
 
-`.github/workflows/ci.yml` has four jobs: `unit`, `node-matrix`, `browser`,
-`native-build`. `browser` and `native-build` both `needs: unit`, so `unit` gates
-them. `node-matrix` has no `needs:` on purpose, so a failing matrix leg reads as
-the matrix rather than as the unit gate. Every step below runs the same command a
-developer runs locally; none needs a secret. Green means exit status 0 on that
-exact command.
+`.github/workflows/ci.yml` has five jobs: `unit`, `node-matrix`, `solid-matrix`,
+`browser`, `native-build`. `browser` and `native-build` both `needs: unit`, so
+`unit` gates them; `solid-matrix` also has `needs: unit`. `node-matrix` has no
+`needs:` on purpose, so a failing matrix leg reads as the matrix rather than as
+the unit gate. Every step below runs the same command a developer runs locally;
+none needs a secret. Green means exit status 0 on that exact command.
 
 | CI job | Step in `ci.yml` | Command | Green means | Result here |
 | --- | --- | --- | --- | --- |
@@ -34,9 +34,10 @@ exact command.
 | `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 43 entries |
 | `node-matrix` | Install / Type check / Unit tests, on `20.x`, `22.x`, `24.x` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` | the unit gate passes at the top of each declared Node line | exit 0 on 20.20.2, 22.23.3, 24.22.1 locally (98 tests each at that commit — the count predates `test/packaging.test.ts`, which was added afterwards and is not re-measured here; the floors 20.19.0 and 22.12.0 also exit 0) |
 | `browser` | Install Chromium | `pnpm exec playwright install --with-deps chromium` | Chromium present for Playwright | **not run** — the browser was already installed in this worktree; CI runs it because the runner starts bare |
-| `browser` | Lynx-for-Web suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | builds the web bundle, serves it, drives it in Chromium | exit 0, **17 passed** (54.2s) |
+| `browser` | Lynx-for-Web suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | builds the web bundle, serves it, drives it in Chromium | exit 0, **17 passed** (43.8s, on the 1.9.17 overlay — the pinned run was 54.2s) |
 | `browser` | Pattern suite | `PLAYWRIGHT_PORT=4200 pnpm exec playwright test --config test/browser/patterns.playwright.config.ts` | the separate `examples/lynx-patterns` suite passes | exit 0, **9 passed** (41.5s) |
 | `native-build` | Build the native bundle | `pnpm native:build` | `examples/lynx-for-native/dist/` holds the three bundles | exit 0, `main`, `stylesheet-probe`, `list-probe` |
+| `solid-matrix` | Install / Overlay / Type check / Unit tests / Web build, on solid `1.9.16`+preset `1.9.16` and solid `1.9.17`+preset `1.9.16` | `pnpm install --frozen-lockfile`, `pnpm add`-free `overrides` in `pnpm-workspace.yaml` then `pnpm install --no-frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm web:build` | the gate passes on every published Solid the peer range admits | exit 0 on both legs locally, 121 tests each — **not yet run on GitHub Actions** |
 
 Two things about the scripts, so you do not run work twice. `pnpm typecheck` is
 `pnpm build && tsc --noEmit && pnpm typecheck:consumer`, and `pnpm test` is
@@ -58,6 +59,12 @@ this tree still quote older totals.
 The first three commands are also the `node-matrix` job. To repeat that locally,
 switch Node to a 20 >= 20.19.0, a 22 >= 22.12.0, and any 24, running those three
 commands on each; `docs/compatibility.md` §8 has the short form.
+
+The `solid-matrix` job is a third version axis and its own three commands: the
+same install, then an uncommitted `overrides` entry in `pnpm-workspace.yaml` plus
+`pnpm install --no-frozen-lockfile`, then `pnpm typecheck`, `pnpm test`, and
+`pnpm web:build`. `docs/compatibility.md` §8 has the replay in full, including
+why the overlay must be an override rather than a `pnpm add`.
 
 Run `docs/building.md`'s table against your own output: it lists which of these
 steps this repository verifies, and the last row of it (running the bundle on a
@@ -355,9 +362,11 @@ consumers may already have installed. That document does not exist yet.
 "What this document does not claim", is the list a release note has to stay
 inside: three Node lines in CI (`20.x`, `22.x`, `24.x` from the `node-matrix`
 job) rather than the exact `20.19.0` / `22.12.0` floors of the declared
-`^20.19.0 || >=22.12.0` range, no Solid or web-core matrix, no native runtime in
-CI, no second native runtime and no device other than the A03, no cross-OS
-claim, no cross-host stylesheet or list claims, and no `@lynx-js/types` version.
+`^20.19.0 || >=22.12.0` range, every version inside the Solid peer range (from
+the `solid-matrix` job — locally green, not yet run on GitHub Actions), no
+web-core matrix, no native runtime in CI, no second native runtime and no device
+other than the A03, no cross-OS claim, no cross-host stylesheet or list claims,
+and no `@lynx-js/types` version.
 `docs/contract.md` §16 is the companion list for exports with no test, including
 `version` itself and every native runtime claim
 beyond the recorded smoke.
@@ -376,6 +385,7 @@ per-capability version of the same statement.
 | Stylesheet probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0), which reviews the sequence and touches nothing. |
 | List probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0). The list card has had a runner since `run-native-probe.sh` took a card argument — it is no longer loaded by hand — but a reviewed command sequence is not a device result. |
 | `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; CI runs it on a bare runner. |
+| The `solid-matrix` job's steps, verbatim, on both legs | **run locally**, exit 0 | The job's `run:` blocks were extracted from the parsed YAML and executed in order for `solid-js` 1.9.16 / `babel-preset-solid` 1.9.16 and `solid-js` 1.9.17 / preset 1.9.16. Every command exited 0 and the tree was clean afterwards. What is **not** run is the workflow itself on GitHub Actions — no runner could be dispatched from this worktree, so the leg matrix, the `needs: unit` edge, and the `actions/*` steps are unverified until a push runs them. |
 | `pnpm publish` (real) | **not run**, deliberately | §5. The name belongs to another maintainer and this repository has no credential or release workflow. Only `--dry-run` was executed, and it uploaded nothing. |
 
 Everything else in this document — the install, the five gate commands

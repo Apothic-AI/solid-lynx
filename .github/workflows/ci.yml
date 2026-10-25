@@ -10,9 +10,12 @@
 # [solid-lynx parity] report — is still verified by hand as described in
 # docs/building.md.
 #
-# Version coverage is `node-matrix` below: the declared `engines.node` range is
-# exercised at the top of each Node line it admits. There is no Solid-runtime
-# matrix, deliberately — see the comment above `node-matrix`.
+# Version coverage is two axes. `node-matrix` exercises the declared
+# `engines.node` range at the top of each Node line it admits. `solid-matrix`
+# exercises the declared `peerDependencies.solid-js` range at its top, by
+# installing the newest admitted Solid and its matching compiler over the pinned
+# set before running the gate. Both have a comment above them explaining what
+# they do and do not prove.
 
 name: CI
 
@@ -84,11 +87,11 @@ jobs:
   # prove the `20.19.0` / `22.12.0` floors. Node 21/23/25, future majors, and
   # non-Linux hosts are not covered.
   #
-  # There is no Solid-runtime matrix here, and none is wanted: this repository
-  # resolves exactly one Solid through `babel-preset-solid` and the peer range is
-  # `^1.9.15`, so testing a second Solid would need a dependency swap in the job
-  # rather than a matrix axis. `@lynx-js/web-core` is the same — one supported
-  # version (0.26.2), not a matrix dimension.
+  # This is the Node axis only. The Solid axis is `solid-matrix` below, which
+  # installs a different Solid over the pins instead of using a matrix axis —
+  # this repository resolves exactly one Solid through `babel-preset-solid`, so a
+  # second Solid is a dependency swap, not a Node version. `@lynx-js/web-core`
+  # has no leg at all: one supported version (0.26.2), not a matrix dimension.
   #
   # Deliberately not `needs: unit`: a red leg here should read as the matrix
   # failing, not as the unit gate failing.
@@ -120,6 +123,146 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
+
+  # Exercises the declared `peerDependencies.solid-js` range (`^1.9.15`,
+  # package.json) instead of only the pinned 1.9.15 every other job resolves.
+  # `^1.9.15` admits exactly three published versions — 1.9.15, 1.9.16 and
+  # 1.9.17 — and only the first has ever been installed here. This job installs
+  # the other two over the pins and runs the gate on each, so the peer promise
+  # has runs behind it rather than a declaration.
+  #
+  # `babel-preset-solid` moves with it. It is this package's compile path
+  # (`docs/compatibility.md` §2) and each release declares a peer on the Solid it
+  # was built against — 1.9.15 and 1.9.16 both declare `^1.9.15` and `^1.9.16`
+  # respectively — so overriding the runtime alone would test a combination no
+  # consumer can install. The matrix pairs them; 1.9.17 has no preset of its own,
+  # so it runs on 1.9.16, which is what a consumer on 1.9.17 resolves today.
+  #
+  # Mechanism: `overrides` in pnpm-workspace.yaml, written here rather than
+  # committed. Not `pnpm add`: `pnpm add -D --no-save` does not exist in the
+  # pinned pnpm 12.9.1 (it errors with "unexpected argument '--no-save'"), and a
+  # committed `overrides` entry would override the pins for every consumer of
+  # this repository. Not `pnpm add -D -E` either, which was tried and does not
+  # work: `pnpm add` rewrites package.json and pnpm-lock.yaml, and restoring
+  # those with `git checkout` makes pnpm's implicit pre-script install resync
+  # `node_modules` back to the committed pins, so `pnpm typecheck` silently ran
+  # 1.9.15 under a job labelled 1.9.17. An override in pnpm-workspace.yaml is
+  # part of pnpm's own configuration, so the pre-script sync keeps it — checked:
+  # with the committed pnpm-lock.yaml restored mid-run, the gate still ran with
+  # 1.9.17 installed.
+  #
+  # Why `--no-frozen-lockfile` here and nowhere else: an override is a resolution
+  # the committed lockfile does not contain, so pnpm must re-resolve, and a frozen
+  # install refuses to. This is acceptable on this job only because nothing in it
+  # is authoritative: `unit` and `node-matrix` run the same gate against the
+  # committed lockfile with `--frozen-lockfile`, and `needs: unit` means this job
+  # only runs after they are green. What this job proves is the Solid range; that
+  # the committed lockfile is consistent stays `unit`'s job. The re-resolve is
+  # also wide — overriding one package rewrites the peer-resolution suffixes of
+  # many unrelated entries — which is a second reason its lockfile is scaffolding.
+  # The lockfile is therefore never committed from here, and a later step fails
+  # the job if it is dirty.
+  #
+  # The re-resolved lockfile is deliberately left in place for the gate rather
+  # than reverted first. Reverting it while the override is still active leaves
+  # pnpm's implicit pre-script install with a lockfile whose `overrides` block
+  # does not match the config, and it reports ERR_PNPM_LOCKFILE_CONFIG_MISMATCH on
+  # every `pnpm <script>` — a warning in pnpm 12.9.1, but a fragile place to
+  # depend on, and one that would fail outright under a stricter pnpm. Keeping the
+  # matching lockfile means the pre-script install is a no-op and the gate runs
+  # only because the override says so.
+  #
+  # The two assertions after the gate are the guard against a repeat of the
+  # silent-downgrade bug above: if a future pnpm or a changed step order lets the
+  # gate run on the pins, the job fails naming the version it expected instead of
+  # passing under the wrong name.
+  #
+  # `pnpm web:build` is not padding. `babel-preset-solid` only runs inside a real
+  # Rspack build — `pnpm typecheck` and `pnpm test` name the preset in string
+  # assertions but never load it, verified by replacing the installed preset with
+  # one that throws: both still exited 0, while `web:build` failed on it. A Solid
+  # bump that type-checks but compiles badly would be invisible to the other two
+  # steps, so the compile is part of this job.
+  #
+  # Locally, on Node 22.23.3 / pnpm 12.9.1, both legs exited 0 on every step
+  # below: `pnpm typecheck`, `pnpm test` (121 tests, 7 files), `pnpm web:build`.
+  # See `docs/compatibility.md` §2 for the recorded runs.
+  solid-matrix:
+    name: solid-matrix (solid ${{ matrix.solid }}, preset ${{ matrix.preset }})
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # Both legs finish so one broken Solid does not hide the other.
+      fail-fast: false
+      matrix:
+        # Every published version `^1.9.15` admits above the 1.9.15 pin, with
+        # the `babel-preset-solid` a consumer on that Solid resolves. Bumping the
+        # peer range means editing this list and package.json together.
+        include:
+          - solid: "1.9.16"
+            preset: "1.9.16"
+          - solid: "1.9.17"
+            preset: "1.9.16"
+    env:
+      # Read by the steps below; also what the assertions compare against.
+      SOLID_VERSION: ${{ matrix.solid }}
+      PRESET_VERSION: ${{ matrix.preset }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from package.json "packageManager".
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Same starting point as every other job: the committed pins.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Uncommitted override, in this working directory only.
+      - name: Overlay Solid ${{ matrix.solid }}
+        run: |
+          printf '\noverrides:\n  solid-js: %s\n  babel-preset-solid: %s\n' \
+            "$SOLID_VERSION" "$PRESET_VERSION" >> pnpm-workspace.yaml
+          pnpm install --no-frozen-lockfile
+
+      # Nothing has run the gate yet, so first prove the install actually
+      # overlaid rather than silently keeping the pins.
+      - name: Confirm the overlay installed
+        run: |
+          test "$(node -p "require('solid-js/package.json').version")" = "$SOLID_VERSION"
+          test "$(node -p "require('babel-preset-solid/package.json').version")" = "$PRESET_VERSION"
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      # The only step that executes `babel-preset-solid`. See the note above.
+      - name: Build the web bundle
+        run: pnpm web:build
+
+      # The gate must have run on the overlay, not on the pins — this is the
+      # assertion that a mid-run resync would break.
+      - name: Assert the gate ran on the overlay
+        run: |
+          test "$(node -p "require('solid-js/package.json').version")" = "$SOLID_VERSION"
+          test "$(node -p "require('babel-preset-solid/package.json').version")" = "$PRESET_VERSION"
+
+      # Every committed manifest is restored and then proved untouched: this
+      # mechanism changes only the override it appended to pnpm-workspace.yaml and
+      # the lockfile pnpm re-resolved from it. Each matrix leg gets a fresh
+      # checkout on GitHub, so this is belt and braces there; it is what lets the
+      # same job be replayed locally leg after leg.
+      - name: Restore and check the committed manifests
+        run: |
+          git checkout -- package.json pnpm-lock.yaml pnpm-workspace.yaml
+          test -z "$(git status --porcelain -- package.json pnpm-lock.yaml pnpm-workspace.yaml)"
 
   browser:
     name: browser

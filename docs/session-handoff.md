@@ -204,12 +204,14 @@ landed, and where to read it:
 - **Compatibility pinned.** [compatibility.md](compatibility.md) fixes the exact
   `solid-js`, `@lynx-js/web-core`, `@lynx-js/rspeedy`, `@lynx-js/lynx-core`, and
   Rsbuild plugin versions the contract was verified against, and §8 states what
-  the pins do not claim (one Node version in CI, no native runtime in CI).
+  the pins do not claim (the Node and Solid ranges in CI, no native runtime in
+  CI).
 - **Migration guide.** [migration.md](migration.md) is the `0.x` → frozen
   contract upgrade path: refs, CSS ids, event props, JSX types, the
   `<list>` → `root.createList()` move, root lifecycle.
-- **CI and PR template.** `.github/workflows/ci.yml` has three jobs (`unit`, then
-  `browser` and `native-build`, both `needs: unit`); `.github/pull_request_template.md`
+- **CI and PR template.** `.github/workflows/ci.yml` has five jobs (`unit`;
+  `node-matrix`, standing alone; then `solid-matrix`, `browser`, and
+  `native-build`, all `needs: unit`); `.github/pull_request_template.md`
   repeats the same checks and adds the native-device question. CI compiles the
   native bundle and **executes nothing native**.
 - **Release process and 1.0.0.** [release.md](release.md) is the cut order with
@@ -217,11 +219,12 @@ landed, and where to read it:
   `1.0.0` entry, and `package.json` and `src/index.ts` both say `1.0.0`. Nothing
   is tagged or published ([release.md](release.md) §5).
 
-[ROADMAP.md](../ROADMAP.md) records the milestone honestly: two of the five `1.0`
-items are done (the documented contracts, and migration/compatibility guidance),
-and the milestone is **not complete**. The open items are a version matrix in CI,
-a native runtime check in CI, and deterministic stylesheet cleanup — the last of
-which cannot be confirmed until the stylesheet probe has a device run.
+[ROADMAP.md](../ROADMAP.md) records the milestone honestly: three of the five
+`1.0` items are done (the documented contracts, migration/compatibility guidance,
+and the version ranges — Node via `node-matrix`, Solid via `solid-matrix`), and
+the milestone is **not complete**. The open items are a native runtime check in
+CI and deterministic stylesheet cleanup — the latter cannot be confirmed until
+the stylesheet probe has a device run.
 
 Two blockers remain, and neither is resolvable from a fresh session's shell:
 

@@ -49,28 +49,82 @@ exists.
 
 | Source | Value |
 | --- | --- |
-| `package.json` `peerDependencies.solid-js` (after this change) | `^1.9.15` |
-| `package.json` `devDependencies.solid-js` (after this change) | `1.9.15` (pinned) |
+| `package.json` `peerDependencies.solid-js` | `^1.9.15` |
+| `package.json` `devDependencies.solid-js` | `1.9.15` (pinned) |
 | `pnpm-lock.yaml` resolved | `solid-js@1.9.15` |
 | `babel-preset-solid@1.9.15`'s own `peerDependencies.solid-js` | `^1.9.15` |
+| `babel-preset-solid@1.9.16`'s own `peerDependencies.solid-js` | `^1.9.16` |
+| Published `solid-js` inside `^1.9.15` | exactly `1.9.15`, `1.9.16`, `1.9.17` (`1.9.17` is `latest`); `1.9.14` and below and every `2.x` / `1.10.0-beta` are outside the range |
 | Previously | `peerDependencies` said `^1.9.0`, `devDependencies` said `^1.9.9` |
 
-**Why the peer range changed.** The package's compile path is
+**Why the peer range says `^1.9.15`.** The package's compile path is
 `babel-preset-solid`, and the version this repository builds with
 (`1.9.15`, now pinned) declares `solid-js` peer `^1.9.15`. Promising `^1.9.0`
 would claim compatibility with Solid versions the installed compiler does not
-support. The new range is `babel-preset-solid`'s own peer range, not an invented
-one.
+support. The range is `babel-preset-solid`'s own peer range, not an invented one.
 
-**What is actually verified:** one Solid version, `1.9.15`, in every check in
-this repository. `1.9.0`–`1.9.14` are excluded deliberately; a consumer on an
-older Solid must upgrade. No Solid 2.x exists to test.
+**What is actually verified:** all three versions the range admits, each run
+against the gate in this repository. `1.9.15` is the pin the whole repository
+builds against; `1.9.16` and `1.9.17` are overlaid on top of it and run by the
+`solid-matrix` job in `.github/workflows/ci.yml`.
 
-The declared range is wider than the version run: `^1.9.15` admits `1.9.16` and
-`1.9.17`, both published, and this repository has run neither. `1.9.15` is what
-`devDependencies` pins and what `pnpm-lock.yaml` resolves, so no check here can
-reach them. `ROADMAP.md` 1.0's "Define supported Lynx and Solid version ranges
-and verify them in CI" records that gap as the reason it stays open.
+| Solid | `babel-preset-solid` | Where it runs | Result |
+| --- | --- | --- | --- |
+| `1.9.15` | `1.9.15` | `unit`, `node-matrix`, `browser`, `native-build`, every local run | green |
+| `1.9.16` | `1.9.16` | `solid-matrix` leg 1 | green, locally |
+| `1.9.17` | `1.9.16` | `solid-matrix` leg 2 | green, locally |
+
+The two versions above the pin are run with the preset a consumer on that Solid
+would resolve, which is why `1.9.17` uses the `1.9.16` preset: there is no
+`babel-preset-solid@1.9.17` on npm, and `1.9.16`'s own peer range (`^1.9.16`)
+admits `1.9.17`. Overriding only the runtime would test a pairing no consumer can
+install.
+
+**What was run, exactly.** On Node `v22.23.3` / pnpm `12.9.1`, each version
+after `pnpm install --frozen-lockfile`, the overlay applied, and then:
+
+| Command | `1.9.16` / preset `1.9.16` | `1.9.17` / preset `1.9.16` |
+| --- | --- | --- |
+| `pnpm typecheck` | exit 0 | exit 0 |
+| `pnpm test` | exit 0, 121 tests in 7 files | exit 0, 121 tests in 7 files |
+| `pnpm web:build` | exit 0 | exit 0 |
+
+Nothing failed on either version, so nothing was narrowed. `1.9.0`–`1.9.14`
+remain excluded deliberately — a consumer on an older Solid must upgrade — and
+no `1.10.x` or `2.x` is inside the range to test.
+
+**Why `pnpm web:build` is one of the three.** `babel-preset-solid` is not
+executed by `pnpm typecheck` or `pnpm test`: both name the preset in string
+assertions but never load it. Verified by replacing the installed
+`babel-preset-solid` with a stub whose entry throws — `pnpm typecheck` and
+`pnpm test` still exited 0, while `pnpm web:build` failed with
+`[BABEL]: BROKEN BPS LOADED`. Without the web build, a Solid bump that
+type-checks but compiles badly would pass a job named after that Solid.
+
+**How the overlay is applied, and the two mechanisms that did not work.** The
+job appends an `overrides` entry to `pnpm-workspace.yaml` in the runner's working
+directory — never committed — and installs with `pnpm install --no-frozen-lockfile`.
+Neither `pnpm add` route survives a real run:
+
+- `pnpm add -D --no-save` does not exist in the pinned pnpm `12.9.1`; it exits
+  with `unexpected argument '--no-save'`.
+- `pnpm add -D -E solid-js@1.9.17 babel-preset-solid@1.9.16` installs the
+  overlay, but it rewrites `package.json` and `pnpm-lock.yaml`, and restoring
+  those with `git checkout` makes pnpm's implicit pre-script install resync
+  `node_modules` back to the committed pins. Measured: after that restore,
+  `pnpm typecheck` printed `solid-js 1.9.17 → 1.9.15` and then exited 0, so the
+  gate ran the pin while the job claimed the overlay. The overrides mechanism is
+  part of pnpm's own configuration, so the pre-script install keeps it; with the
+  committed `pnpm-lock.yaml` restored mid-run, the gate still ran on `1.9.17`.
+
+`--no-frozen-lockfile` appears only in that job. An override is a resolution the
+committed lockfile does not contain, so pnpm must re-resolve and a frozen install
+refuses to. It is acceptable there because nothing in the job is authoritative:
+`unit` and `node-matrix` run the same gate against the committed lockfile with
+`--frozen-lockfile`, and `solid-matrix` has `needs: unit`. The re-resolve is also
+wide — overriding one package rewrites the peer-resolution suffixes of many
+unrelated entries (306–318 lockfile lines on this tree) — which is a second
+reason its lockfile is scaffolding and never committed.
 
 ## 3. Lynx web runtime (`@lynx-js/web-core`)
 
@@ -187,7 +241,7 @@ app to install.
 | --- | --- | --- | --- |
 | Node.js | `^20.19.0 \|\| >=22.12.0`; verified on 20.19.0, 20.20.2, 22.12.0, 22.23.3, 24.22.1 | toolchain `engines`, README, CI `node-matrix`, local runs | range, both floors and three line tops run |
 | pnpm | `12.9.1`, pinned by `packageManager: "pnpm@12.9.1"` in `package.json` | `package.json`, CI `pnpm/action-setup` | single version |
-| Solid | `^1.9.15`; verified on 1.9.15 only (`1.9.16`, `1.9.17` admitted, unrun) | `babel-preset-solid` peer, lockfile | narrow, one version run |
+| Solid | `^1.9.15`; verified on 1.9.15, 1.9.16, and 1.9.17 — the whole range | `babel-preset-solid` peer, lockfile, CI `solid-matrix`, local runs | range, every admitted version run |
 | `@lynx-js/web-core` | 0.26.2 only | lockfile, browser suite | single version |
 | `@lynx-js/lynx-core` | 0.1.4 only | lockfile | single version |
 | Lynx Explorer / engine | 4.1.0 / 3.5 only | `docs/building.md`, device run | single version, one hand run |
@@ -200,17 +254,30 @@ app to install.
 - **One axis of a matrix in CI, not a matrix of the supported set.** The
   `node-matrix` job in `.github/workflows/ci.yml` runs the unit gate on `20.x`,
   `22.x`, and `24.x`, so Node 20 (lower line) and Node 24 (admitted by the
-  open-ended `>=22.12.0`) are exercised instead of only Node 22. It covers **the
-  Node axis only**. It does not test any Solid other than 1.9.15, any
-  `@lynx-js/web-core` other than 0.26.2, any Lynx toolchain other than the pinned
-  set in `package.json`, or any OS other than `ubuntu-latest`. A green
-  `node-matrix` narrows the Node claim; it does not widen the supported set on
-  any other axis.
-- **No Solid-runtime matrix.** This repository resolves exactly one Solid through
-  `babel-preset-solid`, and its peer range is `^1.9.15`, so a second Solid would
-  need a dependency swap in the job rather than a matrix axis — that is a change
-  nobody here has run, so it is not claimed. Concretely, `solid-js` 1.9.16 and
-  1.9.17 are inside the declared peer range and have never been run (§2).
+  open-ended `>=22.12.0`) are exercised instead of only Node 22. The
+  `solid-matrix` job runs the gate on `solid-js` 1.9.16 and 1.9.17, the two
+  published versions `^1.9.15` admits above the pin. Between them those are **the
+  Node and Solid axes only**. They do not test any `@lynx-js/web-core` other than
+  0.26.2, any Lynx toolchain other than the pinned set in `package.json`, or any
+  OS other than `ubuntu-latest`. A green matrix narrows the Node and Solid claims;
+  it does not widen the supported set on any other axis.
+- **The Solid matrix tests the full admitted range; a green run is what licenses
+  that sentence.** `^1.9.15` admits exactly `1.9.15`, `1.9.16`, and `1.9.17`
+  (checked against the published list; `1.9.14` and below and every `2.x` and
+  `1.10.0-beta` are outside). `1.9.15` is what every other job resolves;
+  `1.9.16` and `1.9.17` are overlaid by `solid-matrix` and ran green locally
+  (§2). Two limits remain: the `solid-matrix` legs have not yet run on GitHub
+  Actions, and the range stops at `1.9.17` only because that is the newest
+  published version — a `1.9.18` would be admitted by the range and would need a
+  matrix entry before it could be claimed.
+- **The Solid legs override rather than pin.** `solid-matrix` installs with
+  `pnpm install --no-frozen-lockfile` after appending an `overrides` entry to
+  `pnpm-workspace.yaml`, because an override is a resolution the committed
+  lockfile cannot contain. Nothing in that job is authoritative: `unit` and
+  `node-matrix` run the same gate against the committed lockfile with
+  `--frozen-lockfile` and it has `needs: unit`, so lockfile consistency is still
+  `unit`'s claim, not `solid-matrix`'s. See §2 for the two `pnpm add` mechanisms
+  that were tried and did not survive a real run.
 - **No native runtime in CI.** The `native-build` job compiles the bundle and
   uploads it as an artifact. No device or emulator is attached, so nothing native
   is executed by CI (`.github/workflows/ci.yml`, the comment above
@@ -255,6 +322,30 @@ Run it once on a 20 >= 20.19.0, once on a 22 >= 22.12.0, and once on any 24. Eac
 run rebuilds `dist/` (both `typecheck` and `test` start with `pnpm build`), so a
 stale `dist/` cannot make a leg look green.
 
+### Running the Solid matrix locally
+
+The `solid-matrix` job is the same three commands after an overlay, which is why
+it can be replayed here at all. On Node 22 with the committed pins installed:
+
+```bash
+pnpm install --frozen-lockfile
+git checkout -- pnpm-workspace.yaml   # start from a clean workspace file
+printf '\noverrides:\n  solid-js: 1.9.17\n  babel-preset-solid: 1.9.16\n' >> pnpm-workspace.yaml
+pnpm install --no-frozen-lockfile
+pnpm typecheck
+pnpm test
+pnpm web:build
+git checkout -- package.json pnpm-lock.yaml pnpm-workspace.yaml
+```
+
+Swap the two versions for the `1.9.16` / `1.9.16` leg. Read the installed
+versions back rather than trusting the install — `node -p
+"require('solid-js/package.json').version"` — because a `git checkout` of the
+manifests while an override is active is exactly the mistake that makes the gate
+run the pin under a job named after the overlay (§2). The last line matters
+before you commit anything: it is the pair of files the mechanism must never
+move.
+
 ## 9. Changing a supported version
 
 Because most entries above are exact versions, bumping one is a deliberate act:
@@ -270,13 +361,22 @@ Because most entries above are exact versions, bumping one is a deliberate act:
 4. Update the table in §7 with the version you actually ran. Do not widen a
    range because a vendor notes compatibility; widen it when a check here ran
    green.
+5. If the version is inside the declared `peerDependencies.solid-js` range,
+   `solid-matrix` is where it gets its run: add the Solid and the
+   `babel-preset-solid` a consumer on it resolves to the job's `matrix.include`
+   in `.github/workflows/ci.yml` (§2), then run both locally as
+   "Running the Solid matrix locally" above describes. A range bump and a matrix
+   entry are the same commit, or the range publishes a version with no run behind
+   it.
 
 CI (`.github/workflows/ci.yml`) repeats steps 1-2 on Node 22 plus both
-browser suites and the native build, and the `node-matrix` job repeats the unit
-gate on the `20.x`, `22.x`, and `24.x` Node lines. A green CI run is therefore
-evidence for three Node lines on `ubuntu-latest` — not for the exact `20.19.0` /
-`22.12.0` floors, not for any other OS, and not for any other version axis. Step
-3's native hand run is never covered by CI.
+browser suites and the native build, the `node-matrix` job repeats the unit
+gate on the `20.x`, `22.x`, and `24.x` Node lines, and the `solid-matrix` job
+repeats it on the two published Solids above the pin. A green CI run is therefore
+evidence for three Node lines and every version inside the Solid peer range, all
+on `ubuntu-latest` — not for the exact `20.19.0` / `22.12.0` floors, not for any
+other OS, and not for any other version axis. Step 3's native hand run is never
+covered by CI.
 
 The consumer fixture gate matters most in step 2: `pnpm typecheck:consumer`
 compiles `test/consumer/tsconfig.json` and `test/consumer/tsconfig.dev.json`
