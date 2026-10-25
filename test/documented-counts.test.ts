@@ -53,7 +53,7 @@
  * `test/documented-counts.test.ts` and its own cases, which is exactly the
  * number a reader gets from `pnpm test`. That is proven, not assumed — the test
  * below selects the entries belonging to this very file by comparing resolved
- * paths and requires a non-zero number of them back. Measured 228 tests in 11
+ * paths and requires a non-zero number of them back. Measured 268 tests in 12
  * files with this file present, stable across repeated collections.
  *
  * ## The ignore rule, and why it cannot hide a stale current claim

@@ -1,0 +1,14 @@
+/*
+ * The second stylesheet served to the device during the v2 stylesheet PAPI
+ * probe.
+ *
+ * The probe passes this URL as the *second* parameter to `__LoadStyleSheet` in
+ * its `[url, url2]` case, so that case is a different stylesheet from `[url]`
+ * rather than the same one twice. Like `probe.css` the rule is deliberately
+ * inert: it matches nothing the probe card renders, so a load that succeeds
+ * cannot change what the probe's readback stage observes.
+ */
+
+.probe-marker-2 {
+  color: rgb(2, 2, 2);
+}

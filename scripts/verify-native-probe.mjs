@@ -93,6 +93,37 @@ const STYLESHEET_REQUIRED_STAGES = Object.freeze([
   "done",
 ]);
 
+/**
+ * The second stylesheet card's stages.
+ *
+ * It is a separate card rather than more stages on the first one because v1's
+ * capture is the ground truth v2 reasons from, and a card whose stage set grew
+ * would make the two captures incomparable. The names are `inventory-v2` for the
+ * same reason: a capture mixing the two cards is caught by stage name as well as
+ * by marker.
+ */
+const STYLESHEET_V2_REQUIRED_STAGES = Object.freeze([
+  "inventory-v2",
+  "loadstyle-arity",
+  "adopt-arity",
+  "replace-arity",
+  "style-object-path",
+  "lifecycle",
+  "summary",
+  "done",
+]);
+
+/**
+ * The eight bounded `__LoadStyleSheet` cases the v2 card must attempt.
+ *
+ * Literal, like the operation names, and held to the card by
+ * `test/native-probe-verify.test.ts`, which imports `loadStyleSheetCases` and
+ * reads the labels out of it. The checker does not care what the labels say, only
+ * that eight distinct cases were attempted: a v2 capture that quietly dropped the
+ * `[url, url2]` case would be answering a narrower question than the card claims.
+ */
+const STYLESHEET_V2_LOAD_CASE_COUNT = 8;
+
 const CARDS = Object.freeze({
   stylesheet: {
     key: "stylesheet",
@@ -129,9 +160,36 @@ const CARDS = Object.freeze({
       done: checkDone,
     },
   },
+  stylesheet2: {
+    key: "stylesheet2",
+    card: "stylesheet-v2",
+    marker: "[solid-lynx ss2]",
+    probe: "native-stylesheet-papi-v2",
+    bundle: "stylesheet-probe-v2.lynx.bundle",
+    stages: STYLESHEET_V2_REQUIRED_STAGES,
+    operations: STYLESHEET_OPERATIONS,
+    checks: {
+      "inventory-v2": checkStylesheetV2Inventory,
+      "loadstyle-arity": checkStylesheetV2LoadArity,
+      "adopt-arity": checkStylesheetV2OtherArity,
+      "replace-arity": checkStylesheetV2OtherArity,
+      "style-object-path": checkStylesheetV2StyleObject,
+      lifecycle: checkStylesheetV2Lifecycle,
+      summary: checkStylesheetV2Summary,
+      done: checkDone,
+    },
+  },
 });
 
-const CARD_ORDER = ["stylesheet", "list"];
+/**
+ * Card order for extraction, longest marker first.
+ *
+ * `[solid-lynx ss2]` starts with `[solid-lynx ss]`, so checking the shorter marker
+ * first would classify every v2 line as v1 with a payload of `2] {...}`. Ordering
+ * by length makes that impossible rather than relying on the shorter marker's
+ * payload failing to parse.
+ */
+const CARD_ORDER = ["stylesheet2", "stylesheet", "list"];
 
 const USAGE = `verify-native-probe — check a captured native probe log
 
@@ -702,6 +760,366 @@ function checkStylesheetSummary(out, stage) {
   checkUnmeasured(out, stage);
 }
 
+/* ------------------------------------------------------------ the v2 card
+ *
+ * The v2 card answers a different question from the v1 one: it attempts a bounded
+ * list of argument shapes for `__LoadStyleSheet` and reports each outcome, rather
+ * than asserting that a load reached a stylesheet. The checks below therefore test
+ * *that the bounded list was really attempted and really recorded*, and never that
+ * any particular attempt succeeded. A v2 capture where all eight cases threw the
+ * same error is a complete, correct answer — that is the finding the card exists
+ * to record — so treating an all-threw capture as a finding would invert the
+ * card's purpose.
+ */
+
+function isAttemptList(value) {
+  if (!Array.isArray(value)) return false;
+  return value.every(entry => isPlainObject(entry)
+    && isText(entry.label)
+    && (entry.outcome === "returned" || entry.outcome === "threw")
+    && (isPlainObject(entry.threw) || isPlainObject(entry.returned)));
+}
+
+function checkBoundedAttempts(out, stage, field, expected) {
+  const attempts = expectArray(out, stage.stage, field, stage[field]);
+  if (attempts === undefined) return undefined;
+
+  if (!isAttemptList(attempts)) {
+    out.add(
+      "unreadable-attempt",
+      `\`${stage.stage}.${field}\` holds an entry that is not a recorded attempt: every`
+        + " entry needs a `label`, an \`outcome\` of returned/threw, and the `threw` or"
+        + " `returned` it produced. Without both halves the capture does not say what was"
+        + " tried or what came back.",
+      stage.stage,
+    );
+    return attempts;
+  }
+
+  if (expected !== undefined && attempts.length !== expected) {
+    out.add(
+      "wrong-attempt-count",
+      `\`${stage.stage}.${field}\` records ${attempts.length} attempt(s) where the card`
+        + ` attempts ${expected}. The bounded list is the experiment; a capture with fewer`
+        + " cases answers a narrower question than the one the card claims to ask.",
+      stage.stage,
+    );
+  }
+
+  // The label is what makes an all-threw capture readable, so two identical labels
+  // mean the capture cannot say which case produced which answer.
+  const labels = attempts.filter(isPlainObject).map(entry => entry.label);
+  if (new Set(labels).size !== labels.length) {
+    out.add(
+      "duplicate-attempt-label",
+      `\`${stage.stage}.${field}\` repeats a case label, so its attempts cannot be told`
+        + " apart.",
+      stage.stage,
+    );
+  }
+
+  return attempts;
+}
+
+function checkStylesheetV2Inventory(out, stage, card) {
+  const globals = expectArray(out, stage.stage, "globals", stage.globals);
+  const sources = expectObject(out, stage.stage, "sources", stage.sources);
+  const shapes = expectObject(out, stage.stage, "shapes", stage.shapes);
+  if (globals === undefined) return;
+
+  // `names` is present in the full form and replaced by `namesOmitted` in the lean
+  // one, when the discovered names would not fit the delivered-line budget. Every
+  // name is a `globals` entry either way, so the inventory itself is not reduced.
+  if (stage.names !== undefined) {
+    expectTextArray(out, stage.stage, "names", stage.names);
+  } else if (typeof stage.namesOmitted !== "number") {
+    out.add(
+      "missing-field",
+      "`inventory-v2` records neither `names` nor `namesOmitted`, so the capture does"
+        + " not say how many style globals the host's discovery returned.",
+      stage.stage,
+    );
+  }
+
+  for (const name of card.operations) {
+    const entry = globals.find(candidate =>
+      isPlainObject(candidate) && candidate.name === name);
+    if (entry === undefined) {
+      out.add(
+        "missing-operation",
+        `\`inventory-v2\` does not describe ${name}. The card describes every style-named`
+          + " global before it calls any of them, so a capture without it is not this"
+          + " card's inventory.",
+        stage.stage,
+      );
+      continue;
+    }
+    expectText(out, stage.stage, `globals[${name}].typeof`, entry.typeof);
+    checkArityFields(out, stage.stage, entry, `globals[${name}]`);
+    // An interned key has to resolve, or the exact `String(fn)` (or the name and
+    // own-property set) is lost from the capture while the line still looks
+    // complete. Interning is what keeps this line inside the delivered-size budget,
+    // so a dangling key is the failure it introduced.
+    if (isText(entry.source) && sources !== undefined && !(entry.source in sources)) {
+      out.add(
+        "unresolved-source",
+        `\`inventory-v2\` says ${name} came from source ${describeValue(entry.source)},`
+          + " which `sources` does not define. The interned text is the only verbatim"
+          + " copy of the binding's source in the capture.",
+        stage.stage,
+      );
+    }
+    if (isText(entry.shape) && shapes !== undefined) {
+      const shape = shapes[entry.shape];
+      if (!isPlainObject(shape)) {
+        out.add(
+          "unresolved-shape",
+          `\`inventory-v2\` says ${name} has shape ${describeValue(entry.shape)}, which`
+            + " `shapes` does not define. The interned shape is the only copy of the"
+            + " binding's name and own property names in the capture.",
+          stage.stage,
+        );
+      } else if (!Array.isArray(shape.own) || typeof shape.fnName !== "string"
+        || typeof shape.hasPrototype !== "boolean") {
+        // `fnName` is allowed to be empty: v1's device capture records `name: ""`
+        // for every native binding, so requiring a non-empty string here would
+        // reject the very shape the engine produces.
+        out.add(
+          "unreadable-shape",
+          "`shapes[" + entry.shape + "]` must hold a string `fnName` (empty is"
+            + " normal for a native binding), a boolean `hasPrototype`, and an"
+            + " `own` array.",
+          stage.stage,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * An interned error key has to resolve.
+ *
+ * The card interns repeated error text so the stage line fits the budget the
+ * console bridge delivers, which means an attempt can carry `message: "e0"`
+ * instead of the engine's words. If `errors` does not define that key, the
+ * capture has lost the only verbatim statement of what the host said while still
+ * looking complete — the exact failure interning introduced.
+ */
+function checkInternedErrors(out, stage, attempts) {
+  if (!Array.isArray(attempts)) return;
+  const errors = stage.errors;
+  if (!isPlainObject(errors)) {
+    // The full form always carries the table; a capture without it is only
+    // acceptable when no attempt carries an interned key.
+    const interned = attempts.some(entry =>
+      isPlainObject(entry?.threw) && isText(entry.threw.message)
+      && /^e\d+$/.test(entry.threw.message));
+    if (interned) {
+      out.add(
+        "missing-field",
+        `\`${stage.stage}\` references an interned error but carries no \`errors\` table,`
+          + " so the engine's message is not in the capture.",
+        stage.stage,
+      );
+    }
+    return;
+  }
+
+  for (const [index, entry] of attempts.entries()) {
+    if (!isPlainObject(entry?.threw)) continue;
+    const message = entry.threw.message;
+    if (!isText(message) || !/^e\d+$/.test(message)) continue;
+    if (!(message in errors) || !isText(errors[message])) {
+      out.add(
+        "unresolved-error",
+        `\`${stage.stage}.attempts[${index}]\` references error ${describeValue(message)},`
+          + " which `errors` does not define. The interned text is the only verbatim copy"
+          + " of what the host said.",
+        stage.stage,
+      );
+    }
+  }
+}
+
+function checkStylesheetV2LoadArity(out, stage) {
+  const attempts = checkBoundedAttempts(out, stage, "attempts",
+    STYLESHEET_V2_LOAD_CASE_COUNT);
+  checkInternedErrors(out, stage, stage.attempts);
+  expectArray(out, stage.stage, "groups", stage.groups);
+  expectNumber(out, stage.stage, "returnedHandles", stage.returnedHandles);
+
+  const listed = Array.isArray(stage.attempts) ? stage.attempts : [];
+  const returned = listed.filter(entry => isPlainObject(entry)
+    && entry.outcome === "returned").length;
+  void attempts;
+  if (typeof stage.returnedHandles === "number" && stage.returnedHandles > returned) {
+    out.add(
+      "handle-count-exceeds-returns",
+      `\`loadstyle-arity\` reports ${stage.returnedHandles} handle(s) from ${returned}`
+        + " returning attempt(s). A handle can only come from a call that returned, so the"
+        + " count and the attempts disagree about what the host handed out.",
+      stage.stage,
+    );
+  }
+}
+
+function checkStylesheetV2OtherArity(out, stage) {
+  checkBoundedAttempts(out, stage, "attempts", undefined);
+  checkInternedErrors(out, stage, stage.attempts);
+  expectArray(out, stage.stage, "groups", stage.groups);
+  expectNumber(out, stage.stage, "returnedHandles", stage.returnedHandles);
+  // `handleAvailable` (adopt) and `setAvailable` (replace) say whether the case
+  // that needs a real object could run at all. That distinction is the difference
+  // between "the host rejected this handle" and "this card never had one", so it
+  // has to be a recorded boolean rather than left to be read off the labels.
+  for (const field of ["handleAvailable", "setAvailable"]) {
+    if (stage[field] !== undefined) {
+      expectBoolean(out, stage.stage, field, stage[field]);
+    }
+  }
+  if (stage.handleAvailable === undefined && stage.setAvailable === undefined) {
+    out.add(
+      "missing-field",
+      `\`${stage.stage}\` records neither \`handleAvailable\` nor \`setAvailable\`, so`
+        + " the capture does not say whether the case needing a real object could run.",
+      stage.stage,
+    );
+  }
+}
+
+function checkStylesheetV2StyleObject(out, stage) {
+  if (typeof stage.exposed !== "boolean") {
+    out.add(
+      "missing-field",
+      "`style-object-path` does not record whether __CreateStyleObject is exposed"
+        + " (`exposed` must be a boolean). "
+        + `Got ${describeValue(stage.exposed)}.`,
+      stage.stage,
+    );
+    return;
+  }
+
+  // A host with no style-object constructor is a complete answer, and the card
+  // says so without attempting anything. Nothing further is required of it.
+  if (stage.exposed === false) return;
+
+  checkBoundedAttempts(out, stage, "attempts", undefined);
+  expectText(out, stage.stage, "handleKind", stage.handleKind);
+  expectText(out, stage.stage, "handleTypeof", stage.handleTypeof);
+  const followUps = expectArray(out, stage.stage, "followUps", stage.followUps);
+  if (followUps === undefined) return;
+
+  for (const [index, followUp] of followUps.entries()) {
+    if (!isPlainObject(followUp)) {
+      out.add(
+        "missing-field",
+        `\`style-object-path.followUps[${index}]\` must be an object, got`
+          + ` ${describeValue(followUp)}.`,
+        stage.stage,
+      );
+      continue;
+    }
+    expectText(out, stage.stage, `followUps[${index}].name`, followUp.name);
+    checkBoundedAttempts(out, {
+      stage: `${stage.stage}.${followUp.name}`,
+      attempts: followUp.attempts,
+    }, "attempts", undefined);
+  }
+
+  // The one inference this card must never make: calling a setter with a value the
+  // card did not receive. `followUpsSkipped` is where the card says it declined;
+  // an empty follow-up list without that explanation is a gap, not an answer.
+  if (followUps.length === 0 && !isText(stage.followUpsSkipped)) {
+    out.add(
+      "missing-field",
+      "`style-object-path` called no setter and does not say why. Either record the"
+        + " calls, or record `followUpsSkipped` explaining that no handle this card created"
+        + " was available to pass one.",
+      stage.stage,
+    );
+  }
+}
+
+function checkStylesheetV2Lifecycle(out, stage) {
+  expectNumber(out, stage.stage, "callsThatReturned", stage.callsThatReturned);
+  expectBoolean(out, stage.stage, "anyHandleReturned", stage.anyHandleReturned);
+  const readbacks = expectArray(out, stage.stage, "readbacks", stage.readbacks);
+  if (readbacks !== undefined) {
+    readbacks.forEach((entry, index) => {
+      if (!isPlainObject(entry)) {
+        out.add(
+          "missing-field",
+          `\`lifecycle.readbacks[${index}]\` must be an object, got ${describeValue(entry)}.`,
+          stage.stage,
+        );
+        return;
+      }
+      expectText(out, stage.stage, `readbacks[${index}].name`, entry.name);
+      if (typeof entry.exposed !== "boolean") {
+        out.add(
+          "missing-field",
+          `\`lifecycle.readbacks[${index}].exposed\` must be a boolean, got`
+            + ` ${describeValue(entry.exposed)}.`,
+          stage.stage,
+        );
+      }
+    });
+  }
+
+  // A lifecycle claim would be the one thing this card must not make. The rule is
+  // checked on the capture's own words rather than trusted from the code: if the
+  // stage ever reports an applied rule or an owned sheet, the checker says so.
+  const claim = typeof stage.claim === "string" ? stage.claim : "";
+  if (/applied|lifecycle (?:proven|established)|owns? the/i.test(claim)) {
+    out.add(
+      "lifecycle-claim",
+      `\`lifecycle.claim\` reads ${describeValue(stage.claim)}, which claims a stylesheet`
+        + " lifecycle. The card measures calls; it has no binding that reports an applied"
+        + " rule, so a claim like this is not supported by any field in the capture.",
+      stage.stage,
+    );
+  }
+}
+
+function checkStylesheetV2Summary(out, stage) {
+  expectArray(out, stage.stage, "stagesLogged", stage.stagesLogged);
+  expectNumber(out, stage.stage, "attemptsRecorded", stage.attemptsRecorded);
+  expectNumber(out, stage.stage, "callsThatThrew", stage.callsThatThrew);
+  expectNumber(out, stage.stage, "callsThatReturned", stage.callsThatReturned);
+  expectNumber(out, stage.stage, "handlesReturned", stage.handlesReturned);
+  expectNumber(out, stage.stage, "distinctLoadAnswers", stage.distinctLoadAnswers);
+  expectArray(out, stage.stage, "loadAnswers", stage.loadAnswers);
+  checkUnmeasured(out, stage);
+
+  // The summary's own counters have to add up to the attempts it summarises, or
+  // the two halves of the capture disagree about how many experiments were run.
+  if (typeof stage.callsThatThrew === "number"
+    && typeof stage.callsThatReturned === "number"
+    && typeof stage.attemptsRecorded === "number") {
+    const total = stage.callsThatThrew + stage.callsThatReturned;
+    if (total !== stage.attemptsRecorded) {
+      out.add(
+        "summary-does-not-add-up",
+        `\`summary\` records ${stage.attemptsRecorded} attempt(s) but ${total}`
+          + ` (${stage.callsThatThrew} threw + ${stage.callsThatReturned} returned). The`
+          + " summary is derived from the stages above, so the two cannot disagree.",
+        stage.stage,
+      );
+    }
+  }
+
+  if (typeof stage.distinctLoadAnswers === "number"
+    && Array.isArray(stage.loadAnswers)
+    && stage.distinctLoadAnswers !== stage.loadAnswers.length) {
+    out.add(
+      "summary-does-not-add-up",
+      `\`summary.distinctLoadAnswers\` is ${stage.distinctLoadAnswers} but`
+        + ` \`loadAnswers\` lists ${stage.loadAnswers.length}.`,
+      stage.stage,
+    );
+  }
+}
+
 function checkListInventory(out, stage, card) {
   const operations = expectArray(out, stage.stage, "operations", stage.operations);
   // `namedPresent` is the measurement, not a promise: a host that lacks a
@@ -1004,6 +1422,38 @@ function describeStage(stage) {
       if (Array.isArray(stage.namedPresent)) parts.push(`${stage.namedPresent.length} present`);
       break;
     }
+    case "inventory-v2": {
+      if (Array.isArray(stage.globals)) parts.push(`${stage.globals.length} global(s)`);
+      if (isPlainObject(stage.sources)) {
+        parts.push(`${Object.keys(stage.sources).length} source(s)`);
+      }
+      break;
+    }
+    case "loadstyle-arity":
+    case "adopt-arity":
+    case "replace-arity": {
+      if (Array.isArray(stage.attempts)) parts.push(`${stage.attempts.length} attempt(s)`);
+      if (Array.isArray(stage.groups)) parts.push(`${stage.groups.length} distinct answer(s)`);
+      counter("handles", stage.returnedHandles);
+      if (typeof stage.handleAvailable === "boolean") {
+        parts.push(`handle available ${describeValue(stage.handleAvailable)}`);
+      }
+      if (typeof stage.setAvailable === "boolean") {
+        parts.push(`set available ${describeValue(stage.setAvailable)}`);
+      }
+      break;
+    }
+    case "style-object-path": {
+      parts.push(`exposed ${describeValue(stage.exposed)}`);
+      if (Array.isArray(stage.followUps)) parts.push(`${stage.followUps.length} setter(s)`);
+      if (isText(stage.handleKind)) parts.push(`handle ${stage.handleKind}`);
+      break;
+    }
+    case "lifecycle": {
+      counter("calls returned", stage.callsThatReturned);
+      if (Array.isArray(stage.readbacks)) parts.push(`${stage.readbacks.length} readback(s)`);
+      break;
+    }
     case "no-arguments": {
       const calls = Array.isArray(stage.operations)
         ? stage.operations.reduce((total, entry) =>
@@ -1052,6 +1502,8 @@ function describeStage(stage) {
       if (counters !== undefined) {
         counter("enqueueComponent", counters.enqueueComponent);
       }
+      counter("attempts", stage.attemptsRecorded);
+      counter("distinct answers", stage.distinctLoadAnswers);
       break;
     }
     case "done": {
@@ -1114,9 +1566,9 @@ async function main(argv) {
   const captures = extractCaptures(text);
   if (captures.length === 0) {
     throw new CannotEvaluate(
-      `${capturePath} contains no ${CARDS.stylesheet.marker} or ${CARDS.list.marker}`
+      `${capturePath} contains no ${CARD_ORDER.map(key => CARDS[key].marker).join(", ")}`
         + " line, so there is nothing to verify. Point this at a capture from the"
-        + " stylesheet or list card, or at"
+        + " stylesheet, stylesheet-v2 or list card, or at"
         + ` ${PARITY_NODE_LABEL} for a smoke capture. This is not a pass.`,
     );
   }

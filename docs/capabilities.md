@@ -412,6 +412,80 @@ has no contract for, so any call would either prove nothing or would strip the
 card's own styles. They are recorded as unmeasured with that reason rather than
 guessed at.
 
+### The second native stylesheet probe (v2)
+
+The v1 run left one question open — the mandatory second parameter of
+`__LoadStyleSheet` — and its inventory listed eight style-related globals it never
+examined (`__CreateStyleObject`, `__SetStyleObject`, `__UpdateStyleObject`,
+`__SetParsedStyles`, `__GetComputedStyles`, `__GetInlineStyle`,
+`__GetComputedStyleByKey`, `__AddInlineStyle`). A stylesheet lifecycle, if one
+exists on this engine, probably runs through a style object rather than only
+through a load.
+
+`examples/lynx-for-native/src/stylesheet-probe-v2.ts` is a **separate card** that
+asks those two questions, in one run, under its own `[solid-lynx ss2]` prefix and
+its own `probe` name (`native-stylesheet-papi-v2`). v1 is untouched: its capture
+is the ground truth v2 reasons from, and a card whose stage set grew would make
+the two captures incomparable. Both are built by `pnpm native:build`.
+
+| Stage | What it does | Why that is allowed |
+| --- | --- | --- |
+| `inventory-v2` | `typeof`, `fn.length`, `fn.name`, `String(fn)` and own property names for **every** style-named global, discovered from the host and unioned with the fourteen v1 recorded | Reading a binding cannot mutate the card. Identical `String(fn)` text is recorded once in `sources` and the name/prototype/own-property set once in `shapes`, then referenced — see the size note below. |
+| `loadstyle-arity` | The core experiment: `__LoadStyleSheet` with exactly `[url]`, `[url, null]`, `[url, 0]`, `[url, {}]`, `[url, "utf-8"]`, `[url, function(){}]`, `[url, []]`, `[url, url2]`, each recorded verbatim | A bounded list on a disposable card. `url` and `url2` are two different stylesheets really served beside the bundle, so the last case is not the first case twice. A failure is a result: if all eight produce the same error, the finding is that the binding needs a parameter this probe cannot fabricate. |
+| `adopt-arity` | `__AdoptStyleSheet` with no arguments, `null`, `{}`, and the handle from any successful load | The handle case only exists if the load stage produced one. `handleAvailable` records whether it did, which is the difference between "the host rejected this handle" and "this card never had one". |
+| `replace-arity` | `__ReplaceStyleSheets` with no arguments, `[null]`, `[[]]`, and an array from a successful call if one exists | v1 measured "no arguments" returning `null`, so a call that accepts nothing and one that accepts an empty set are separate cases rather than one assumed answer. |
+| `style-object-path` | `__CreateStyleObject()` and `__CreateStyleObject({})`; if either returns an opaque handle, `__SetParsedStyles`, `__SetStyleObject` and `__UpdateStyleObject` are called with it | Only a handle this card created is ever passed back. A primitive, `null`, or `undefined` return is not a handle, and no fabricated one is substituted. |
+| `lifecycle` | Reads the card's own styles back through `__GetInlineStyles`, `__GetInlineStyle`, `__GetComputedStyles` and `__GetComputedStyleByKey` after every write | Read-only bindings only, run last, and the staged stylesheets match nothing the card renders, so the stage can show that a call did not break the card and cannot claim a rule was applied. |
+| `summary` | What was measured, with counters derived from the stages above, and what was not, with the reason | Includes the number of *distinct answers* the eight load cases produced, so an all-threw run reads as the single finding it is rather than as eight unexplained errors. |
+| `done` | `status: "all stages logged"` | A capture that stops earlier is visibly short. |
+
+#### The delivered-line budget
+
+Every stage line is measured against **2,040 bytes**, the largest complete,
+parseable line in v1's capture and therefore the largest line the native console
+bridge is known to deliver intact. A stage that arrives truncated is worse than a
+missing one: it is the stage that would have answered the question.
+
+Two measurements drove the design. With the fourteen globals v1 reported, writing
+each one's `String(fn)`, `name`, prototype flag and own property names out in full
+produced a 2,957-byte `inventory-v2` line; interning the source text and the shape
+brought it to 1,781 bytes. An all-threw `loadstyle-arity`, where every one of the
+eight attempts repeats the same 70-character engine error, produced 2,666 bytes
+until the error text was interned into an `errors` table, after which it is 1,889.
+
+Interning creates its own failure mode — a key that does not resolve loses the
+engine's words while the line still looks complete — so the verifier checks every
+`source`, `shape` and error key against the table it names, and the card carries a
+richest-first fallback: the full payload, then the same attempts without the
+redundant argument descriptions, then that without the grouping echo. Whichever
+form is used is recorded in `fitForm`, and if none fits the payload says
+`overBudget` rather than emitting a line that may be truncated.
+
+Two rules the card keeps from v1: nothing is inferred from a name, and an arity is
+never turned into an expected parameter list. One rule it adds: **it never claims
+a stylesheet lifecycle.** Every stage records calls and their results. If
+`__LoadStyleSheet` turns out to need a second parameter that only the engine can
+supply — an instance or context handle — that is recorded as the finding, because
+a value invented to satisfy the arity would measure the probe instead of the host.
+
+`scripts/verify-native-probe.mjs` reads a `[solid-lynx ss2]` capture as a fourth
+card. It checks that every required stage is present once, in order; that
+`loadstyle-arity` records eight distinct labelled attempts; that the handle-bearing
+cases state whether a handle was available; that `style-object-path` either calls a
+setter or says why it could not; and that `summary`'s counters add up to the
+attempts it summarises. It deliberately does **not** require any case to succeed:
+an all-threw capture is a complete answer to the question the card asks, so a
+checker that treated it as a finding would invert the card's purpose. A
+`lifecycle` payload whose `claim` reads as an applied rule or an owned sheet is a
+finding (`lifecycle-claim`).
+
+**v2's device run is pending.** The card, its recorder and its verifier are built
+and covered by host-free tests (`test/stylesheet-probe-v2-report.test.ts`, and the
+v2 cases in `test/native-probe-verify.test.ts`), but no `[solid-lynx ss2]` line
+has been captured from any engine. Nothing in this document about the second
+parameter, the style-object path, or a lifecycle is a measurement: those questions
+are exactly what the pending run is for.
+
 #### What can be verified by process
 
 `scripts/verify-native-probe.mjs` reads a capture and exits with the same three
@@ -439,20 +513,32 @@ node scripts/verify-native-probe.mjs \
   /tmp/solid-lynx-logs/lynx_console-stylesheet-<stamp>.log
 ```
 
-**This has not been run yet.** The probe is built, its recorder is covered by
-host-free tests, and its capture format is now verifiable by process, but the A03
-run has not happened: during this attempt the device was not attached over adb
-(`adb -s R9WT911JVVH get-state` reported `device 'R9WT911JVVH' not found` while
-a Samsung device was present on the USB bus). So this section records what the
-probe *will* measure and how its capture *will* be verified, not a measurement.
-The paragraph above is unchanged: the three names are known to exist on the A03,
-and their signatures and lifecycle remain unmeasured. A verifier that accepts a
-synthetic fixture is not a device run, which is why
+**The card has since been run once, on an Android emulator, and the run did not
+answer what it was built to answer.** The capture
+(`v1-stylesheet-capture.log`, taken on Lynx Explorer 4.1.0 on an API 33
+`x86_64` emulator rather than on the A03) recorded three facts that change how
+this section has to be read:
+
+1. `fn.length` is `0` for all three operations. The arity the table above records
+   as evidence is therefore not the signature, and cannot be used as one.
+2. `__LoadStyleSheet` threw `error code: 111101 / error message: LoadStyleSheet
+   param size should >= 2` when called with **no** arguments and again when
+   called with a **single string URL**. The second parameter is mandatory and v1
+   never identified it, so the `load-real-url` stage measured a rejected call,
+   not a load.
+3. `__AdoptStyleSheet` reported `AdoptStyleSheet param size should >= 1`, and
+   `__ReplaceStyleSheets` returned `null` with no arguments instead of throwing.
+
+The stages, the field names, and the verifier above are unchanged and are still
+what a v1 capture is checked against. What the run changed is the claim this
+document may make from it: the three names are confirmed to exist, and nothing
+about their signatures, their ownership, or a lifecycle is measured. A verifier
+that accepts a synthetic fixture is not a device run, which is why
 `test/fixtures/native-probe/README.md` labels every fixture as not evidence.
 
 #### Running it
 
-One runner drives all three native cards,
+One runner drives all four native cards,
 `examples/lynx-for-native/scripts/run-native-probe.sh` in the repository, and
 the card is its argument:
 
@@ -464,6 +550,7 @@ examples/lynx-for-native/scripts/run-native-probe.sh stylesheet --dry-run
 | --- | --- | --- | --- |
 | parity smoke | `smoke` (`main`) | `main.lynx.bundle` | `[solid-lynx parity]` |
 | this probe | `stylesheet` (`stylesheet-probe`) | `stylesheet-probe.lynx.bundle` | `[solid-lynx ss]` |
+| the v2 probe | `stylesheet2` (`stylesheet-v2`, `stylesheet-probe-v2`) | `stylesheet-probe-v2.lynx.bundle` | `[solid-lynx ss2]` |
 | list probe | `list` (`list-probe`) | `list-probe.lynx.bundle` | `[solid-lynx lp]` |
 
 The former entry point,
@@ -498,10 +585,16 @@ Each turns a capture into exit 0/1/2, and `scripts/require-native-evidence.mjs`
 runs the right one for a stored manifest's `card`.
 
 **No card has been run on a device through this script.** Only `--dry-run` has
-been executed, for all three cards and for the wrapper (exit 0 each). A reviewed
+been executed, for all four cards and for the wrapper (exit 0 each). A reviewed
 command sequence is not a measurement, so everything above about the three
-stylesheet operations — and everything about native list behaviour — remains
-unmeasured.
+stylesheet operations, the second parameter, the style-object path — and
+everything about native list behaviour — remains unmeasured.
+
+The one stylesheet capture that does exist (`v1-stylesheet-capture.log`) was
+taken outside this runner, by opening the bundle in Lynx Explorer on an Android
+emulator rather than on the pinned A03. It is treated as a measurement of the
+engine's behaviour — it is what the v2 card's questions come from — but it did
+not go through this script, so it does not make any line above a runner result.
 
 ## Remaining blockers
 

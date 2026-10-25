@@ -665,7 +665,7 @@ describe("verify-native-probe: what it refuses to guess", () => {
     ));
 
     expect(run.status).toBe(2);
-    expect(run.stderr).toContain("contains no [solid-lynx ss] or [solid-lynx lp] line");
+    expect(run.stderr).toContain("contains no [solid-lynx ss2], [solid-lynx ss], [solid-lynx lp] line");
     expect(run.stdout).toContain("could not evaluate");
   });
 
@@ -673,7 +673,7 @@ describe("verify-native-probe: what it refuses to guess", () => {
     const run = runVerifier(writeCapture(""));
 
     expect(run.status).toBe(2);
-    expect(run.stderr).toContain("contains no [solid-lynx ss]");
+    expect(run.stderr).toContain("contains no [solid-lynx ss2], [solid-lynx ss], [solid-lynx lp]");
   });
 
   it("cannot evaluate a marker with no JSON after it", () => {
@@ -844,5 +844,167 @@ describe("verify-native-parity: unchanged by the probe checker", () => {
 
     expect(run.status).toBe(2);
     expect(run.stderr).toContain("expected exactly one capture file");
+  });
+});
+
+/* -------------------------------------------------------- the second card
+ *
+ * The v2 card answers a different question from the v1 one: it attempts a bounded
+ * list of argument shapes and records each outcome. Its capture is therefore
+ * judged on whether the list was really attempted and really recorded, never on
+ * whether any case succeeded — an all-threw capture is the finding the card
+ * exists to be able to report.
+ */
+
+describe("verify-native-probe: the stylesheet v2 card", () => {
+  it("verifies a capture where all eight load cases failed, because that is an answer", () => {
+    const run = runVerifier(fixture("stylesheet-v2-all-threw.log"));
+
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: verified");
+    expect(run.stdout).toContain("8 required stage(s) present");
+    expect(run.stdout).toContain("stylesheet-v2");
+    expect(run.stdout).toContain("8 attempt(s), 1 distinct answer(s)");
+  });
+
+  it("reports a v2 capture that stops before its bounded list", () => {
+    const text = readFileSync(fixture("stylesheet-v2-all-threw.log"), "utf8");
+    const truncated = text
+      .split("\n")
+      .filter(line => !line.includes('"stage":"loadstyle-arity"'))
+      .join("\n");
+    const run = runVerifier(writeCapture(truncated));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[missing-stage]");
+    expect(run.stdout).toContain("`loadstyle-arity`");
+  });
+
+  it("flags a bounded list that dropped cases, because it answers a narrower question", () => {
+    const text = readFileSync(fixture("stylesheet-v2-all-threw.log"), "utf8");
+    const rewritten = text.split("\n").map(line => {
+      if (!line.includes('"stage":"loadstyle-arity"')) return line;
+      const at = line.indexOf("[solid-lynx ss2] ");
+      const payload = JSON.parse(line.slice(at + "[solid-lynx ss2] ".length));
+      payload.attempts = payload.attempts.slice(0, 3);
+      return line.slice(0, at) + "[solid-lynx ss2] " + JSON.stringify(payload);
+    }).join("\n");
+
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[wrong-attempt-count]");
+    expect(run.stdout).toContain("8");
+  });
+
+  it("flags a style-object path that called no setter and does not say why", () => {
+    const text = readFileSync(fixture("stylesheet-v2-all-threw.log"), "utf8");
+    const rewritten = text.split("\n").map(line => {
+      if (!line.includes('"stage":"style-object-path"')) return line;
+      const at = line.indexOf("[solid-lynx ss2] ");
+      const payload = JSON.parse(line.slice(at + "[solid-lynx ss2] ".length));
+      delete payload.followUpsSkipped;
+      return line.slice(0, at) + "[solid-lynx ss2] " + JSON.stringify(payload);
+    }).join("\n");
+
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("called no setter and does not say why");
+  });
+
+  it("flags a capture that claims a stylesheet lifecycle it did not observe", () => {
+    const text = readFileSync(fixture("stylesheet-v2-all-threw.log"), "utf8");
+    const rewritten = text.split("\n").map(line => {
+      if (!line.includes('"stage":"lifecycle"')) return line;
+      const at = line.indexOf("[solid-lynx ss2] ");
+      const payload = JSON.parse(line.slice(at + "[solid-lynx ss2] ".length));
+      payload.claim = "the loaded stylesheet was applied to the card";
+      return line.slice(0, at) + "[solid-lynx ss2] " + JSON.stringify(payload);
+    }).join("\n");
+
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[lifecycle-claim]");
+  });
+
+  it("flags an interned error key the capture does not define", () => {
+    // Interning keeps the stage line inside the size the console bridge delivers.
+    // The cost is that the engine's words become a reference, so a reference that
+    // does not resolve loses the message while the line still looks complete.
+    const text = readFileSync(fixture("stylesheet-v2-all-threw.log"), "utf8");
+    const rewritten = text.split("\n").map(line => {
+      if (!line.includes('"stage":"loadstyle-arity"')) return line;
+      const at = line.indexOf("[solid-lynx ss2] ");
+      const payload = JSON.parse(line.slice(at + "[solid-lynx ss2] ".length));
+      payload.attempts[0].threw.message = "e9";
+      return line.slice(0, at) + "[solid-lynx ss2] " + JSON.stringify(payload);
+    }).join("\n");
+
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[unresolved-error]");
+  });
+
+  it("flags a summary whose counters do not add up to the stages it summarises", () => {
+    const text = readFileSync(fixture("stylesheet-v2-all-threw.log"), "utf8");
+    const rewritten = text.split("\n").map(line => {
+      if (!line.includes('"stage":"summary"')) return line;
+      const at = line.indexOf("[solid-lynx ss2] ");
+      const payload = JSON.parse(line.slice(at + "[solid-lynx ss2] ".length));
+      payload.attemptsRecorded = payload.attemptsRecorded + 1;
+      return line.slice(0, at) + "[solid-lynx ss2] " + JSON.stringify(payload);
+    }).join("\n");
+
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[summary-does-not-add-up]");
+  });
+
+  it("keeps the two stylesheet cards from being read as each other", () => {
+    // v1 and v2 markers are not prefixes of each other, so a v2 capture carries
+    // no v1 stage and a v1 capture carries no v2 stage.
+    const v2 = runVerifier(fixture("stylesheet-v2-all-threw.log"));
+    expect(v2.stdout).not.toContain("card 1 of 1 — stylesheet —");
+
+    const v1 = runVerifier(fixture("stylesheet-good.log"));
+    expect(v1.stdout).toContain("card 1 of 1 — stylesheet —");
+    expect(v1.stdout).not.toContain("stylesheet-v2");
+  });
+
+  it("requires the v2 stage set the v2 card actually emits", () => {
+    const sourcePath = path.join(REPO_ROOT, "examples", "lynx-for-native", "src",
+      "stylesheet-probe-v2.ts");
+    // Two builders: the guarded `stage(name, …)` wrapper every measured stage goes
+    // through, and the bare `v2ReportLine` call the card closes with.
+    const wrapped = emittedStages(sourcePath, "stage");
+    const direct = emittedStages(sourcePath, "v2ReportLine");
+
+    expect([...wrapped, ...direct]).toEqual([
+      "inventory-v2",
+      "loadstyle-arity",
+      "adopt-arity",
+      "replace-arity",
+      "style-object-path",
+      "lifecycle",
+      "summary",
+      "done",
+    ]);
+  });
+
+  it("holds the v2 attempt count to the card's own argument table", async () => {
+    const { loadStyleSheetCases } = await import(
+      "../examples/lynx-for-native/src/stylesheet-probe-v2-report.js"
+    );
+    const cases = loadStyleSheetCases("a.css", "b.css");
+
+    const source = readFileSync(SCRIPT, "utf8");
+    // The checker cannot import the card, so the literal it carries is held to
+    // the card's own table here.
+    expect(source).toContain(`const STYLESHEET_V2_LOAD_CASE_COUNT = ${cases.length};`);
   });
 });

@@ -740,7 +740,7 @@ describe("require-native-evidence: probe captures, verified by their own card", 
     expect(run.status).toBe(2);
     expect(run.stdout).toContain("could not evaluate");
     expect(run.stdout).toContain(PROBE_VERIFIER);
-    expect(run.stdout).toContain("contains no [solid-lynx ss] or [solid-lynx lp] line");
+    expect(run.stdout).toContain("contains no [solid-lynx ss2], [solid-lynx ss], [solid-lynx lp] line");
   });
 
   it("still refuses a probe capture whose card is not a card", () => {
@@ -757,7 +757,7 @@ describe("require-native-evidence: probe captures, verified by their own card", 
     const run = runScript("--repo", dir, "--range", range(base, final));
 
     expect(run.status).toBe(1);
-    expect(run.stdout).toContain('"card" must be one of smoke, stylesheet, list');
+    expect(run.stdout).toContain('"card" must be one of smoke, stylesheet, stylesheet2, list');
   });
 });
 
@@ -1180,7 +1180,7 @@ describe("require-native-evidence: a pending record is not a pass", () => {
     // wrong instead of "the record is bad". A `blocked_by` of "n/a" is the
     // specific shape this refuses: it looks like an answer and names nothing.
     const cases: { field: string; overrides: Record<string, unknown>; expect: string }[] = [
-      { field: "card", overrides: { card: "probe" }, expect: '"card" must be one of smoke, stylesheet, list' },
+      { field: "card", overrides: { card: "probe" }, expect: '"card" must be one of smoke, stylesheet, stylesheet2, list' },
       { field: "reason", overrides: { reason: "no device" }, expect: "at least 40 characters" },
       { field: "blocked_by", overrides: { blocked_by: "n/a" }, expect: "must name what is actually missing" },
       { field: "blocked_by", overrides: { blocked_by: "tbd" }, expect: "must name what is actually missing" },

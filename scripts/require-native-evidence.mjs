@@ -134,7 +134,7 @@ export const PENDING_RECORD = "pending.json";
 export const RECORD_FILES = Object.freeze([CAPTURE_MANIFEST, DECISION_RECORD, PENDING_RECORD]);
 
 /** Cards `examples/lynx-for-native/scripts/run-native-probe.sh` accepts. */
-export const NATIVE_CARDS = Object.freeze(["smoke", "stylesheet", "list"]);
+export const NATIVE_CARDS = Object.freeze(["smoke", "stylesheet", "stylesheet2", "list"]);
 
 /**
  * Which verifier reads which card's capture.
@@ -150,6 +150,7 @@ export const NATIVE_CARDS = Object.freeze(["smoke", "stylesheet", "list"]);
 export const CARD_VERIFIERS = Object.freeze({
   smoke: Object.freeze({ label: PARITY_VERIFIER_LABEL, path: PARITY_VERIFIER_PATH }),
   stylesheet: Object.freeze({ label: PROBE_VERIFIER_LABEL, path: PROBE_VERIFIER_PATH }),
+  stylesheet2: Object.freeze({ label: PROBE_VERIFIER_LABEL, path: PROBE_VERIFIER_PATH }),
   list: Object.freeze({ label: PROBE_VERIFIER_LABEL, path: PROBE_VERIFIER_PATH }),
 });
 
@@ -159,7 +160,8 @@ export const CARD_VERIFIERS = Object.freeze({
  * Every entry below was established by reading the code, not assumed:
  *
  *   - The native bundle's own entries are `examples/lynx-for-native/lynx.config.ts`
- *     → `src/main-thread.tsx`, `src/stylesheet-probe.ts`, `src/list-probe.ts`.
+ *     → `src/main-thread.tsx`, `src/stylesheet-probe.ts`,
+ *     `src/stylesheet-probe-v2.ts`, `src/list-probe.ts`.
  *     Each imports `@apothic-ai/solid-lynx` (→ `src/index.ts`) and the smoke card
  *     also imports `@apothic-ai/solid-lynx/parity` (→ `src/parity.ts`).
  *   - `pluginSolidLynx` sets `moduleName: "@apothic-ai/solid-lynx"` with
