@@ -46,7 +46,7 @@ It is wired in as the `native-evidence` CI job over
 there is no PR base and passes rather than evaluating a range that would mean
 nothing. `docs/evidence/native/README.md` documents the record contract and
 `docs/evidence/native/TEMPLATE/manifest.json` is a capture-less template the
-script rejects as evidence by name. 29 host-free tests build their own git
+script rejects as evidence by name. 30 host-free tests build their own git
 repositories in `mkdtemp`, so the suite needs no device, no network, and not this
 repository's git state.
 
@@ -196,8 +196,8 @@ Observed in this repository on Node 22.23.3 with pnpm 12.9.1:
 
 - `pnpm typecheck`, `pnpm typecheck:consumer`, `pnpm test`, `pnpm build`, and
   `pnpm pack --dry-run` all exit 0.
-- `pnpm test` reports **150 unit tests in 8 files** (`test/renderer.test.ts` 62,
-  `test/require-native-evidence.test.ts` 29,
+- `pnpm test` reports **151 unit tests in 8 files** (`test/renderer.test.ts` 62,
+  `test/require-native-evidence.test.ts` 30,
   `test/native-parity-verify.test.ts` 19, `test/list-probe-report.test.ts` 14,
   `test/parity.test.ts` 9, `test/stylesheet-probe-report.test.ts` 7,
   `test/rspeedy.test.ts` 6, `test/packaging.test.ts` 4), after

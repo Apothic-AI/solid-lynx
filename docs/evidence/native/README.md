@@ -74,7 +74,7 @@ deliberate, named act, not a default.
 | `reason` | string | Why no device run is needed, at least 40 characters. "trivial" is rejected; the point is a reason a reviewer can weigh. |
 | `author` | string | Who decided. |
 | `timestamp` | ISO 8601 | When. |
-| `paths` | array | The native-facing paths this decision covers. At least one must be among the changed native-facing paths, and the checker prints which changed paths were not covered. |
+| `paths` | array | The native-facing paths this decision covers. It has to name **every** native-facing path the change touches: a record naming one file out of three is rejected, naming which ones it left out. |
 
 ## Recording a run
 

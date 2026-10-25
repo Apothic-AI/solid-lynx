@@ -570,6 +570,31 @@ describe("require-native-evidence: a recorded decision instead of a run", () => 
     expect(run.stdout).toContain("at least 40 characters");
   });
 
+  it("fails a decision record that names only some of the changed native paths", () => {
+    // A decision has to account for the change, not one file in it. Otherwise a
+    // record naming a single path rubber-stamps everything that rode along.
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    write(dir, "src/root.ts", "export const alsoNativeFacing = true;\n");
+    write(dir, "docs/evidence/native/2026-11-20-comment/decision.json", `${JSON.stringify({
+      kind: "decision",
+      decision: "no device run needed for this change",
+      reason: "The host adapter change only rewrites a doc comment, and this record was"
+        + " written before the second file was added to the branch.",
+      author: "@maintainer",
+      timestamp: "2026-11-20T10:04:00Z",
+      paths: ["src/lynx-host.ts"],
+    }, null, 2)}\n`);
+    const head = commitAll(dir, "native: a decision that names one of two paths");
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("covers 1 of 2 native-facing path(s)");
+    expect(run.stdout).toContain("does not name `src/root.ts`");
+  });
+
   it("fails a decision record that covers none of the changed native paths", () => {
     const dir = newRepo();
     const base = gitOutput(dir, "rev-parse", "HEAD");

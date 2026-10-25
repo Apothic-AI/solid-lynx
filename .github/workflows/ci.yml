@@ -192,8 +192,8 @@ jobs:
   # steps, so the compile is part of this job.
   #
   # Locally, on Node 22.23.3 / pnpm 12.9.1, both legs exited 0 on every step
-  # below: `pnpm typecheck`, `pnpm test` (121 tests, 7 files at that commit; the
-  # suite is 150 now), `pnpm web:build`.
+  # below: `pnpm typecheck`, `pnpm test` (121 tests, 7 files at that commit;
+  # suite is 151 now), `pnpm web:build`.
   # See `docs/compatibility.md` §2 for the recorded runs.
   solid-matrix:
     name: solid-matrix (solid ${{ matrix.solid }}, preset ${{ matrix.preset }})

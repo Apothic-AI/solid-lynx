@@ -281,7 +281,7 @@ Set a stable public contract after web validation, native validation, and toolin
     - The requirement's own logic is tested host-free:
       `test/require-native-evidence.test.ts` drives the script through
       `child_process` against git repositories built in `mkdtemp`, so it needs
-      no device, no network, and not this repository's git state (29 tests).
+      no device, no network, and not this repository's git state (30 tests).
   - **What is still manual, and is not claimed as automated.** No device runs in
     CI, and this change does not make one run. `native-build` still only
     compiles the bundles. `device.getState` in a manifest is a string a human

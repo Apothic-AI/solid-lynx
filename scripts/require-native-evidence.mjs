@@ -682,9 +682,12 @@ function judgeEvidenceDir(repoRoot, from, to, nativeChanges, dirName) {
       return { satisfied: false, exit: EXIT_MISSING, note: `${label}/${DECISION_RECORD}`, problems };
     }
 
+    // A decision has to account for the change, not a file in it: naming one
+    // path out of several is how a decision record becomes a rubber stamp on
+    // everything else that rode along with it.
     const nativePaths = new Set(nativeChanges.map(change => change.path));
     const covered = value.paths.filter(entry => nativePaths.has(entry));
-    const uncovered = value.paths.filter(entry => !nativePaths.has(entry));
+    const unaccounted = [...nativePaths].filter(entry => !value.paths.includes(entry));
     if (covered.length === 0) {
       return {
         satisfied: false,
@@ -694,13 +697,25 @@ function judgeEvidenceDir(repoRoot, from, to, nativeChanges, dirName) {
         problems: [],
       };
     }
+    if (unaccounted.length > 0) {
+      return {
+        satisfied: false,
+        exit: EXIT_MISSING,
+        note: `${label}/${DECISION_RECORD} covers ${covered.length} of`
+          + ` ${nativePaths.size} native-facing path(s) in this change`,
+        problems: [
+          `the decision does not name ${unaccounted.map(entry => `\`${entry}\``).join(", ")}`,
+        ],
+      };
+    }
+    const ignored = value.paths.filter(entry => !nativePaths.has(entry));
     return {
       satisfied: true,
       exit: EXIT_SATISFIED,
       note: `${label}/${DECISION_RECORD}: decision recorded by ${value.author} —`
         + ` "${value.decision}" (covers ${covered.map(entry => `\`${entry}\``).join(", ")})`
-        + (uncovered.length > 0
-          ? `; ignores non-native ${uncovered.map(entry => `\`${entry}\``).join(", ")}`
+        + (ignored.length > 0
+          ? `; ignores non-native ${ignored.map(entry => `\`${entry}\``).join(", ")}`
           : ""),
       problems: [],
     };
