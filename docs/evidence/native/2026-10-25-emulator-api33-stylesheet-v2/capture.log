@@ -1,0 +1,326 @@
+--------- beginning of system
+10-25 09:22:20.666   535  2703 I ActivityTaskManager: START u0 {act=android.intent.action.VIEW dat=lynx://open/... flg=0x10000000 pkg=com.lynx.explorer cmp=com.lynx.explorer/.DebugBridgeActivity} from uid 2000
+10-25 09:22:20.677   535  2703 W ActivityTaskManager: Tried to set launchTime (0) < mLastActivityLaunchTime (182714)
+--------- beginning of main
+10-25 09:22:20.691  5650  5650 D DebugBridgeActivity: Opening URL via lynx://open: http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.692   535   906 I ActivityTaskManager: START u0 {flg=0x14000000 cmp=com.lynx.explorer/.LynxViewShellActivity (has extras)} from uid 10174
+10-25 09:22:20.725   535   906 V SplashScreenExceptionList: SplashScreen checking exception for package com.lynx.explorer (target sdk:32) -> false
+--------- beginning of kernel
+10-25 09:22:20.836     0     0 I logd    : logdr: UID=2000 GID=2000 PID=7799 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-25 09:22:20.731   535  2703 W ActivityTaskManager: Duplicate finish request for r=ActivityRecord{c8b2d82 u0 com.lynx.explorer/.DebugBridgeActivity} t9 f}}
+10-25 09:22:20.733  5650  5650 E ThemeUtils: View class androidx.appcompat.widget.z is an AppCompat widget that can only be used with a Theme.AppCompat theme (or descendant).
+10-25 09:22:20.735   535  2703 W ActivityTaskManager: Tried to set launchTime (0) < mLastActivityLaunchTime (2619468)
+10-25 09:22:20.745   830   883 D SplashScreenView: Build android.window.SplashScreenView{3777e4b V.E...... ......ID 0,0-0,0}
+10-25 09:22:20.745   830   883 D SplashScreenView: Icon: view: null drawable: null size: 0
+10-25 09:22:20.745   830   883 D SplashScreenView: Branding: view: android.view.View{b5dd028 G.ED..... ......I. 0,0-0,0 #10204dc android:id/splashscreen_branding_view} drawable: null size w: 0 h: 0
+10-25 09:22:20.752   830   893 W Parcel  : Expecting binder but got null!
+10-25 09:22:20.753  5650  5650 D LynxViewShellActivity: Opening initial URL: http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.755   535   906 D CoreBackPreview: Window{f106c85 u0 Splash Screen com.lynx.explorer}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@90a9b0b, mPriority=0}
+10-25 09:22:20.759  5650  5650 D LynxError: Duplicated Behavior For Name: image, [ - image] will be override
+10-25 09:22:20.760  5650  5650 D LynxError: Duplicated Behavior For Name: inline-image, [ - inline-image] will be override
+10-25 09:22:20.760  5650  5650 D LynxError: Duplicated Behavior For Name: svg, [ - svg] will be override
+10-25 09:22:20.760  5650  5650 I LynxView: new lynxview detail com.lynx.tasm.LynxView{7173d38 V.E...... ......I. 0,0-0,0}
+10-25 09:22:20.760  5650  5650 I LynxUIRenderer: lynxContext setUIBodyViewcom.lynx.tasm.LynxView{7173d38 VFE...... ......I. 0,0-0,0}com.lynx.tasm.LynxTemplateRender$l@adc5111
+10-25 09:22:20.760  5650  5650 I LynxUIRenderer: lynxContext setUIBodyViewcom.lynx.tasm.LynxView{7173d38 VFE...... ......I. 0,0-0,0}com.lynx.tasm.LynxTemplateRender$l@adc5111
+10-25 09:22:20.760  5650  5650 I LynxDevtool: Initialize LynxDevtool, lynxDebugEnabled:true
+10-25 09:22:20.760  5650  5650 I LynxDevtool: devtoolEnabled:false, logBoxEnabled:true, debuggable:false
+10-25 09:22:20.761  5650  5650 I LynxDevtool: LogBox init
+10-25 09:22:20.761  5650  5650 I LynxTemplateRender: mEnableGenericResourceFetcher: true render: com.lynx.tasm.LynxTemplateRender@59ef4e4
+10-25 09:22:20.761  5650  5650 I lynx    : [716051DC24F8:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
+10-25 09:22:20.761  5650  5650 I lynx    : [716051DC24F8:INFO:task_runner_manufactor.cc(296)] TaskRunnerManufactor setThreadStrategy:0, multi_tasm:true, async_thread_cache:true
+10-25 09:22:20.761  5650  5650 I lynx    : [716051DC24F8:INFO:lynx_shell.cc(148)] LynxShell create, this:0x0000715E7DD32810
+10-25 09:22:20.761  5650  5650 I lynx    : [716051DC24F8:INFO:memory_monitor.h(83)] [memory_monitor.h] new MemoryMonitor, this:0x0000715EADCFF6D8, Enable:false, MemoryChangeThresholdMb:0
+10-25 09:22:20.761  5650  5650 I lynx    : [716051DC24F8:INFO:timing_handler.cc(26)] [TimingHandler.cc] new TimingHandler, this:0x0000715EADCFF718
+10-25 09:22:20.761  5650  5650 I lynx    : [716051DC24F8:INFO:template_assembler.h(524)] Lynx Set Enable Layout Only: true from LynxView,  this:0x0000715E9DD45360
+10-25 09:22:20.761  5650  5650 I LynxTemplateRender: force use quick js engine
+10-25 09:22:20.761  5650  5650 I lynx    : [716051DC24F8:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
+10-25 09:22:20.761  5650  5685 I lynx    : [715D09544CF0:INFO:runtime_lifecycle_observer_impl.cc(32)] [Runtime] RuntimeLifecycleObserverImpl::OnRuntimeCreate with observer:0x0000715E2DD2CE48
+10-25 09:22:20.761  5650  5650 I LynxTemplateRender: set JSGroupThreadName to lynx context: 
+10-25 09:22:20.761  5650  5650 I LynxDevtool: register LynxDevToolSetModule!
+10-25 09:22:20.762  5650  5650 I LynxDevtool: register LynxWebSocketModule!
+10-25 09:22:20.762  5650  5650 I LynxDevtool: register LynxTrailModule!
+10-25 09:22:20.762  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(175)] Init LynxRuntime group_id: -1 runtime_id: 6 this:0x0000715E5DD26390
+10-25 09:22:20.762  5650  5650 I lynx    : [716051DC24F8:INFO:layout_context.cc(1104)] [Layout] UpdateViewport :size: 0.0, 0.0; mode: 0, 0
+10-25 09:22:20.762  5650  5685 I lynx    : [715D09544CF0:INFO:runtime_lifecycle_observer_impl.cc(48)] [Runtime] RuntimeLifecycleObserverImpl::OnRuntimeInit with runtime id: 6
+10-25 09:22:20.762  5650  5685 I lynx    : [715D09544CF0:INFO:runtime_manager.cc(501)] make runtime with force_use_lightweight_js_engine = true
+10-25 09:22:20.762  5650  5685 I lynx    : [715D09544CF0:INFO:runtime_manager.cc(508)] make QuickJS runtime
+10-25 09:22:20.763  5650  5685 I lynx    : [715D09544CF0:INFO:runtime_manager.cc(199)] create single_context:0x0000715DEDD42CF8
+10-25 09:22:20.763  5650  5650 I LynxTemplateRender: 1792934540762 create LynxView 
+10-25 09:22:20.763  5650  5685 I lynx    : [715D09544CF0:INFO:quickjs_runtime.cc(866)] using new bytecode
+10-25 09:22:20.763  5650  5685 I lynx    : [715D09544CF0:INFO:js_cache_manager.cc(194)] bytecode enable status: is_bytecode_enabled:true can_create_cache_:true final result:true
+10-25 09:22:20.763  5650  5685 I lynx    : [715D09544CF0:INFO:js_cache_manager.cc(218)] bytecode enabled, url: '/lynx_core.js', template_url: '', file_content size:66373
+10-25 09:22:20.763  5650  5685 I lynx    : [715D09544CF0:INFO:js_cache_manager.cc(234)] cache loaded from memory, size: 149691 bytes
+10-25 09:22:20.763  5650  5685 I lynx    : [715D09544CF0:INFO:quickjs_runtime.cc(220)] QuickjsRuntime::evaluatePreparedJavaScript start: /lynx_core.js
+10-25 09:22:20.763  5650  5685 I lynx    : [715D09544CF0:INFO:quickjs_runtime.cc(170)] QuickjsRuntime::evaluateJavaScriptBytecode: /lynx_core.js
+10-25 09:22:20.763  5650  5650 I lynx    : [716051DC24F8:INFO:template_assembler.cc(267)] UpdateGlobalProps 9 this: 0x0000715E9DD45360
+10-25 09:22:20.763  5650  5650 I LynxView: renderTemplateUrl http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540with Map incom.lynx.tasm.LynxView{7173d38 VFE...... ......I. 0,0-0,0}
+10-25 09:22:20.763  5650  5650 I LynxTemplateRender: LoadMeta with url, pre-painting: false ,pre-painting with draw:false url: http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.764  5650  5650 I PageReloadHelper: loadFromURL:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.765  5650  5650 I LynxTemplateRender: 1792934540765 renderTemplate LynxView http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.765  5650  5650 I LynxTemplateRender: 1792934540765 renderTemplate LynxView http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.765  5650  5650 I LynxTemplateRender: retain TemplateData for lifecycle, url=http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540, data=com.lynx.tasm.TemplateData@6c87b50, listSize=1, bindContextEnabled=false
+10-25 09:22:20.765  5650  5685 I lynx    : [715D09544CF0:INFO:quickjs_runtime.cc(184)] QuickjsRuntime::evaluateJavaScriptBytecode finished successfully.
+10-25 09:22:20.765  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(211)] js_runtime_type :-1914911168 0x0000715E5DD26390
+10-25 09:22:20.765  5650  5685 I lynx    : [715D09544CF0:INFO:napi_runtime_proxy.cc(65)] Creating napi proxy quickjs
+10-25 09:22:20.765  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(380)] napi attaching with proxy: 0x0000715DDDCFC970, id: 6
+10-25 09:22:20.765  5650  5685 I lynx    : [715D09544CF0:INFO:napi_runtime_proxy.cc(124)] NAPI Setup Loader: napiLoaderOnRT6
+10-25 09:22:20.766  5650  5685 I lynx    : [715D09544CF0:INFO:napi_loader_js.cc(132)] napi OnAttach env: 0x0000715E9DD93AB0, ctx: 0x0000715E9DD90DA0, id: 6
+10-25 09:22:20.766  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(422)] napi registering module
+10-25 09:22:20.766  5650  5685 I lynx    : [715D09544CF0:INFO:runtime_lifecycle_observer_impl.cc(86)] [Runtime] RuntimeLifecycleObserverImpl::OnRuntimeAttach:0x0000715E9DD93AB0, runtime_type: quickjs
+10-25 09:22:20.766  5650  5685 I lynx    : [715D09544CF0:INFO:napi_runtime_proxy.cc(65)] Creating napi proxy quickjs
+10-25 09:22:20.766  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(414)] napi attaching with restricted proxy: 0x0000715DBDDA8810, id: 6
+10-25 09:22:20.766  5650  5685 I lynx    : [715D09544CF0:INFO:napi_runtime_proxy.cc(300)] NAPI Setup Restricted Loader: napiRestrictedLoader6
+10-25 09:22:20.766  5650  5685 W lynx    : [715D09544CF0:WARNING:lynx_module_manager.cc(79)] NativeModule: LynxJSIModule, try to find module: LynxRecorderReplayDataModulefailed. manager: 0x0000715E4DD60D68
+10-25 09:22:20.766  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(227)]  lynxRuntime:0x0000715E5DD26390 create APP 0x0000715E8DDDDA40
+10-25 09:22:20.766  5650  5679 I lynx    : [715D0973ECF0:INFO:quickjs_runtime_wrapper.cc(115)] lynx InitQuickjsRuntime success
+10-25 09:22:20.766  5650  5686 I lynx    : [715D0888DCF0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+10-25 09:22:20.766  5650  5686 E LynxEventReporter: eventReporter service not found or event name is null.
+10-25 09:22:20.766  5650  5686 I lynx    : [715D0888DCF0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+10-25 09:22:20.766  5650  5686 E LynxEventReporter: eventReporter service not found or event name is null.
+10-25 09:22:20.767  5650  7806 D TrafficStats: tagSocket(6) with statsTag=0xffffffff, statsUid=-1
+10-25 09:22:20.771  5650  5681 W Parcel  : Expecting binder but got null!
+10-25 09:22:20.783   535  2708 D CoreBackPreview: Window{d704c01 u0 com.lynx.explorer/com.lynx.explorer.LynxViewShellActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@f45dce7, mPriority=0}
+10-25 09:22:20.790  5650  5681 D EGL_emulation: app_time_stats: avg=348090.50ms min=11.17ms max=2436298.25ms count=7
+10-25 09:22:20.790  5650  5650 I Lynx    : onAttachedToWindow:118963512
+10-25 09:22:20.790  5650  5650 I LynxTemplateRender: lynxview onAttachedToWindow com.lynx.tasm.LynxTemplateRender@59ef4e4
+10-25 09:22:20.790  5650  5650 I LynxTemplateRender: onEnterForeground. force: false
+10-25 09:22:20.796  5650  5650 I lynx    : [716051DC24F8:INFO:layout_context.cc(1104)] [Layout] UpdateViewport :size: 1080.0, 1984.0; mode: 1, 1
+10-25 09:22:20.823  5650  5650 I LynxTemplateRender: updateViewport is unnecessary, because the size of the cache are the same as the size to be set.
+10-25 09:22:20.834  1089  1109 I s.nexuslauncher: NativeAlloc concurrent copying GC freed 55836(2401KB) AllocSpace objects, 4(412KB) LOS objects, 49% free, 6348KB/12MB, paused 72us,11us total 112.357ms
+10-25 09:22:20.834  1089  1109 W s.nexuslauncher: Reducing the number of considered missed Gc histogram windows from 249 to 100
+10-25 09:22:20.841   535  6834 W Parcel  : Expecting binder but got null!
+10-25 09:22:20.864  5650  5650 I PageReloadHelper: loadFromLocalFile:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.864  5650  5686 E lynx    : [715D0888DCF0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is prepareTemplateEnd
+10-25 09:22:20.864  5650  5686 E lynx    : [715D0888DCF0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is prepare_template_end
+10-25 09:22:20.864  5650  5650 E LynxInfoReportHelper: LynxMonitorService is null
+10-25 09:22:20.864  5650  5650 I LynxTemplateRender: dispatchOnPageStart url http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540 in com.lynx.tasm.LynxTemplateRender@59ef4e4
+10-25 09:22:20.864  5650  5650 I LynxTemplateRender: LoadMeta with binary, pre-painting: false ,pre-painting with draw:false enableRecycleTemplateBundle: false
+10-25 09:22:20.865  5650  5650 E lynx    : [716051DC24F8:ERROR:template_assembler.cc(953)] lynx_plugin: load original lynx so
+10-25 09:22:20.865  5650  5650 I lynx    : [716051DC24F8:INFO:template_assembler.cc(344)] start TemplateAssembler::LoadTemplate, url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540 len: 40425 this:0x0000715E9DD45360
+10-25 09:22:20.865  5650  5650 I lynx    : [716051DC24F8:INFO:lynx_binary_base_template_reader_impl.cc(163)] client version:0.2.0.0  ;binary_version:0.2.0.0
+10-25 09:22:20.865  5650  5650 I lynx    : [716051DC24F8:INFO:lynx_binary_base_template_reader_impl.cc(113)] App Bundle's engine version: 3.5, lynx sdk version:4.1, min supported lynx version: 1.0
+10-25 09:22:20.865  5650  5650 I lynx    : [716051DC24F8:INFO:template_binary_reader.cc(245)] CSSLazyDecode options FE_OPTION_UNDEFINED ABSetting: 
+10-25 09:22:20.867  5650  5686 E LynxEventReporter: eventReporter service not found or event name is null.
+10-25 09:22:20.867  5650  5686 E lynx    : [715D0888DCF0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipelineStart
+10-25 09:22:20.867  5650  5686 E lynx    : [715D0888DCF0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipeline_start
+10-25 09:22:20.869   535   552 I ActivityTaskManager: Displayed com.lynx.explorer/.LynxViewShellActivity: +175ms
+10-25 09:22:20.870  5650  5650 I lynx    : [716051DC24F8:INFO:tasm_platform_invoker_android.cc(281)] Trigger OnPageConfigDecoded on UIDelegate
+10-25 09:22:20.870  5650  5650 I lynx    : [716051DC24F8:INFO:js_error_reporter.cc(340)] JSErrorReporter.sendError:main-thread.js exception: TypeError: processData is not a function backtrace:
+10-25 09:22:20.870  5650  5650 I lynx    : 
+10-25 09:22:20.871  5650  5650 E lynx    : [716051DC24F8:ERROR:js_error_reporter.cc(408)] JSErrorReporter::reportException 0x715e5dd33368, error code is 110100, dynamic component path is , message is  {"rawError":{"stack":"backtrace:\n","message":"main-thread.js exception: TypeError: processData is not a function ","cause":{"cause":"main-thread.js exception: TypeError: processData is not a function backtrace:\n"}},"pid":"INTERNAL_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"Error","value":"main-thread.js exception: TypeError: processData is not a function ","stacktrace":{"frames":[]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"Error","extra":"main-thread.js exception: TypeError: processData is not a function ","lib_version":"","run_type":"lynx_core","version_code":""}}}
+10-25 09:22:20.871  5650  5650 E lynx    : backtrace:
+10-25 09:22:20.871  5650  5650 E lynx    : 
+10-25 09:22:20.871  5650  5650 I lynx    : [716051DC24F8:INFO:lynx_error.cc(75)] LynxError occurs error_code:110100 error_message:{"rawError":{"stack":"backtrace:\n","message":"main-thread.js exception: TypeError: processData is not a function ","cause":{"cause":"main-thread.js exception: TypeError: processData is not a function backtrace:\n"}},"pid":"INTERNAL_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"Error","value":"main-thread.js exception: TypeError: processData is not a function ","stacktrace":{"frames":[]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"Error","extra":"main-thread.js exception: TypeError: processData is not a function ","lib_version":"","run_type":"lynx_core","version_code":""}}}
+10-25 09:22:20.871  5650  5650 I lynx    : [716051DC24F8:INFO:template_assembler.cc(2604)] TemplateAssembler::OnScreenMetricsSet with width: 1080 height: 2340 device_pixel_ratio: 2.75
+10-25 09:22:20.871  5650  5650 I lynx    : [716051DC24F8:INFO:js_error_reporter.cc(340)] JSErrorReporter.sendError:main-thread.js exception: TypeError: processData is not a function backtrace:
+10-25 09:22:20.871  5650  5650 I lynx    : 
+10-25 09:22:20.871  5650  5650 E lynx    : [716051DC24F8:ERROR:js_error_reporter.cc(408)] JSErrorReporter::reportException 0x715e5dd33368, error code is 110100, dynamic component path is , message is  {"rawError":{"stack":"backtrace:\n","message":"main-thread.js exception: TypeError: processData is not a function ","cause":{"cause":"main-thread.js exception: TypeError: processData is not a function backtrace:\n"}},"pid":"INTERNAL_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"Error","value":"main-thread.js exception: TypeError: processData is not a function ","stacktrace":{"frames":[]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"Error","extra":"main-thread.js exception: TypeError: processData is not a function ","lib_version":"","run_type":"lynx_core","version_code":""}}}
+10-25 09:22:20.871  5650  5650 E lynx    : backtrace:
+10-25 09:22:20.871  5650  5650 E lynx    : 
+10-25 09:22:20.871  5650  5650 I lynx    : [716051DC24F8:INFO:lynx_error.cc(75)] LynxError occurs error_code:110100 error_message:{"rawError":{"stack":"backtrace:\n","message":"main-thread.js exception: TypeError: processData is not a function ","cause":{"cause":"main-thread.js exception: TypeError: processData is not a function backtrace:\n"}},"pid":"INTERNAL_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"Error","value":"main-thread.js exception: TypeError: processData is not a function ","stacktrace":{"frames":[]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"Error","extra":"main-thread.js exception: TypeError: processData is not a function ","lib_version":"","run_type":"lynx_core","version_code":""}}}
+10-25 09:22:20.871  5650  5650 I lynx    : [716051DC24F8:INFO:element_manager.cc(682)] ElementManager::UpdateScreenMetrics width:1080,height:2340
+10-25 09:22:20.871  5650  5650 I lynx    : [716051DC24F8:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __RenderPage, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.871  5650  5650 I lynx    : [716051DC24F8:INFO:lepus_event_listener.cc(31)] LepusClosureEventListener::Invoke name: __RenderPage
+10-25 09:22:20.871  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(725)] lynx runtime loadApp, napi id:6
+10-25 09:22:20.871  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(743)] [LynxRuntime] circular data check flag: true
+10-25 09:22:20.871  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(2022)]  App::LoadApp start 0x0000715E8DDDDA40
+10-25 09:22:20.871  5650  5650 I lynx    : [716051DC24F8:INFO:layout_context.cc(1104)] [Layout] UpdateViewport :size: 1080.0, 1984.0; mode: 1, 1
+10-25 09:22:20.871  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxUIMethodModule
+10-25 09:22:20.872  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxResourceModule
+10-25 09:22:20.872  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxAccessibilityModule
+10-25 09:22:20.872  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxSetModule
+10-25 09:22:20.872  5650  5650 I lynx    : [716051DC24F8:INFO:element_manager.cc(1704)] ElementManager::OnPatchFinishForFiber WithPatch!
+10-25 09:22:20.872  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxExposureModule
+10-25 09:22:20.873  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(2887)] LoadScript:app-service.js
+10-25 09:22:20.873  5650  5685 I lynx    : [715D09544CF0:INFO:quickjs_runtime.cc(220)] QuickjsRuntime::evaluatePreparedJavaScript start: /app-service.js
+10-25 09:22:20.873  5650  5685 I lynx    : [715D09544CF0:INFO:quickjs_runtime.cc(149)] QuickjsRuntime::evaluateJavaScript: /app-service.js
+10-25 09:22:20.873  5650  5685 I lynx    : [715D09544CF0:INFO:quickjs_runtime.cc(162)] QuickjsRuntime::evaluateJavaScript finished successfully.
+10-25 09:22:20.873  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(355)] LYNX PageProxy get -> setCard
+10-25 09:22:20.873  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(2166)]  App::LoadApp end 0x0000715E8DDDDA40
+10-25 09:22:20.873  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(985)] lynx runtime ready
+10-25 09:22:20.873  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.873  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.874  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "ReportErrorWithMsg.engine version:3.5"
+10-25 09:22:20.874  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.874  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.874  5650  5685 E lynx    : [715D09544CF0:ERROR:lynx_console.cc(236)] "main-thread.js exception: TypeError: processData is not a function backtrace:
+10-25 09:22:20.874  5650  5685 E lynx    : "
+10-25 09:22:20.874  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.874  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.874  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "ReportErrorWithMsg.engine version:3.5"
+10-25 09:22:20.874  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.874  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.874  5650  5685 E lynx    : [715D09544CF0:ERROR:lynx_console.cc(236)] "main-thread.js exception: TypeError: processData is not a function backtrace:
+10-25 09:22:20.874  5650  5685 E lynx    : "
+10-25 09:22:20.874  5650  5686 I lynx    : [715D0888DCF0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+10-25 09:22:20.874  5650  5686 E LynxEventReporter: eventReporter service not found or event name is null.
+10-25 09:22:20.874  5650  5686 I lynx    : [715D0888DCF0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+10-25 09:22:20.874  5650  5686 E LynxEventReporter: eventReporter service not found or event name is null.
+10-25 09:22:20.881   535  6834 D HostConnection: HostComposition ext ANDROID_EMU_CHECKSUM_HELPER_v1 ANDROID_EMU_native_sync_v2 ANDROID_EMU_dma_v1 ANDROID_EMU_direct_mem ANDROID_EMU_host_composition_v1 ANDROID_EMU_host_composition_v2 ANDROID_EMU_vulkan ANDROID_EMU_deferred_vulkan_commands ANDROID_EMU_vulkan_null_optional_strings ANDROID_EMU_vulkan_create_resources_with_requirements ANDROID_EMU_YUV_Cache ANDROID_EMU_vulkan_ignored_handles ANDROID_EMU_has_shared_slots_host_memory_allocator ANDROID_EMU_vulkan_free_memory_sync ANDROID_EMU_vulkan_shader_float16_int8 ANDROID_EMU_vulkan_async_queue_submit ANDROID_EMU_vulkan_queue_submit_with_commands ANDROID_EMU_sync_buffer_data ANDROID_EMU_vulkan_async_qsri ANDROID_EMU_read_color_buffer_dma ANDROID_EMU_hwc_multi_configs ANDROID_EMU_hwc_color_transform GL_OES_EGL_image_external_essl3 GL_OES_vertex_array_object GL_KHR_texture_compression_astc_ldr ANDROID_EMU_host_side_tracing ANDROID_EMU_gles_max_version_3_0 
+10-25 09:22:20.882   535  6834 W OpenGLRenderer: Failed to initialize 101010-2 format, error = EGL_SUCCESS
+10-25 09:22:20.882  5650  5650 I Lynx    : setVisibility:118963512 0
+10-25 09:22:20.882  5650  5650 I NativeFacade: native->java onPageChanged isFirstScreen:true instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.882  5650  5650 I LynxTemplateRender: TASMCallback.onPageChanged isFirstScreen:true instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.882  5650  5650 I LynxTemplateRender: onFirstScreen
+10-25 09:22:20.882  5650  5650 I lynx    : [716051DC24F8:INFO:touch_event_handler.cc(79)] TouchEventHandler init: support_component_js_: true; use_lepus_ng_: true
+10-25 09:22:20.882  5650  5650 I lynx    : [716051DC24F8:INFO:touch_event_handler.cc(374)] SendCustomEvent event name:resize tag:10
+10-25 09:22:20.882  5650  5650 I lynx    : [716051DC24F8:INFO:event_dispatcher.cc(97)] EventDispatcher::Dispatch name: resize target: 10
+10-25 09:22:20.882  5650  5650 I lynx    : [716051DC24F8:INFO:layout_context.cc(882)] [Layout] layout finish with result size: 1080, 1984 for viewport, size: 1080.0, 1984.0; mode: 1, 1 Time taken: 10162803 ns
+10-25 09:22:20.883  5650  5650 I lynx    : [716051DC24F8:INFO:element_manager.cc(1683)] ElementManager::OnPatchFinishForFiber NoPatch!
+10-25 09:22:20.883  5650  5650 I NativeFacade: native->java onUpdateDataWithoutChange instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.883  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnAppFirstScreen, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.883  5650  5685 I lynx    : [715D09544CF0:INFO:js_event_listener.cc(41)] JSClosureEventListener::Invoke name: __OnAppFirstScreen
+10-25 09:22:20.883  5650  5650 I LynxTemplateRender: TemplateRenderCallback.onUpdateDataWithoutChange instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.883   535  6834 D EGL_emulation: eglCreateContext: 0x715e1dd17210: maj 3 min 0 rcv 3
+10-25 09:22:20.885  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(2513)] call jsmodule:GlobalEventEmitter.emit.onWindowResize 0x0000715E8DDDDA40
+10-25 09:22:20.885  5650  5650 E lynx    : [716051DC24F8:ERROR:lazy_bundle_loader.cc(398)] LazyBundleLoader::GetTemplateBundle: utf-8this: 0x0000715E3DD334C8
+10-25 09:22:20.885  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.885  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.885  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx ss2] {"probe":"native-stylesheet-papi-v2","stage":"inventory-v2","sources":{"s0":"function () {\n    [native code]\n}"},"shapes":{"p0":{"fnName":"","hasPrototype":false,"own":["length","name"]}},"globals":[{"name":"__AddInlineStyle","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__AdoptStyleSheet","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__CreateStyleObject","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__GetComputedStyleByKey","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__GetComputedStyles","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__GetInlineStyle","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__GetInlineStyles","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__LoadStyleSheet","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__ReplaceStyleSheets","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__SetCSSId","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__SetInlineStyles","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__SetParsedStyles","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__SetStyleObject","typeof":"function","arity":0,"source":"s0","shape":"p0"},{"name":"__UpdateStyleObject","typeof":"function","arity":0,"source":"s0","shape":"p0"}],"names":["__AddInlineStyle","__AdoptStyleSheet","__CreateStyleObject","__GetComputedStyleByKey","__GetComputedStyles","__GetInlineStyle","__GetInlineStyles","__LoadStyleSheet","__ReplaceStyleSheets","__SetCSSId","__SetInlineStyles","__SetParsedStyles","__SetStyleObject","__UpdateStyleObject"],"stageBytes":2040}"
+10-25 09:22:20.885  5650  5650 I lynx    : [716051DC24F8:INFO:renderer_functions.cc(933)] FindTemplateBundle failed, bundle_name: utf-8
+10-25 09:22:20.885  5650  5650 E lynx    : [716051DC24F8:ERROR:lazy_bundle_loader.cc(398)] LazyBundleLoader::GetTemplateBundle: http://127.0.0.1:8099/probe-2.cssthis: 0x0000715E3DD334C8
+10-25 09:22:20.886  5650  5650 I lynx    : [716051DC24F8:INFO:renderer_functions.cc(933)] FindTemplateBundle failed, bundle_name: http://127.0.0.1:8099/probe-2.css
+10-25 09:22:20.886   535  6834 D EGL_emulation: eglMakeCurrent: 0x715e1dd17210: ver 3 0 (tinfo 0x716028afa100) (first time)
+10-25 09:22:20.896  5650  5650 I lynx    : [716051DC24F8:INFO:element_manager.cc(1683)] ElementManager::OnPatchFinishForFiber NoPatch!
+10-25 09:22:20.898  5650  5650 I NativeFacade: native->java onUpdateDataWithoutChange instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.898  5650  5650 I LynxTemplateRender: TemplateRenderCallback.onUpdateDataWithoutChange instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.899  5650  5650 I NativeFacade: native->java dispatchOnLoaded templateSize:40425 instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.899  5650  5650 I LynxTemplateRender: TASMCallback.onLoaded templateSize:40425 instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.899  5650  5650 I LynxTemplateRender: dispatchLoadSuccess templateSize in com.lynx.tasm.LynxTemplateRender@59ef4e4
+10-25 09:22:20.899  5650  5650 I NativeFacade: native->java onTASMFinishedByNative instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.899  5650  5650 I lynx    : [716051DC24F8:INFO:template_assembler.cc(845)] end TemplateAssembler::LoadTemplate, url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540 len: 40425
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx ss2] {"probe":"native-stylesheet-papi-v2","stage":"loadstyle-arity","attempts":[{"label":"[url]","outcome":"threw","threw":{"name":"Error","message":"e0"}},{"label":"[url, null]","outcome":"threw","threw":{"name":"Error","message":"e1"}},{"label":"[url, 0]","outcome":"threw","threw":{"name":"Error","message":"e1"}},{"label":"[url, {}]","outcome":"threw","threw":{"name":"Error","message":"e1"}},{"label":"[url, \"utf-8\"]","outcome":"returned","returned":{"kind":"null"}},{"label":"[url, function(){}]","outcome":"threw","threw":{"name":"Error","message":"e1"}},{"label":"[url, []]","outcome":"threw","threw":{"name":"Error","message":"e1"}},{"label":"[url, url2]","outcome":"returned","returned":{"kind":"null"}}],"groups":[{"outcome":"threw","detail":"e0","labels":["[url]"]},{"outcome":"threw","detail":"e1","labels":["[url, null]","[url, 0]","[url, {}]","[url, function(){}]","[url, []]"]},{"outcome":"returned","detail":"null","labels":["[url, \"utf-8\"]","[url, url2]"]}],"returnedHandles":0,"errors":{"e0":"\nerror code: 111101\nerror message: LoadStyleSheet param size should >= 2","e1":"\nerror code: 111101\nerror message: LoadStyleSheet param 1 should be String"},"stageBytes":2040,"argumentsOmitted":["[url]","[url, null]","[url, 0]","[url, {}]","[url, \"utf-8\"]","[url, function(){}]","[url, []]","[url, url2]"],"fitForm":"terse"}"
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx ss2] {"probe":"native-stylesheet-papi-v2","stage":"adopt-arity","attempts":[{"label":"[]","args":[],"outcome":"threw","threw":{"name":"Error","message":"e2"}},{"label":"[null]","args":[{"kind":"null"}],"outcome":"threw","threw":{"name":"Error","message":"e3"}},{"label":"[{}]","args":[{"kind":"object","tag":"[object Object]","keys":[]}],"outcome":"threw","threw":{"name":"Error","message":"e3"}}],"groups":[{"outcome":"threw","detail":"e2","labels":["[]"]},{"outcome":"threw","detail":"e3","labels":["[null]","[{}]"]}],"returnedHandles":0,"errors":{"e0":"\nerror code: 111101\nerror message: LoadStyleSheet param size should >= 2","e1":"\nerror code: 111101\nerror message: LoadStyleSheet param 1 should be String","e2":"\nerror code: 111101\nerror message: AdoptStyleSheet param size should >= 1","e3":"\nerror code: 111101\nerror message: AdoptStyleSheet param 0 should be RefCounted"},"handleAvailable":false}"
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx ss2] {"probe":"native-stylesheet-papi-v2","stage":"replace-arity","attempts":[{"label":"[]","args":[],"outcome":"returned","returned":{"kind":"null"}},{"label":"[null]","args":[{"kind":"null"}],"outcome":"returned","returned":{"kind":"null"}},{"label":"[[]]","args":[{"kind":"object","tag":"[object Array]","keys":[]}],"outcome":"returned","returned":{"kind":"null"}}],"groups":[{"outcome":"returned","detail":"null","labels":["[]","[null]","[[]]"]}],"returnedHandles":0,"errors":{"e0":"\nerror code: 111101\nerror message: LoadStyleSheet param size should >= 2","e1":"\nerror code: 111101\nerror message: LoadStyleSheet param 1 should be String","e2":"\nerror code: 111101\nerror message: AdoptStyleSheet param size should >= 1","e3":"\nerror code: 111101\nerror message: AdoptStyleSheet param 0 should be RefCounted"},"setAvailable":false}"
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.900  5650  5686 E lynx    : [715D0888DCF0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is loadBundleStart
+10-25 09:22:20.900  5650  5686 E lynx    : [715D0888DCF0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is load_template_start
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx ss2] {"probe":"native-stylesheet-papi-v2","stage":"style-object-path","exposed":true,"attempts":[{"label":"no arguments","args":[],"outcome":"threw","threw":{"name":"Error","message":"e4"}},{"label":"one argument an empty object","args":[{"kind":"object","tag":"[object Object]","keys":[]}],"outcome":"returned","returned":{"kind":"object","tag":"[object Object]","keys":[]}}],"groups":[{"outcome":"threw","detail":"e4","labels":["no arguments"]},{"outcome":"returned","detail":"object","labels":["one argument an empty object"]}],"returnedHandles":0,"errors":{"e0":"\nerror code: 111101\nerror message: LoadStyleSheet param size should >= 2","e1":"\nerror code: 111101\nerror message: LoadStyleSheet param 1 should be String","e2":"\nerror code: 111101\nerror message: AdoptStyleSheet param size should >= 1","e3":"\nerror code: 111101\nerror message: AdoptStyleSheet param 0 should be RefCounted","e4":"\nerror code: 111101\nerror message: CreateStyleObject param size should >= 1"},"handleKind":"none","handleTypeof":"undefined","followUps":[],"followUpsSkipped":"__CreateStyleObject returned no opaque handle, so no setter was called: a fabricated handle would measure the probe rather than the host."}"
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx ss2] {"probe":"native-stylesheet-papi-v2","stage":"lifecycle","callsThatReturned":6,"anyHandleReturned":false,"readbacks":[{"name":"__GetInlineStyles","exposed":true,"threw":{"name":"Error","message":"\nerror code: 111101\nerror message: FiberGetInlineStyles param size should >= 1"}},{"name":"__GetInlineStyle","exposed":true,"threw":{"name":"Error","message":"\nerror code: 111101\nerror message: FiberGetInlineStyle param size should >= 2"}},{"name":"__GetComputedStyles","exposed":true,"returned":{"kind":"null"}},{"name":"__GetComputedStyleByKey","exposed":true,"threw":{"name":"Error","message":"\nerror code: 111101\nerror message: FiberGetComputedStyleByKey param size should be 2"}}],"claim":"measured calls only","note":"These are the card's own styles read back through read-only bindings after every write this card performed. A successful load and an unchanged readback are compatible with each other: the stylesheets served have rules that match nothing this card renders, so this stage can show that a call did not break the card, and cannot show that a rule was applied."}"
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx ss2] {"probe":"native-stylesheet-papi-v2","stage":"summary","stagesLogged":["inventory-v2","loadstyle-arity","adopt-arity","replace-arity","style-object-path","lifecycle","summary","done"],"globalsDescribed":14,"boundedRuns":4,"attemptsRecorded":16,"callsThatThrew":10,"callsThatReturned":6,"handlesReturned":0,"distinctLoadAnswers":3,"loadAnswers":[{"outcome":"threw","detail":"\nerror code: 111101\nerror message: LoadStyleSheet param size should >= 2","labels":["[url]"]},{"outcome":"threw","detail":"\nerror code: 111101\nerror message: LoadStyleSheet param 1 should be String","labels":["[url, null]","[url, 0]","[url, {}]","[url, function(){}]","[url, []]"]},{"outcome":"returned","detail":"null","labels":["[url, \"utf-8\"]","[url, url2]"]}],"lifecycleObserved":true,"unmeasured":[{"operation":"adopting and replacing with a real handle","reason":"No call in this card returned a handle, so there is nothing to adopt and no set to replace with. The cases that could run (null, {}, []) were run and are recorded above; the handle cases were skipped rather than fabricated."},{"operation":"the style-object setter path","reason":"__CreateStyleObject exists but returned no opaque handle, so no setter was called with it. Whether a handle is required, and what it looks like when one is produced, is left for a probe that has a way to create one."},{"operation":"any stylesheet lifecycle","reason":"No ordering, ownership, or cleanup relationship between these operations was proven. The card called bindings and recorded their answers; it did not establish that a loaded sheet is owned by anything, that it can be removed, or that a rule in it was applied."}]}"
+10-25 09:22:20.900  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnBTSConsoleEvent, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.901  5650  5685 I lynx    : [715D09544CF0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __OnBTSConsoleEvent, type: 0
+10-25 09:22:20.901  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_console.cc(230)] "[main-thread.js] [solid-lynx ss2] {"probe":"native-stylesheet-papi-v2","stage":"done","status":"all stages logged"}"
+10-25 09:22:20.901  5650  5685 I lynx    : [715D09544CF0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnNativeAppReady, phase: 2, target: 0, listener options: 0
+10-25 09:22:20.901  5650  5685 I lynx    : [715D09544CF0:INFO:js_event_listener.cc(41)] JSClosureEventListener::Invoke name: __OnNativeAppReady
+10-25 09:22:20.901  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(2513)] call jsmodule:GlobalEventEmitter.emit.onFontScaleChanged 0x0000715E8DDDDA40
+10-25 09:22:20.904  5650  5650 I NativeFacade: native->java reportError instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540 error:1101
+10-25 09:22:20.904  5650  5650 I LynxTemplateRender: TASMCallback.onErrorOccurred errorCode:1101 instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.904  5650  5650 I LogBoxProxy: onNewLog with level Error
+10-25 09:22:20.904  5650  5650 I LogBoxOwner: new activity
+10-25 09:22:20.905   535  6834 E OpenGLRenderer: Unable to match the desired swap behavior.
+10-25 09:22:20.915  5650  5681 W Parcel  : Expecting binder but got null!
+10-25 09:22:20.918   535   550 D CoreBackPreview: Window{6c93956 u0 com.lynx.explorer/com.lynx.explorer.LynxViewShellActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@d4e56c4, mPriority=0}
+10-25 09:22:20.918  5650  5650 E LynxTemplateRender: LynxTemplateRender com.lynx.tasm.LynxTemplateRender@59ef4e4: onErrorOccurred type -1,errCode:1101,detail:{"error_code":1101,"sub_code":110100,"url":"http:\/\/127.0.0.1:8099\/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540","error":"{\"rawError\":{\"stack\":\"backtrace:\\n\",\"message\":\"main-thread.js exception: TypeError: processData is not a function \",\"cause\":{\"cause\":\"main-thread.js exception: TypeError: processData is not a function backtrace:\\n\"}},\"pid\":\"INTERNAL_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"Error\",\"value\":\"main-thread.js exception: TypeError: processData is not a function \",\"stacktrace\":{\"frames\":[]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"Error\",\"extra\":\"main-thread.js exception: TypeError: processData is not a function \",\"lib_version\":\"\",\"run_type\":\"lynx_core\",\"version_code\":\"\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
+10-25 09:22:20.918  5650  5686 E LynxEventReporter: eventReporter service not found or event name is null.
+10-25 09:22:20.918  5650  5650 I NativeFacade: native->java reportError instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540 error:1101
+10-25 09:22:20.918  5650  5650 I LynxTemplateRender: TASMCallback.onErrorOccurred errorCode:1101 instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.918  5650  5650 I LogBoxProxy: onNewLog with level Error
+10-25 09:22:20.918  5650  5650 E LynxTemplateRender: LynxTemplateRender com.lynx.tasm.LynxTemplateRender@59ef4e4: onErrorOccurred type -1,errCode:1101,detail:{"error_code":1101,"sub_code":110100,"url":"http:\/\/127.0.0.1:8099\/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540","error":"{\"rawError\":{\"stack\":\"backtrace:\\n\",\"message\":\"main-thread.js exception: TypeError: processData is not a function \",\"cause\":{\"cause\":\"main-thread.js exception: TypeError: processData is not a function backtrace:\\n\"}},\"pid\":\"INTERNAL_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"Error\",\"value\":\"main-thread.js exception: TypeError: processData is not a function \",\"stacktrace\":{\"frames\":[]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"Error\",\"extra\":\"main-thread.js exception: TypeError: processData is not a function \",\"lib_version\":\"\",\"run_type\":\"lynx_core\",\"version_code\":\"\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
+10-25 09:22:20.918  5650  5686 E LynxEventReporter: eventReporter service not found or event name is null.
+10-25 09:22:20.918  5650  5650 I NativeFacade: native->java onRuntimeReady instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.918  5650  5650 I LynxTemplateRender: TASMCallback.onRuntimeReady instanceId:6 url:http://127.0.0.1:8099/stylesheet-probe-v2.lynx.bundle?v=emu-ss2-1792934540
+10-25 09:22:20.923  5650  5650 I LynxTemplateRender: updateViewport is unnecessary, because the size of the cache are the same as the size to be set.
+10-25 09:22:21.020  5650  5650 I Lynx.IntersectionObserver: onRootViewDraw ObserverHandler
+10-25 09:22:21.048  5650  5659 I m.lynx.explorer: Background concurrent copying GC freed 32333(1951KB) AllocSpace objects, 3(104KB) LOS objects, 49% free, 3969KB/7938KB, paused 52us,13us total 128.852ms
+10-25 09:22:21.048  5650  5659 W m.lynx.explorer: Reducing the number of considered missed Gc histogram windows from 243 to 100
+10-25 09:22:21.060  5650  5661 I LynxTemplateRender: destroyNative url http://127.0.0.1:8099/main.lynx.bundle?v=emu-smoke-1792931994 in com.lynx.tasm.LynxTemplateRender@574b145
+10-25 09:22:21.061  5650  5661 I LynxTemplateRender: destroyNative url http://127.0.0.1:8099/stylesheet-probe.lynx.bundle?v=emu-stylesheet-1792932101 in com.lynx.tasm.LynxTemplateRender@e153cd4
+10-25 09:22:21.061  5650  5661 I LynxTemplateRender: destroyNative url http://127.0.0.1:8099/main.lynx.bundle?v=emu-smoke-1792932099 in com.lynx.tasm.LynxTemplateRender@ced3502
+10-25 09:22:21.075   384   432 W TransactionTracing: Could not find layer handle 0x7eb73683a350
+10-25 09:22:21.079   830   893 D EGL_emulation: app_time_stats: avg=13525.07ms min=13525.07ms max=13525.07ms count=1
+10-25 09:22:21.290   535  6834 W Parcel  : Expecting binder but got null!
+10-25 09:22:21.292   535  6834 E OpenGLRenderer: Unable to match the desired swap behavior.
+10-25 09:22:21.293   535  2708 D CoreBackPreview: Window{f106c85 u0 Splash Screen com.lynx.explorer EXITING}: Setting back callback null
+10-25 09:22:21.293   535  1358 W InputManager-JNI: Input channel object 'f106c85 Splash Screen com.lynx.explorer (client)' was disposed without first being removed with the input manager!
+10-25 09:22:21.371  1664  1664 I GoogleInputMethodService: GoogleInputMethodService.onFinishInput():3227 
+10-25 09:22:21.371  1664  1664 I GoogleInputMethodService: GoogleInputMethodService.updateDeviceLockedStatus():2087 repeatCheckTimes = 0, unlocked = true
+10-25 09:22:21.371  1664  1664 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1877 onStartInput(EditorInfo{inputType=0x0(NULL) imeOptions=0x0 privateImeOptions=null actionName=UNSPECIFIED actionLabel=null actionId=0 initialSelStart=-1 initialSelEnd=-1 initialCapsMode=0x0 hintText=null label=null packageName=com.lynx.explorer fieldId=-1 fieldName=null extras=null}, false)
+10-25 09:22:21.372  1664  1664 I GoogleInputMethodService: GoogleInputMethodService.shouldHideHeaderOnInitialState():4008 ShouldHideHeaderOnInitialState = false
+10-25 09:22:21.380  1664  1664 I GoogleInputMethodService: GoogleInputMethodService.updateDeviceLockedStatus():2087 repeatCheckTimes = 2, unlocked = true
+10-25 09:22:21.494   384   432 W TransactionTracing: Could not find layer handle 0x7eb73683d830
+10-25 09:22:21.494   384   432 W TransactionTracing: Could not find layer handle 0x7eb73683a350
+10-25 09:22:21.494   384   432 W TransactionTracing: Could not find layer handle 0x7eb73683ae90
+10-25 09:22:21.494   384   432 W TransactionTracing: Could not find layer handle 0x7eb73683a350
+10-25 09:22:21.494   384   432 W TransactionTracing: Could not find layer handle 0x7eb73683ae90
+10-25 09:22:21.536   384   432 W TransactionTracing: Could not find layer handle 0x7eb73683a230
+10-25 09:22:21.536   384   432 W TransactionTracing: Could not find layer handle 0x7eb736837a70
+10-25 09:22:21.759  5650  5650 I LogBoxLifeCycleListener: on destroy
+10-25 09:22:21.759   535  1358 D CoreBackPreview: Window{8022ffd u0 com.lynx.explorer/com.lynx.explorer.LynxViewShellActivity}: Setting back callback null
+10-25 09:22:21.759   535   550 W InputManager-JNI: Input channel object '8022ffd com.lynx.explorer/com.lynx.explorer.LynxViewShellActivity (client)' was disposed without first being removed with the input manager!
+10-25 09:22:21.760  5650  5650 I LogBoxLifeCycleListener: on destroy
+10-25 09:22:21.760  5650  5650 I LogBoxLifeCycleListener: on destroy
+10-25 09:22:21.760  5650  5650 I LynxView: lynxview destroy com.lynx.tasm.LynxView{7e8c7e1 VFE...... ........ 0,0-1080,1984}
+10-25 09:22:21.760  5650  5650 I LynxTemplateRender: lynxview onDetachedFromWindow com.lynx.tasm.LynxTemplateRender@549011d
+10-25 09:22:21.760  5650  5650 I LynxTemplateRender: onEnterBackground. force: false
+10-25 09:22:21.762  5650  5650 I LynxTemplateRender: destroyNative url http://127.0.0.1:8099/list-probe.lynx.bundle?v=emu-list-1792932103 in com.lynx.tasm.LynxTemplateRender@549011d
+10-25 09:22:21.762  5650  5650 I lynx    : [716051DC24F8:INFO:lynx_shell.cc(167)] LynxShell release, this:0x0000715E7DD0B710
+10-25 09:22:21.762  5650  5650 I lynx    : [716051DC24F8:INFO:lynx_shell.cc(366)] LynxShell Destroy, this:0x0000715E7DD0B710
+10-25 09:22:21.762  5650  5650 I lynx    : [716051DC24F8:INFO:template_assembler.cc(2006)] TemplateAssembler::Destroy url:http://127.0.0.1:8099/list-probe.lynx.bundle?v=emu-list-1792932103 this:0x0000715E9DD71110
+10-25 09:22:21.762  5650  5650 E lynx    : [716051DC24F8:ERROR:element_manager.cc(254)] ElementManager::WillDestroy this:0x0000715E9DD70AA0
+10-25 09:22:21.762  5650  5686 I lynx    : [715D0888DCF0:INFO:timing_handler.h(75)] [TimingHandler.h] ~TimingHandler, this:0x0000715EADD06188
+10-25 09:22:21.762  5650  5650 I lynx    : [716051DC24F8:INFO:template_assembler.cc(242)] TemplateAssembler::Release url:http://127.0.0.1:8099/list-probe.lynx.bundle?v=emu-list-1792932103 this:0x0000715E9DD71110
+10-25 09:22:21.762  5650  5686 I lynx    : [715D0888DCF0:INFO:memory_monitor.cc(187)] [memory_monitor.h] ~MemoryMonitor, this:0x0000715EADD06148, Enable:false, MemoryChangeThresholdMb:0
+10-25 09:22:21.762  5650  5686 I lynx    : [715D0888DCF0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_element_statistic
+10-25 09:22:21.762  5650  5686 E LynxEventReporter: eventReporter service not found or event name is null.
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(802)] LynxRuntime::Destroy, runtime_id: 5 this: 0x0000715E5DCFE690
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(1967)]  App::CallDestroyLifetimeFun start 0x0000715E8DDD7710
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_error.cc(75)] LynxError occurs error_code:20100 error_message:report js exception directly: (null) is not a function
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(1994)]  App::CallDestroyLifetimeFun end 0x0000715E8DDD7710
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(853)] LynxRuntime::DestroyAppAndNapi, runtime_id: 5 this: 0x0000715E5DCFE690
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(1936)] ~App()
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(1939)] App::Destroy 0x0000715E8DDD7710
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.cc(1952)] App::Destroy end 0x0000715E8DDD7710
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:runtime_lifecycle_observer_impl.cc(100)] [Runtime] RuntimeLifecycleObserverImpl::OnRuntimeDetach
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(864)] restricted napi detaching runtime, id: 5
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:napi_runtime_proxy.cc(323)] NAPI Remove Restricted Loader: napiRestrictedLoader5
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:bts_runtime.cc(869)] napi detaching runtime, id: 5
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:napi_loader_js.cc(149)] napi OnDetach env: 0x0000715E9DD75E50, ctx: 0x0000715E9DD7AB90, id: 5
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:napi_runtime_proxy.cc(145)] NAPI Remove Loader: napiLoaderOnRT5
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_manager.cc(15)] NativeModule: ~LynxJSIModuleManager
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_jsi_module.cc(65)] NativeModule: LynxJSIModule Destroy LynxExposureModule
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_android.cc(69)] NativeModule: LynxModuleAndroid Destroy: LynxExposureModule
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_jsi_module.cc(65)] NativeModule: LynxJSIModule Destroy LynxAccessibilityModule
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_android.cc(69)] NativeModule: LynxModuleAndroid Destroy: LynxAccessibilityModule
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_jsi_module.cc(65)] NativeModule: LynxJSIModule Destroy LynxSetModule
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_android.cc(69)] NativeModule: LynxModuleAndroid Destroy: LynxSetModule
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_jsi_module.cc(65)] NativeModule: LynxJSIModule Destroy LynxResourceModule
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_android.cc(69)] NativeModule: LynxModuleAndroid Destroy: LynxResourceModule
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_jsi_module.cc(65)] NativeModule: LynxJSIModule Destroy LynxUIMethodModule
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:lynx_module_android.cc(69)] NativeModule: LynxModuleAndroid Destroy: LynxUIMethodModule
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:module_factory_android.cc(50)] NativeModule: lynx module_factory_android destroy.
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:js_executor.cc(43)] JSExecutor::Destroy
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:js_app.h(56)] LYNX ~AppProxy destroy
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:jsi.h(1781)] JSIContext Release
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:global.cc(109)] lynx ~SingleGlobal
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:global.cc(39)] lynx ~Global()
+10-25 09:22:21.763  5650  5685 E lynx    : [715D09544CF0:ERROR:jsi.h(1750)] ~HostGlobal;
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:quickjs_context_wrapper.cc(41)] ~QuickjsContextWrapper 0x0000715DEDD7B4D8 LEPUSContext:0x0000715E6DCF0ED0
+10-25 09:22:21.763  5650  5685 E lynx    : [715D09544CF0:ERROR:jsi.h(1770)] ~JSIContext;
+10-25 09:22:21.763  5650  5685 I lynx    : [715D09544CF0:INFO:quickjs_runtime.cc(75)] LYNX free quickjs context
+10-25 09:22:21.763  5650  5685 E lynx    : [715D09544CF0:ERROR:quickjs_runtime_wrapper.cc(33)] LYNX free quickjs runtime start
+10-25 09:22:21.765  5650  5685 I lynx    : [715D09544CF0:INFO:quickjs_runtime_wrapper.cc(41)] LYNX free quickjs runtime end. 0x0000715DCDD18A48 LEPUSRuntime: 0x0000715E9DD61C70
+10-25 09:22:21.765  5650  5685 I lynx    : [715D09544CF0:INFO:js_executor.cc(36)] lynx ~JSExecutor
+10-25 09:22:21.766  5650  5650 I Lynx.IntersectionObserver: destroy
+10-25 09:22:21.766  5650  5650 I LynxTemplateRender: 1792934541766 destroy LynxView http://127.0.0.1:8099/list-probe.lynx.bundle?v=emu-list-1792932103
+10-25 09:22:21.766  5650  5650 I UIList  : PrivateRecyclerView onDetachedFromWindow
+10-25 09:22:21.766   535   550 D CoreBackPreview: Window{7d59353 u0 com.lynx.explorer/com.lynx.explorer.LynxViewShellActivity}: Setting back callback null
+10-25 09:22:21.766  5650  5650 I Lynx    : onDetachedFromWindow:132696033
+10-25 09:22:21.767   535   550 W InputManager-JNI: Input channel object '7d59353 com.lynx.explorer/com.lynx.explorer.LynxViewShellActivity (client)' was disposed without first being removed with the input manager!
+10-25 09:22:21.768  5650  5650 I LynxModuleFactory: lynx invoke onLynxViewAndJSRuntimeDestroy
+10-25 09:22:21.769   384   432 W TransactionTracing: Could not find layer handle 0x7eb736838df0
+10-25 09:22:21.785   419   419 W adbd    : timeout expired while flushing socket, closing
+10-25 09:22:21.786   384   432 W TransactionTracing: Could not find layer handle 0x7eb73683d7d0
+10-25 09:22:22.866     0     0 I logd    : logdr: UID=2000 GID=2000 PID=7813 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns
+10-25 09:22:22.878     0     0 I logd    : logdr: UID=2000 GID=2000 PID=7816 n tail=0 logMask=99 pid=0 start=0ns deadline=0ns

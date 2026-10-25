@@ -1,0 +1,24 @@
+{
+  "kind": "capture",
+  "card": "smoke",
+  "capture": "capture.log",
+  "device": {
+    "serial": "emulator-5554",
+    "getState": "device"
+  },
+  "runtime": {
+    "kind": "android-emulator",
+    "avd": "lynx33",
+    "androidApi": 33,
+    "abi": "x86_64",
+    "lynxExplorer": "4.1.0",
+    "apkSha256": "6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6"
+  },
+  "timestamp": "2026-10-25T09:35:00Z",
+  "commit": "PENDING_COMMIT",
+  "verifier": {
+    "exitCode": 0,
+    "verdict": "verdict: verified \u2014 20 operation(s) pass across 1 captured report(s)."
+  },
+  "note": "Emulator run, NOT the A03. Same Lynx Explorer 4.1.0 build and APK digest as the documented A03 install, on Android 13 / API 33 x86_64, so the Element PAPI and the engine are the same code; the silicon and the device image are not. This backs nothing about physical-device behaviour (GPU, touch latency, memory pressure) and does not supersede the A03 evidence, which does not exist for this range. Card, capture and verifier all agree: the stored bytes were re-verified here, not copied on trust."
+}
