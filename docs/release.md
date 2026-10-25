@@ -35,7 +35,8 @@ green row below means "this command passes here", never "CI ran it and passed".
 | `unit` | Install | `pnpm install --frozen-lockfile` | lockfile and `package.json` agree; no resolution step | exit 0 |
 | `unit` | Type check | `pnpm typecheck` | `tsc -p tsconfig.build.json`, then `tsc --noEmit`, then both consumer fixtures | exit 0 |
 | `unit` | Type check consumer fixtures | `pnpm typecheck:consumer` | `test/consumer/tsconfig.json` and `test/consumer/tsconfig.dev.json` compile against the built `dist/` | exit 0 |
-| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **221 tests in 10 files** |
+| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **225 tests in 11 files** |
+| `unit` | (inside `pnpm test`) | `test/documented-counts.test.ts` | every document that states this suite's size agrees with the measured size | exit 0; a stale count in README, CHANGELOG, ROADMAP or `docs/` is a test failure, not a review note |
 | `unit` | Build | `pnpm build` | `dist/` is written | exit 0 |
 | `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 46 entries |
 | `node-matrix` | Install / Type check / Unit tests, on `20.x`, `22.x`, `24.x` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` | the unit gate passes at the top of each declared Node line | exit 0 on 20.20.2, 22.23.3, 24.22.1 locally (98 tests each at that commit — the count predates `test/packaging.test.ts`, which was added afterwards and is not re-measured here; the floors 20.19.0 and 22.12.0 also exit 0) |
@@ -44,7 +45,7 @@ green row below means "this command passes here", never "CI ran it and passed".
 | `browser` | Pattern suite | `PLAYWRIGHT_PORT=4200 pnpm exec playwright test --config test/browser/patterns.playwright.config.ts` | the separate `examples/lynx-patterns` suite passes | exit 0, **9 passed** (41.5s) |
 | `native-build` | Build the native bundle | `pnpm native:build` | `examples/lynx-for-native/dist/` holds the three bundles | exit 0, `main`, `stylesheet-probe`, `list-probe` |
 | `native-evidence` | Require native evidence for this pull request | `node scripts/require-native-evidence.mjs --range <pr base sha>..HEAD` | a native-facing change carries a committed capture the verifier for its card accepts, or a recorded decision | **not run on GitHub Actions**; the script's 50 host-free tests are, and the four exit codes were demonstrated by hand (§3) |
-| `solid-matrix` | Install / Overlay / Type check / Unit tests / Web build, on solid `1.9.16`+preset `1.9.16` and solid `1.9.17`+preset `1.9.16` | `pnpm install --frozen-lockfile`, `pnpm add`-free `overrides` in `pnpm-workspace.yaml` then `pnpm install --no-frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm web:build` | the gate passes on every published Solid the peer range admits | exit 0 on both legs locally, 121 tests each at the time of that run (the suite is 221 now) — **not yet run on GitHub Actions** |
+| `solid-matrix` | Install / Overlay / Type check / Unit tests / Web build, on solid `1.9.16`+preset `1.9.16` and solid `1.9.17`+preset `1.9.16` | `pnpm install --frozen-lockfile`, `pnpm add`-free `overrides` in `pnpm-workspace.yaml` then `pnpm install --no-frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm web:build` | the gate passes on every published Solid the peer range admits | exit 0 on both legs locally, 121 tests each at the time of that run (`ROADMAP.md` records that the suite has since grown; this row is not re-measured) — **not yet run on GitHub Actions** |
 
 Two things about the scripts, so you do not run work twice. `pnpm typecheck` is
 `pnpm build && tsc --noEmit && pnpm typecheck:consumer`, and `pnpm test` is

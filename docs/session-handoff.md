@@ -65,13 +65,13 @@ is correct; that is not a regression, it is the file being older than you.
 ```bash
 pnpm typecheck                     # exit 0
 pnpm typecheck:consumer            # exit 0; test/consumer/tsconfig.json + tsconfig.dev.json
-pnpm test                          # exit 0; 221 tests in 10 files, after `pnpm build`
+pnpm test                          # exit 0; 225 tests in 11 files, after `pnpm build`
                                    #   and before `typecheck:consumer`:
                                    #   renderer 63, require-native-evidence 50,
                                    #   native-probe-verify 41, native-parity-verify 19,
                                    #   list-probe-report 14, parity 9,
                                    #   consumer-install 8, stylesheet-probe-report 7,
-                                   #   rspeedy 6, packaging 4
+                                   #   rspeedy 6, packaging 4, documented-counts 4
 pnpm build                         # exit 0
 pnpm pack --dry-run                # exit 0; 46 tarball entries (30 under dist/, 11 under docs/,
                                    #   plus LICENSE, package.json, README.md, CHANGELOG.md,
@@ -89,6 +89,14 @@ The per-file counts above were parsed from
 `pnpm exec vitest run --reporter=json --outputFile=<file>`, not from counting
 `it(` calls or reading the default reporter — so they are the assertion results
 vitest actually recorded, including any parameterised cases.
+
+**A stale count is now a test failure.** `test/documented-counts.test.ts` measures
+the suite with vitest's own collection pass and fails, naming the file, the line,
+the number written and the number measured, when any document that states this
+suite's size disagrees with it — so the numbers above do not have to be hunted by
+hand when a test file is added. If you are reading this file on a later commit,
+that test's message is the authoritative correction; a number here that it has not
+flagged is either current or explicitly framed as historical.
 
 `pnpm typecheck` and `pnpm test` both run `pnpm build` first, and `pnpm test`
 ends with `pnpm typecheck:consumer` (`package.json`), so a failure in those

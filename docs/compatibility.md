@@ -31,7 +31,10 @@ matches the sentence already in the README.
 **What is actually verified:** the edges of the declared range, locally. This
 repository ran the unit gate — `pnpm install --frozen-lockfile`,
 `pnpm typecheck`, `pnpm test` — to exit 0 on 20.19.0, 20.20.2, 22.12.0,
-22.23.3, and 24.22.1, each with 98 passing tests. The `node-matrix` job in
+22.23.3, and 24.22.1, each at an earlier commit in this release when the suite
+was 98 passing tests; that figure is a snapshot of those runs and is not
+re-measured here, while `test/documented-counts.test.ts` keeps the current
+figure honest. The `node-matrix` job in
 `.github/workflows/ci.yml` is written to run the same three commands as three
 legs (`20.x`, `22.x`, `24.x`), which resolve to the newest release on each line
 rather than to the floor — but **it has not run on GitHub Actions**: no workflow

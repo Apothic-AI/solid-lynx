@@ -193,7 +193,8 @@ jobs:
   #
   # Locally, on Node 22.23.3 / pnpm 12.9.1, both legs exited 0 on every step
   # below: `pnpm typecheck`, `pnpm test` (121 tests, 7 files at that commit;
-  # suite is 204 now), `pnpm web:build`.
+  # the suite has since grown, and `test/documented-counts.test.ts` is what keeps
+  # the current figure honest), `pnpm web:build`.
   # See `docs/compatibility.md` §2 for the recorded runs.
   solid-matrix:
     name: solid-matrix (solid ${{ matrix.solid }}, preset ${{ matrix.preset }})
