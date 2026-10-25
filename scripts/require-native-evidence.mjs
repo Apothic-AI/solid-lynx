@@ -135,11 +135,22 @@ export const NATIVE_FACING_PATHS = Object.freeze([
   {
     path: ".github/workflows/ci.yml",
     group: "ci",
-    why: "only when the change lands inside one of the native jobs below",
+    why: "only when the change edits a native job body, or removes/renames one",
   },
 ]);
 
-/** Jobs in `.github/workflows/ci.yml` whose bodies count as a native change. */
+/**
+ * Pre-existing jobs in `.github/workflows/ci.yml` whose *edited* bodies count as
+ * a native change.
+ *
+ * "Edited" is the load-bearing word. A change is attributed to one of these jobs
+ * only when it touches a significant line — not blank, not a comment — inside
+ * that job's own block as it existed *before* the change, or when it edits such
+ * a line. Appending a new job after `native-build`, adding a comment above it,
+ * or reformatting whitespace is deliberately not a native change: see
+ * `touchesNativeJob` for why, and for the escape hatch that keeps the gate
+ * honest when the workflow's structure changes.
+ */
 export const NATIVE_CI_JOBS = Object.freeze(["native-build", "native-evidence"]);
 
 const CI_WORKFLOW = ".github/workflows/ci.yml";
@@ -361,7 +372,20 @@ function changedPaths(repoRoot, from, to) {
  * Job name → its line span, so a change can be attributed to the job it lands
  * in. Returns `null` when the file has no parseable `jobs:` block.
  */
-function parseJobBlocks(text) {
+/**
+ * The `jobs:` block, as per-job line spans plus a classification of every line.
+ *
+ * Line kinds, in the order they are checked:
+ *   blank    empty or whitespace only
+ *   comment  the first non-space character is `#`, at any indent
+ *   key      a job name at the jobs indentation (`  name:`, optionally with a
+ *            trailing comment and nothing else) — the block's own header
+ *   body     anything else indented deeper than the job header, i.e. the job's
+ *            own content: `runs-on:`, `steps:`, `run:` and so on
+ *
+ * `--` and `+` are absent on purpose: this reads a revision's file, not a diff.
+ */
+function scanJobs(text) {
   const lines = text.split("\n");
   const jobsAt = lines.findIndex(line => /^jobs:\s*(#.*)?$/.test(line));
   if (jobsAt < 0) return null;
@@ -376,18 +400,40 @@ function parseJobBlocks(text) {
     }
   }
 
+  const kinds = new Map(); // 1-based line -> "blank" | "comment" | "key" | "body" | "outside"
   const keys = [];
-  for (let index = jobsAt + 1; index < sectionEnd; index += 1) {
-    const match = /^ {2}([A-Za-z0-9_.-]+):\s*(#.*)?$/.exec(lines[index]);
-    if (match) keys.push({ name: match[1], line: index + 1 });
+  for (let index = jobsAt + 1; index <= lines.length; index += 1) {
+    const line = lines[index - 1] ?? "";
+    const number = index;
+    if (index > sectionEnd) { kinds.set(number, "outside"); continue; }
+    const key = /^ {2}([A-Za-z0-9_.-]+):\s*(#.*)?$/.exec(line);
+    if (key) {
+      keys.push({ name: key[1], line: number });
+      kinds.set(number, "key");
+    } else if (line.trim() === "") {
+      kinds.set(number, "blank");
+    } else if (/^\s*#/.test(line)) {
+      kinds.set(number, "comment");
+    } else {
+      kinds.set(number, "body");
+    }
   }
 
   const blocks = new Map();
-  keys.forEach((key, index) => {
+  keys.forEach((entry, index) => {
     const end = index + 1 < keys.length ? keys[index + 1].line - 1 : sectionEnd;
-    blocks.set(key.name, { start: key.line, end });
+    blocks.set(entry.name, { start: entry.line, end });
   });
-  return blocks;
+  return { blocks, kinds, keys, lines };
+}
+
+/** Line numbers of `spans`, flattened. */
+function linesOf(spans) {
+  const numbers = [];
+  for (const [start, end] of spans) {
+    for (let line = start; line <= end; line += 1) numbers.push(line);
+  }
+  return numbers;
 }
 
 /** `@@ -a,b +c,d @@` hunks as inclusive 1-based line spans on each side. */
@@ -412,16 +458,6 @@ function changedLineSpans(repoRoot, from, to, file) {
   return { removed, added };
 }
 
-/** `true` when any of `spans` overlaps any of `blocks`. */
-function overlapsAny(spans, blocks) {
-  for (const span of spans) {
-    for (const block of blocks) {
-      if (span[0] <= block.end && span[1] >= block.start) return true;
-    }
-  }
-  return false;
-}
-
 /** The workflow file at one revision, or `undefined` when it did not exist. */
 function workflowAt(repoRoot, revision) {
   const result = git(repoRoot, ["show", `${revision}:${CI_WORKFLOW}`]);
@@ -429,53 +465,211 @@ function workflowAt(repoRoot, revision) {
 }
 
 /**
- * Whether a `ci.yml` change lands inside a job that runs native work.
+ * Whether a `ci.yml` change edits a job that runs native work.
  *
- * Removed lines are attributed against the `from` revision and added lines
- * against the `to` revision, so deleting or renaming a native job counts. An
- * unparseable workflow counts as native-facing: requiring evidence for a
- * workflow nobody can read is the safe direction, and the message says why.
+ * Structural, not contextual. The previous version attributed a line to the job
+ * whose line span contained it, and a job's span ran from its key to the line
+ * before the next job's key — so every blank line and comment leading into the
+ * next job belonged to the job above. Appending a new job after `native-build`
+ * therefore read as an edit *inside* `native-build`, and the guard fired on the
+ * very commit that installed it. Hunk context (`@@ ... @@ jobs:`) cannot tell the
+ * two apart either; it names the enclosing section, not the job.
+ *
+ * The rule now:
+ *
+ *   - A line inside a native job counts only if it is significant: a `body` line
+ *     (`run:`, `uses:`, `steps:` …) or the job's own key line. Blank lines and
+ *     comments never do.
+ *   - A *newly created* job is not an edit to an existing one. Appending
+ *     `native-evidence` after `native-build` adds lines that are, on the new
+ *     side, inside `native-build`'s block boundary — but `native-build` is
+ *     unchanged, so nothing about native build behaviour moved.
+ *   - If the workflow's job structure changes in a way that could hide an edit
+ *     (a native job renamed or deleted, the `jobs:` block unreadable), that is
+ *     reported as native-facing, because a gate that silently stops recognising
+ *     its own jobs is how a check quietly stops covering anything. That is the
+ *     only direction this leans, and it is stated in the output when it fires.
+ *   - Everything else — a comment, a blank line, a reformat, an edit to another
+ *     job, a new job appended at the end — is not native-facing on this
+ *     evidence, and the output says which of those it was rather than failing.
  */
 function touchesNativeJob(repoRoot, from, to) {
   const { removed, added } = changedLineSpans(repoRoot, from, to, CI_WORKFLOW);
   if (removed.length === 0 && added.length === 0) {
-    return { native: false, why: "changed lines are outside every job body" };
+    return { native: false, why: "the change has no line-level workflow hunks" };
   }
 
-  const sides = [
-    { spans: removed, text: workflowAt(repoRoot, from), revision: from, side: "removed" },
-    { spans: added, text: workflowAt(repoRoot, to), revision: to, side: "added" },
-  ];
+  const beforeText = workflowAt(repoRoot, from);
+  const afterText = workflowAt(repoRoot, to);
+  const before = beforeText === undefined ? null : scanJobs(beforeText);
+  const after = afterText === undefined ? null : scanJobs(afterText);
 
-  for (const side of sides) {
-    if (side.spans.length === 0) continue;
-    if (side.text === undefined) continue; // the file did not exist on that side
-    const blocks = parseJobBlocks(side.text);
-    if (blocks === null) {
+  if ((beforeText !== undefined && before === null) || (afterText !== undefined && after === null)) {
+    return {
+      native: true,
+      why: "the workflow's `jobs:` block cannot be read on one side of this change,"
+        + " so no job can be shown to be untouched — treating it as native-facing"
+        + " rather than assuming the native jobs are unaffected",
+    };
+  }
+
+  const beforeJoins = inferJoins(before);
+  const afterJoins = inferJoins(after);
+
+  // A native job that disappeared, or gained/lost joins, cannot be reasoned
+  // about from line numbers: the edit may be exactly what removed it.
+  const nativeNow = NATIVE_CI_JOBS.filter(name => after !== null && after.blocks.has(name));
+  const namesGone = NATIVE_CI_JOBS.filter(name => before !== null
+    && before.blocks.has(name)
+    && (after === null || !after.blocks.has(name)));
+  if (namesGone.length > 0) {
+    return {
+      native: true,
+      why: `the \`${namesGone.join("`, `")}\` job(s) are removed or renamed by this`
+        + " change, which is itself a change to native CI",
+    };
+  }
+  for (const name of nativeNow) {
+    const was = beforeJoins.get(name) ?? [];
+    const now = afterJoins.get(name) ?? [];
+    if (was.length > 0 && now.length > 0 && was.join(",") !== now.join(",")) {
       return {
         native: true,
-        why: `the workflow at ${side.revision.slice(0, 7)} has no parseable \`jobs:\` block,`
-          + " so a change to it cannot be shown to avoid the native jobs",
-      };
-    }
-    const nativeBlocks = NATIVE_CI_JOBS
-      .filter(name => blocks.has(name))
-      .map(name => ({ name, ...blocks.get(name) }));
-    const hit = nativeBlocks.find(block => overlapsAny(side.spans, [block]));
-    if (hit) {
-      return {
-        native: true,
-        why: `changed ${side.side} line(s) fall inside the \`${hit.name}\` job`,
+        why: `the \`${name}\` job's \`needs:\` changed from [${was.join(", ")}]`
+          + ` to [${now.join(", ")}], which changes when native work runs`,
       };
     }
   }
+  const nativeBefore = before === null ? [] : NATIVE_CI_JOBS.filter(name => before.blocks.has(name));
+  const loopHeads = nativeNow.filter(name => (afterJoins.get(name) ?? []).length === 0);
+  const loopWas = nativeBefore.filter(name => (beforeJoins.get(name) ?? []).length === 0);
+  if (loopHeads.length > 0 && loopWas.length === 0 && nativeBefore.length > 0) {
+    return {
+      native: true,
+      why: `\`${loopHeads.join("`, `")}\` has no \`needs:\`, but before this change`
+        + " every native job was gated — a job that no longer waits on `unit` can"
+        + " run before the gate it is supposed to follow",
+    };
+  }
 
-  const names = NATIVE_CI_JOBS.join("` or `");
-  return { native: false, why: `changed lines are outside the \`${names}\` job bodies` };
+  // Which native job blocks actually changed, structurally.
+  const changedNative = [];
+  const untouchedNative = [];
+  for (const name of nativeBefore) {
+    const nameBefore = { ...before.blocks.get(name) };
+    const nameAfter = after === null ? undefined : after.blocks.get(name);
+    if (nameAfter === undefined) continue; // handled above
+    const significant = lineNumbers => lineNumbers.filter(number => {
+      const kind = before.kinds.get(number);
+      return kind === "body" || kind === "key";
+    });
+    const removedSignificant = significant(linesOf(removed));
+    const addedSignificant = significant(linesOf(added));
+    const hitRemoved = removedSignificant.some(number =>
+      number >= nameBefore.start && number <= nameBefore.end);
+    const hitAdded = addedSignificant.some(number =>
+      number >= nameAfter.start && number <= nameAfter.end);
+    if (hitRemoved || hitAdded) {
+      changedNative.push(name);
+    } else {
+      untouchedNative.push(name);
+    }
+  }
+
+  if (changedNative.length > 0) {
+    return {
+      native: true,
+      why: `significant line(s) changed inside the \`${changedNative.join("`, `")}\``
+        + " job body (a `run:`, `uses:`, or other job content, not a comment or a"
+        + " blank line)",
+    };
+  }
+
+  // Nothing native moved. Say which non-native shape this was.
+  const createdJobs = after === null ? [] :
+    [...after.blocks.keys()].filter(name => before === null || !before.blocks.has(name));
+  const significantAdded = linesOf(added).filter(number => {
+    const kind = after === null ? undefined : after.kinds.get(number);
+    return kind === "body" || kind === "key";
+  });
+  const significantRemoved = linesOf(removed).filter(number => {
+    const kind = before === null ? undefined : before.kinds.get(number);
+    return kind === "body" || kind === "key";
+  });
+
+  if (createdJobs.length > 0 && significantAdded.length === 0) {
+    return {
+      native: false,
+      why: `a new job (\`${createdJobs.join("`, `")}\`) was appended with only its`
+        + " header and comment lines in this diff; the existing native job(s) are"
+        + " unchanged",
+    };
+  }
+  if (createdJobs.length > 0) {
+    return {
+      native: false,
+      why: `new job(s) \`${createdJobs.join("`, `")}\` were added; the existing`
+        + ` native job(s) (${untouchedNative.length > 0 ? `\`${untouchedNative.join("`, `")}\`` : "none present"})`
+        + " are unchanged, and a new job is not an edit to one",
+    };
+  }
+  if (significantAdded.length === 0 && significantRemoved.length === 0) {
+    return {
+      native: false,
+      why: "only comment, blank, or whitespace lines changed in the workflow",
+    };
+  }
+  return {
+    native: false,
+    why: "the changed job content is in jobs other than `"
+      + `${NATIVE_CI_JOBS.join("` or `")}; the native job bodies are unchanged`,
+  };
+}
+
+/**
+ * `needs:` per job, as a joined string list, so a change in what a native job
+ * waits on can be told from a change to what it runs.
+ *
+ * Text-level scanning, not YAML: no YAML parser is reachable from this script
+ * without adding a dependency, and a workflow's `needs:` is simple enough to
+ * read this way — a `needs:` line in a job's step block is not valid workflow
+ * syntax, so there is no ambiguity to resolve.
+ */
+function inferJoins(scanned) {
+  const joins = new Map();
+  if (scanned === null) return joins;
+  for (const [name, block] of scanned.blocks) {
+    const body = scanned.lines.slice(block.start - 1, block.end);
+    const found = [];
+    for (const line of body) {
+      const inline = /^ {4}needs:\s*(\S.*)$/.exec(line);
+      if (inline) {
+        const value = inline[1].replace(/#.*$/, "").trim();
+        if (value.startsWith("[")) {
+          found.push(...value.replace(/^\[|\]$/g, "").split(",")
+            .map(entry => entry.trim().replace(/^["']|["']$/g, ""))
+            .filter(Boolean));
+        } else if (value !== "") {
+          found.push(value.replace(/^["']|["']$/g, ""));
+        }
+        continue;
+      }
+      if (/^ {4}needs:\s*(#.*)?$/.test(line)) {
+        const at = body.indexOf(line);
+        for (const following of body.slice(at + 1)) {
+          const item = /^ {6}-\s*(\S+)\s*$/.exec(following);
+          if (!item) break;
+          found.push(item[1].replace(/^["']|["']$/g, ""));
+        }
+      }
+    }
+    joins.set(name, found);
+  }
+  return joins;
 }
 
 /** Every native-facing path in the diff, with the reason it counts. */
-function nativeFacingChanges(repoRoot, from, to, paths) {
+function nativeFacingChanges(repoRoot, from, to, paths, notes = []) {
   const prefixRules = NATIVE_FACING_PATHS.filter(rule => rule.prefix !== undefined);
   const exactRules = new Map(
     NATIVE_FACING_PATHS.filter(rule => rule.path !== undefined).map(rule => [rule.path, rule]),
@@ -495,8 +689,14 @@ function nativeFacingChanges(repoRoot, from, to, paths) {
     }
     if (exact !== undefined) {
       const verdict = touchesNativeJob(repoRoot, from, to);
-      found.push({ path: file, why: verdict.why });
-      if (!verdict.native) found.pop();
+      if (verdict.native) {
+        found.push({ path: file, why: verdict.why });
+      } else {
+        // Say why a workflow edit was judged not native-facing. A check that
+        // silently ignores a file it knows about is indistinguishable from one
+        // that never looked at it.
+        notes.push(`${file}  (not native-facing: ${verdict.why})`);
+      }
     }
   }
   return found;
@@ -891,6 +1091,7 @@ function print(sections) {
 
 function report(outcome) {
   const { repoRoot, range, changed, nativeChanges, dirs, verdicts, verdict, detail } = outcome;
+  const notes = outcome.notes ?? [];
 
   const head = [
     "native evidence requirement",
@@ -901,6 +1102,9 @@ function report(outcome) {
   ];
   if (nativeChanges.length > 0) {
     head.push(...nativeChanges.map(change => `    - ${change.path}  (${change.why})`));
+  }
+  if (notes.length > 0) {
+    head.push(...notes.map(note => `    - ${note}`));
   }
   head.push(
     `  evidence: ${dirs.length} record(s) committed in this range`
@@ -932,7 +1136,8 @@ async function main(argv) {
   const repoRoot = findRepoRoot(start);
   const range = resolveRange(repoRoot, options);
   const changed = changedPaths(repoRoot, range.from, range.to);
-  const nativeChanges = nativeFacingChanges(repoRoot, range.from, range.to, changed);
+  const notes = [];
+  const nativeChanges = nativeFacingChanges(repoRoot, range.from, range.to, changed, notes);
 
   if (nativeChanges.length === 0) {
     report({
@@ -940,10 +1145,15 @@ async function main(argv) {
       range,
       changed,
       nativeChanges,
+      notes,
       dirs: [],
       verdicts: [],
       verdict: `nothing to require — no native-facing path changed across ${changed.length}`
-        + " path(s), so no native evidence is required for this range.",
+        + " path(s), so no native evidence is required for this range."
+        + (notes.length > 0
+          ? " (.github/workflows/ci.yml changed, but outside every native job body;"
+            + " see the note above.)"
+          : ""),
     });
     return EXIT_SATISFIED;
   }

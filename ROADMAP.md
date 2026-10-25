@@ -261,9 +261,11 @@ Set a stable public contract after web validation, native validation, and toolin
       `"dom"` — which produces a bundle that builds and renders nothing — is
       caught. Everything under `examples/lynx-for-native/`. `.github/workflows/ci.yml`
       only when the changed lines land inside the `native-build` or
-      `native-evidence` job, attributed per hunk against the revision each side
-      belongs to, so deleting a native job counts and a comment fix in `unit`
-      does not. `test/require-native-evidence.test.ts` asserts the list covers
+      `native-evidence` job, and there by structure rather than by position: a
+      change counts only if it touches a significant line inside a native job's
+      own body, so appending a job after `native-build` or commenting above it is
+      not a native change, while deleting or renaming a native job, or changing
+      what it `needs:`, is. `test/require-native-evidence.test.ts` asserts the list covers
       every file in `src/`, so a new source file forces a decision here.
     - Evidence has two satisfying forms, both committed by the change itself. A
       capture: `docs/evidence/native/<date-or-id>/` holding the log plus a
@@ -281,7 +283,7 @@ Set a stable public contract after web validation, native validation, and toolin
     - The requirement's own logic is tested host-free:
       `test/require-native-evidence.test.ts` drives the script through
       `child_process` against git repositories built in `mkdtemp`, so it needs
-      no device, no network, and not this repository's git state (30 tests).
+      no device, no network, and not this repository's git state (33 tests).
   - **What is still manual, and is not claimed as automated.** No device runs in
     CI, and this change does not make one run. `native-build` still only
     compiles the bundles. `device.getState` in a manifest is a string a human

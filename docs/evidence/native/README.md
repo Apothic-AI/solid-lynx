@@ -112,7 +112,15 @@ Checked on every pull request by the `native-evidence` job
 `node scripts/require-native-evidence.mjs`:
 
 - that a native-facing change was detected at all — the path list is in
-  `scripts/require-native-evidence.mjs` as `NATIVE_FACING_PATHS`;
+  `scripts/require-native-evidence.mjs` as `NATIVE_FACING_PATHS`. For
+  `.github/workflows/ci.yml` the judgement is structural rather than positional:
+  the change counts only if it touches a significant line (not a comment, blank,
+  or whitespace) inside a native job's own body as it existed before the change.
+  Appending a new job after `native-build`, adding a comment above it, or
+  reformatting is not a native change, and the output says which of those it
+  saw. A native job that is removed or renamed, a change to what it `needs:`, or
+  an unreadable `jobs:` block is treated as native-facing, because those are the
+  shapes where an edit could hide;
 - that a record was committed with the change, in the range being evaluated;
 - that the capture parses, covers every operation in `parityOperationIds`, and
   passes, re-derived by running the verifier here;

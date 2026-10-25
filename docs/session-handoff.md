@@ -41,8 +41,8 @@ out of your own output rather than out of this file — these numbers are dated.
 ```bash
 pnpm typecheck                     # exit 0
 pnpm typecheck:consumer            # exit 0; test/consumer/tsconfig.json + tsconfig.dev.json
-pnpm test                          # exit 0; 151 tests in 8 files (test/renderer.test.ts 62,
-                                   #   test/require-native-evidence.test.ts 30,
+pnpm test                          # exit 0; 154 tests in 8 files (test/renderer.test.ts 62,
+                                   #   test/require-native-evidence.test.ts 33,
                                    #   test/native-parity-verify.test.ts 19, test/list-probe-report.test.ts 14,
                                    #   test/parity.test.ts 9, test/stylesheet-probe-report.test.ts 7,
                                    #   test/rspeedy.test.ts 6, test/packaging.test.ts 4)

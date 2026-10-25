@@ -287,6 +287,81 @@ describe("require-native-evidence: ci.yml, only inside a native job", () => {
     expect(run.stdout).toContain("inside the `native-build` job");
   });
 
+  it("ignores a job APPENDED after native-build (the regression that failed its own install)", () => {
+    // Measured on master: `--range 56b402c..HEAD` exited 1 because the appended
+    // `native-evidence` job's leading blank and comment lines fell inside
+    // `native-build`'s block boundary, which ran to the line before the next
+    // job key. Hunk context made it worse: `@@ -339,0 +348,68 @@ jobs:` names the
+    // enclosing section, not the job. Appending a job is not an edit to one.
+    const dir = newRepo();
+    write(dir, ".github/workflows/ci.yml", workflow(" step", " step"));
+    const base = commitAll(dir, "add the workflow");
+
+    write(dir, ".github/workflows/ci.yml", `${workflow(" step", " step")}`
+      + "  native-evidence:\n"
+      + "    # a comment block, as the real job has\n"
+      + "    # several lines of it, leading into the key\n"
+      + "    runs-on: ubuntu-latest\n"
+      + "    steps:\n"
+      + "      - name: Require native evidence\n"
+      + "        run: node scripts/require-native-evidence.mjs\n");
+    const head = commitAll(dir, "ci: append the native-evidence job");
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("0 native-facing path(s)");
+    expect(run.stdout).toContain("not native-facing");
+    expect(run.stdout).toContain("native-evidence");
+    expect(run.stdout).toContain("a new job is not an edit to one");
+  });
+
+  it("ignores a comment-only edit above the native job", () => {
+    // The same defect in its other shape: text added immediately above
+    // `native-build:` was inside the previous job's span, never `native-build`'s.
+    const dir = newRepo();
+    write(dir, ".github/workflows/ci.yml", workflow(" step", " step"));
+    const base = commitAll(dir, "add the workflow");
+
+    write(dir, ".github/workflows/ci.yml",
+      workflow(" step", " step").replace(
+        "  native-build:\n",
+        "  # a note added above the native job\n"
+          + "  # and another line of it\n"
+          + "\n"
+          + "  native-build:\n",
+      ));
+    const head = commitAll(dir, "ci: comment above the native job");
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("0 native-facing path(s)");
+    expect(run.stdout).toContain("only comment, blank, or whitespace lines changed");
+  });
+
+  it("requires evidence for a real run-step change inside native-build", () => {
+    // The case the heuristic exists for, and the one the fix must not lose: the
+    // native job's own `run:` line moves. This is a body line, so it counts.
+    const dir = newRepo();
+    write(dir, ".github/workflows/ci.yml", workflow(" step", " step"));
+    const base = commitAll(dir, "add the workflow");
+
+    write(dir, ".github/workflows/ci.yml",
+      workflow(" step", " step").replace(
+        "        run: pnpm native:build",
+        "        run: pnpm native:build --mode production",
+      ));
+    const head = commitAll(dir, "native-build: change what it runs");
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("native:   1 native-facing path(s)");
+    expect(run.stdout).toContain("significant line(s) changed inside the `native-build` job body");
+    expect(run.stdout).toContain("not a comment or a");
+  });
+
   it("requires evidence when the native job's own lines are deleted", () => {
     // A removed step is attributed against the base revision, so deleting the
     // native job rather than editing it cannot slip through.
@@ -310,8 +385,12 @@ describe("require-native-evidence: ci.yml, only inside a native job", () => {
 
     const run = runScript("--repo", dir, "--range", range(base, head));
 
+    // Removing the job is the case the structural rule must still catch, and it
+    // now names it precisely rather than relying on line overlap: a native job
+    // that disappeared is itself a change to native CI.
     expect(run.status).toBe(1);
-    expect(run.stdout).toContain("inside the `native-build` job");
+    expect(run.stdout).toContain("removed or renamed by this");
+    expect(run.stdout).toContain("native-build");
   });
 });
 
