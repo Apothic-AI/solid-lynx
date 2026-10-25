@@ -17,6 +17,7 @@
   ],
   "type": "module",
   "sideEffects": false,
+  "packageManager": "pnpm@12.9.1",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

@@ -1,0 +1,139 @@
+# Continuous integration for solid-lynx.
+#
+# Every step below is one of the checks `docs/building.md` and the README's
+# Development section list as verified in this repository, run on the same
+# commands a developer runs locally. Nothing here needs a secret.
+#
+# What this workflow deliberately does NOT cover: the native bundle is built
+# only. No Android device (or Lynx Explorer) is attached to a CI runner, so
+# native runtime behaviour — loading the bundle, rendering, tapping, the
+# [solid-lynx parity] report — is still verified by hand as described in
+# docs/building.md.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# A new push to the same PR or branch cancels the run it supersedes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Keep pnpm quiet and non-interactive in CI.
+  CI: "true"
+
+jobs:
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from package.json "packageManager".
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Type check consumer fixtures
+        run: pnpm typecheck:consumer
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Package contents
+        run: pnpm pack --dry-run
+
+  browser:
+    name: browser
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Builds the web bundle, serves it, and drives it in Chromium.
+      - name: Lynx-for-Web suite
+        run: PLAYWRIGHT_PORT=4186 pnpm web:test
+
+      # Separate suite and config: builds and serves examples/lynx-patterns.
+      - name: Pattern suite
+        run: PLAYWRIGHT_PORT=4200 pnpm exec playwright test --config test/browser/patterns.playwright.config.ts
+
+      - name: Upload Playwright report
+        if: failure()
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Build-only: proves the native bundle compiles. No device runs in CI, so
+  # native runtime behaviour (bundle loading, rendering, taps, parity report)
+  # is NOT covered here — see docs/building.md "Native".
+  native-build:
+    name: native-build
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the native bundle
+        run: pnpm native:build
+
+      - name: Upload native bundle
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+        with:
+          name: lynx-for-native-dist
+          path: examples/lynx-for-native/dist
+          if-no-files-found: error
+          retention-days: 7
