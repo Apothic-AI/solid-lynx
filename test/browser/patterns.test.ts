@@ -14,6 +14,35 @@ interface CapabilityReport {
   findings: CapabilityFinding[];
 }
 
+/** What the pattern card measured for the indexed row model on this host. */
+interface ListMeasurements {
+  hostCallbacksWired: boolean;
+  rows: {
+    afterCreate: number;
+    afterFirstCell: number;
+    afterMiddleCell: number;
+    afterRepeat: number;
+    afterModelChange: number;
+    afterDispose: number;
+  };
+  creates: { firstCell: number; middleCell: number; repeat: number };
+  textInListOrder: string[];
+  createCalls: number;
+  updateCalls: number;
+  missingHostBehavior: string;
+}
+
+/** What the host's own `update-list-info` request did with the row callbacks. */
+interface ListHostDriven {
+  inserted: number[];
+  removed: number;
+  childrenAfterInserts: number;
+  textAfterInserts: string[];
+  children: number;
+  textInListOrder: string[];
+  rows: number;
+}
+
 /**
  * Calls into the main-thread realm of this `<lynx-view>`.
  *
@@ -37,6 +66,15 @@ async function realmValue<T>(view: Locator, global: string): Promise<T> {
 
 async function capabilities(view: Locator): Promise<CapabilityReport> {
   return realmValue<CapabilityReport>(view, "__SOLID_LYNX_CAPABILITIES__");
+}
+
+async function listMeasurements(view: Locator): Promise<ListMeasurements> {
+  return realmValue<ListMeasurements>(view, "__SOLID_LYNX_LIST__");
+}
+
+/** The host-driven measurement is published as a promise the host settles itself. */
+async function hostDrivenList(view: Locator): Promise<ListHostDriven> {
+  return realmValue<ListHostDriven>(view, "__SOLID_LYNX_LIST_HOST_DRIVEN__");
 }
 
 interface LoadedFixture {
@@ -215,14 +253,15 @@ test.describe("solid-lynx patterns", () => {
 
     const byName = new Map(report.findings.map(finding => [finding.capability, finding]));
 
-    // web-core ships the list PAPI and the `x-list` element, but a list only
-    // recycles rows when the framework hands it its callbacks, which this
-    // renderer cannot do. So `<list>` is a plain container here.
+    // The renderer drives the list PAPI itself, so the list callbacks the host
+    // stored are the renderer's and the host can ask for a cell by index.
     const list = byName.get("list-virtualization")!;
-    expect(list.status).toBe("host-only");
-    expect(list.papi.find(entry => entry.name === "__CreateList")?.present).toBe(true);
-    expect(list.observed.join(" ")).toContain("host list callbacks wired: no");
-    expect(list.today).toContain("ordinary container");
+    expect(list.status).toBe("supported");
+    expect(list.papi.every(entry => entry.present)).toBe(true);
+    expect(list.observed.join(" ")).toContain("host list callbacks wired on the element: yes");
+    expect(list.today).toContain("root.createList()");
+    expect(list.requires.join(" ")).toContain("native list support is unverified");
+    expect(list.requires.join(" ")).toContain("no recycling has been observed");
 
     // Both gesture PAPIs exist on this host and neither is reachable, which is
     // why a gesture prop is written as a plain attribute instead of a binding.
@@ -274,7 +313,94 @@ test.describe("solid-lynx patterns", () => {
     await expect(view.locator("#capability-title")).toHaveText("Host capabilities (web-core)");
     await expect(view.locator("#capability-gestures")).toContainText("gestures: unsupported");
     await expect(view.locator("#capability-list-virtualization"))
-      .toContainText("list-virtualization: host-only");
+      .toContainText("list-virtualization: supported");
+
+    expectClean(fixture);
+  });
+});
+test.describe("indexed list model", () => {
+  test("materializes the rows the host asks for, keyed and in index order", async ({ page }) => {
+    const fixture = await loadFixture(page);
+    const { view } = fixture;
+
+    const measured = await listMeasurements(view);
+
+    // web-core stores the pair `__CreateList` was handed on the element, so the
+    // host owns row selection and this renderer answers one request at a time.
+    expect(measured.hostCallbacksWired).toBe(true);
+    expect(measured.createCalls).toBe(1);
+
+    // Asking for cell 4 of 5 builds that one row and nothing else.
+    expect(measured.rows.afterCreate).toBe(0);
+    expect(measured.rows.afterFirstCell).toBe(1);
+    expect(measured.creates.firstCell).toBeGreaterThan(0);
+
+    // Asking for cell 1 leaves the list in index order, not append order: a
+    // sparse request cannot treat the index as a position among the rows it
+    // happens to have.
+    expect(measured.rows.afterMiddleCell).toBe(2);
+    expect(measured.creates.middleCell).toBeGreaterThan(0);
+
+    // The same key again keeps its node: no element is created for it.
+    expect(measured.rows.afterRepeat).toBe(2);
+    expect(measured.creates.repeat).toBe(0);
+
+    expectClean(fixture);
+  });
+
+  test("re-installs the callbacks on a model change and releases rows that left", async ({ page }) => {
+    const fixture = await loadFixture(page);
+    const { view } = fixture;
+
+    const measured = await listMeasurements(view);
+
+    // The model went from five rows to three, and no further host request arrived:
+    // the surviving rows moved and their index accessors were reset, so the
+    // labels carry the new indices.
+    expect(measured.updateCalls).toBeGreaterThanOrEqual(1);
+    expect(measured.rows.afterModelChange).toBe(2);
+    expect(measured.textInListOrder).toEqual(["beta#0", "epsilon#2"]);
+
+    // Disposal leaves the list element with no rows, and the callbacks inert.
+    expect(measured.rows.afterDispose).toBe(0);
+
+    expectClean(fixture);
+  });
+
+  test("fails clearly on a host without the list PAPI", async ({ page }) => {
+    const fixture = await loadFixture(page);
+    const { view } = fixture;
+
+    const measured = await listMeasurements(view);
+
+    expect(measured.missingHostBehavior).toContain("__CreateList");
+    expect(measured.missingHostBehavior).not.toContain("no error");
+
+    expectClean(fixture);
+  });
+
+  test("serves the host's own update-list-info request", async ({ page }) => {
+    const fixture = await loadFixture(page);
+    const { view } = fixture;
+
+    // web-core does not call the row callbacks itself: it calls them from the
+    // `update-list-info` attribute on the list element, inserting at the
+    // requested positions and naming the elements it removes. This is the host's
+    // own list request path, driven end to end.
+    const driven = await hostDrivenList(view);
+
+    expect(driven.inserted).toEqual([2, 0]);
+    expect(driven.removed).toBe(1);
+    // The host asked for cells 2 and 0, so those two rows exist in index order.
+    expect(driven.childrenAfterInserts).toBe(2);
+    expect(driven.textAfterInserts).toEqual(["alpha#0", "gamma#2"]);
+    // It then dropped child 1, which is gone from the element tree and from the
+    // row model.
+    expect(driven.children).toBe(1);
+    expect(driven.textInListOrder).toEqual(["alpha#0"]);
+    // `enqueueComponent` released the removed row's scope rather than leaving it
+    // behind as a dead cell.
+    expect(driven.rows).toBe(1);
 
     expectClean(fixture);
   });

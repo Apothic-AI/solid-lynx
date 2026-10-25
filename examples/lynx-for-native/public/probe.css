@@ -1,0 +1,11 @@
+/*
+ * Stylesheet served to the device during the native stylesheet PAPI probe.
+ *
+ * The probe loads this file so `__LoadStyleSheet` has a URL that actually
+ * resolves. The rule is deliberately inert: it changes nothing any measurement
+ * depends on, so a successful load cannot alter what the probe observes.
+ */
+
+.probe-marker {
+  color: rgb(1, 1, 1);
+}

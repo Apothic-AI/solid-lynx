@@ -1,4 +1,4 @@
-import type { LynxHost, LynxNode } from "./host.js";
+import type { LynxHost, LynxListCallbacks, LynxNode } from "./host.js";
 import { eventListenerOptions, parseEventProp } from "./events.js";
 
 type PapiFunction = (...args: any[]) => any;
@@ -14,6 +14,34 @@ export interface LynxPapi {
   __CreateImage?: PapiFunction;
   __CreateFrame?: PapiFunction;
   __CreateWrapperElement?: PapiFunction;
+  /**
+   * Creates a list element and installs the row callbacks.
+   *
+   * Measured from `@lynx-js/web-core@0.26.2`
+   * (`IElementPAPI.d.ts: CreateListPAPI`): it takes the parent component
+   * unique id, the row callback, and the enqueue callback, and returns the
+   * element. Optional because a host may implement no list support at all.
+   */
+  __CreateList?: (
+    parentComponentUniqueId: number,
+    componentAtIndex: (
+      list: LynxNode,
+      listId: number,
+      cellIndex: number,
+      operationId: number,
+      enableReuseNotification: boolean,
+    ) => number | undefined,
+    enqueueComponent: LynxListCallbacks["enqueueComponent"],
+  ) => LynxNode;
+  /**
+   * Replaces the row callbacks of an existing list
+   * (`UpdateListCallbacksPAPI`).
+   */
+  __UpdateListCallbacks?: (
+    element: LynxNode,
+    componentAtIndex: LynxListCallbacks["componentAtIndex"],
+    enqueueComponent: LynxListCallbacks["enqueueComponent"],
+  ) => void;
   __CreateRawText: PapiFunction;
   __GetElementUniqueID?: PapiFunction;
   __AppendElement: PapiFunction;
@@ -71,6 +99,35 @@ const builtInCreators: Record<string, keyof LynxPapi> = {
   image: "__CreateImage",
   frame: "__CreateFrame",
   wrapper: "__CreateWrapperElement",
+};
+
+/**
+ * Tags that cannot be created through `__CreateElement`.
+ *
+ * A list is not an ordinary element: the host only recycles rows when the
+ * framework supplies `componentAtIndex` and `enqueueComponent`, which
+ * `createElement(tagName)` has no way to pass. Creating one anyway would render
+ * every row as a real child with no recycling and no warning, so both spellings
+ * fail here and point at the indexed list API instead.
+ */
+/**
+ * Whether the host exposes the list PAPI.
+ *
+ * Both operations are required, not either one: `__CreateList` creates the
+ * element, and `__UpdateListCallbacks` re-installs the row callbacks, which
+ * every model change and every disposal does. Exposing creation alone would let
+ * a list be built on a host that can never update it, so the failure would
+ * surface later — from `update()` or `dispose()` — instead of at the call that
+ * could have reported it.
+ */
+function hasListPapi(papi: LynxPapi): boolean {
+  return typeof papi.__CreateList === "function"
+    && typeof papi.__UpdateListCallbacks === "function";
+}
+
+const callbackCreatedTags: Record<string, keyof LynxPapi> = {
+  list: "__CreateList",
+  "x-list": "__CreateList",
 };
 
 const booleanAttributes = new Set([
@@ -143,6 +200,19 @@ export function createGlobalLynxHost(
 
   const createNativeElement = (tagName: string): LynxNode => {
     const tag = tagName.toLowerCase();
+    const callbackCreator = callbackCreatedTags[tag];
+    if (callbackCreator) {
+      if (!hasListPapi(papi)) {
+        throw new Error(
+          `solid-lynx cannot create <${tag}>: this Lynx host does not implement Element PAPI`
+            + " __CreateList() and __UpdateListCallbacks()",
+        );
+      }
+      throw new Error(
+        `solid-lynx cannot create <${tag}> through createElement(): a Lynx list needs row`
+          + " callbacks. Create it with LynxRoot.createList() instead.",
+      );
+    }
     const creatorName = builtInCreators[tag];
     const creator = creatorName ? papi[creatorName] : undefined;
     const element = typeof creator === "function"
@@ -334,6 +404,35 @@ export function createGlobalLynxHost(
         },
       }
       : {}),
+    // Present only where the host implements the whole list PAPI, for the same
+    // reason `setCSSId` is conditional: a list that silently degraded into a
+    // plain container would look correct and virtualize nothing. Both list
+    // operations have to exist, so a host with only `__CreateList` reports the
+    // missing `__UpdateListCallbacks` here rather than failing later.
+    ...(hasListPapi(papi)
+      ? {
+        createList(callbacks: LynxListCallbacks<LynxNode>) {
+          const element = requirePapi("__CreateList")(
+            options.getParentComponentId(),
+            callbacks.componentAtIndex,
+            callbacks.enqueueComponent,
+          ) as unknown;
+          if (!isLynxNode(element)) {
+            throw new Error("Lynx failed to create a list element");
+          }
+          scheduleFlush();
+          return element;
+        },
+        updateListCallbacks(list: LynxNode, callbacks: LynxListCallbacks<LynxNode>) {
+          requirePapi("__UpdateListCallbacks")(
+            list,
+            callbacks.componentAtIndex,
+            callbacks.enqueueComponent,
+          );
+          scheduleFlush();
+        },
+      }
+      : {}),
     insertNode(parent, node, anchor) {
       if (anchor == null) {
         requirePapi("__AppendElement")(parent, node);
@@ -362,7 +461,23 @@ export function createGlobalLynxHost(
       }
       scheduleFlush();
     },
+    // Listeners only exist in the host while their node is part of the tree, so
+    // `removeNode` detaches them. This is the same detachment without the
+    // removal, for a host that drops an element on its own.
+    detachListeners(node) {
+      syncEventTree(node, false);
+    },
     isTextNode: node => textNodes.has(node),
+    // The list PAPI names rows by this id, so it is read through the host
+    // rather than from the PAPI inside the list model.
+    ...(typeof papi.__GetElementUniqueID === "function"
+      ? {
+        getUniqueId(node: LynxNode) {
+          const id = papi.__GetElementUniqueID!(node);
+          return typeof id === "number" ? id : undefined;
+        },
+      }
+      : {}),
     getParentNode(node) {
       return parents.get(node)
         ?? (papi.__GetParent?.(node) as LynxNode | null | undefined)

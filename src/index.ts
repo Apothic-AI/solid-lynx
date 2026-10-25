@@ -45,6 +45,8 @@ export { createLynxRoot, renderLynxPage } from "./root.js";
 export type { LynxRoot, LynxRootOptions } from "./root.js";
 export { createLynxRef } from "./refs.js";
 export type { LynxRef, LynxRefCallback, LynxRefObject } from "./refs.js";
+export type { LynxList, LynxListOptions, LynxListRow } from "./list.js";
+export type { LynxListCallbacks } from "./host.js";
 export { ensureLynxEnvironmentBasics, initializeLynxRootContext } from "./universal.js";
 export type {
   JSX,

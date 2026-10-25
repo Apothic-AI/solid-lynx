@@ -68,8 +68,22 @@ Add platform features through explicit, testable adapters while keeping the core
     than approximated. The A03 device run did observe native
     `__LoadStyleSheet`/`__AdoptStyleSheet`/`__ReplaceStyleSheets` globals; their
     semantics are unmeasured, so integrating them is still open.
+  - A measurement card for the three native operations is built
+    (`examples/lynx-for-native/src/stylesheet-probe.ts`, logging one
+    `[solid-lynx ss]` line per stage, calling only what cannot mutate the card).
+    Its A03 run has not happened yet, so nothing about their signatures or
+    lifecycle is claimed, and no renderer or web-side stylesheet API has been
+    added.
 - [x] Add refs and imperative element access with deterministic cleanup.
 - [x] Evaluate native list virtualization and expose list callbacks if the Solid model can support them cleanly.
+  - The renderer side is done: `root.createList()` creates the list through
+    `__CreateList` and re-installs the callbacks through `__UpdateListCallbacks`,
+    with a keyed indexed row model (`src/list.ts`), covered by fake-PAPI unit
+    tests and by the browser suite driving the host's own `update-list-info`
+    request path. `<list>` in JSX now fails rather than rendering a
+    non-virtualized container. What is still open is recycling and native
+    validation: no host in this repository has been seen to recycle a cell, and
+    nothing has run on a device, so native list support is unverified.
 - [x] Evaluate gesture, animation, and portal/overlay APIs as separate capabilities.
 - [x] Publish examples for forms, keyed lists, asynchronous content, and platform-specific capabilities.
 

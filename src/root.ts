@@ -5,6 +5,7 @@ import {
   getLynxPageId,
   type LynxPapi,
 } from "./lynx-host.js";
+import { createLynxList, type LynxList, type LynxListOptions } from "./list.js";
 import { createLynxRenderer, type LynxRenderer } from "./renderer.js";
 
 export interface LynxRootOptions {
@@ -36,6 +37,28 @@ export interface LynxRoot {
    * @throws if the host does not implement the CSS-id PAPI.
    */
   setCSSId(cssId: number | null, entryName?: string): void;
+  /**
+   * Creates a list element wired to the Lynx list PAPI and an indexed row model.
+   *
+   * The list is created through `__CreateList` and inserted into `options.parent`
+   * (the root's page by default), so it is owned by this root: it receives the
+   * root's CSS id and is removed with the root.
+   *
+   * `options.items` is read lazily, so the callbacks always see the current
+   * model. Call `update()` on the returned list when the model changes to
+   * release rows that left it and re-install the callbacks through
+   * `__UpdateListCallbacks`.
+   *
+   * A host that implements no list PAPI throws here rather than rendering a
+   * plain container, which would look correct and virtualize nothing.
+   *
+   * Writing `<list>` in JSX is not the path: the element needs row callbacks
+   * that `createElement` cannot pass, so it fails at runtime and the tag is not
+   * in the JSX element types.
+   *
+   * @throws if the host does not implement the list PAPI.
+   */
+  createList<T>(options: LynxListOptions<T>): LynxList<T>;
   dispose(): void;
   flush(): void;
 }
@@ -114,7 +137,17 @@ export function createLynxRoot(options: LynxRootOptions = {}): LynxRoot {
 
   let disposeRenderer: (() => void) | undefined;
 
+  /**
+   * Lists this root created.
+   *
+   * A row owns Solid scopes and host nodes, so the root releases them with
+   * everything else it rendered instead of leaving a recycled cell behind.
+   */
+  const lists: LynxList<unknown>[] = [];
+
   const dispose = () => {
+    for (const list of lists) list.dispose();
+    lists.length = 0;
     disposeRenderer?.();
     disposeRenderer = undefined;
     for (const node of [...ownedNodes]) {
@@ -147,6 +180,11 @@ export function createLynxRoot(options: LynxRootOptions = {}): LynxRoot {
       // One call for the whole root: the PAPI takes the elements as an array.
       applyCSSIdTo([...ownedNodes]);
       renderer.flush();
+    },
+    createList<T>(options: LynxListOptions<T>): LynxList<T> {
+      const list = createLynxList(ownedHost, renderer, page, options);
+      lists.push(list as LynxList<unknown>);
+      return list;
     },
     dispose,
     flush: renderer.flush,

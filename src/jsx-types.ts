@@ -163,9 +163,16 @@ export namespace JSX {
     "x-textarea": LynxTextareaAttributes;
     input: LynxInputAttributes;
     textarea: LynxTextareaAttributes;
-    list: LynxElementAttributes;
+    /**
+     * `list` and `x-list` are deliberately absent.
+     *
+     * A Lynx list is not an ordinary element: the host only recycles rows when
+     * the framework supplies `componentAtIndex` and `enqueueComponent`, which
+     * JSX cannot pass. `LynxRoot.createList()` is the supported path, and it
+     * keeps this a build-time error rather than a list that silently renders
+     * every row.
+     */
     "list-item": LynxElementAttributes;
-    "x-list": LynxElementAttributes;
     "x-list-item": LynxElementAttributes;
     "x-swiper": LynxElementAttributes;
     "x-swiper-item": LynxElementAttributes;

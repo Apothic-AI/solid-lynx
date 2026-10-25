@@ -72,11 +72,35 @@ interface CSSIdCall {
   elements: FakeNode[];
 }
 
+/** The pair the host currently holds for a list, as `__CreateList`/`__UpdateListCallbacks` received it. */
+interface FakeListCallbacks {
+  componentAtIndex: (
+    list: LynxNode,
+    listId: number,
+    cellIndex: number,
+    operationId: number,
+    enableReuseNotification: boolean,
+  ) => number | undefined;
+  enqueueComponent: (list: LynxNode, listId: number, sign: number) => void;
+}
+
+interface FakeListCall {
+  op: "create" | "update";
+  parentComponentUniqueId?: number;
+  list?: LynxNode;
+  callbacks: FakeListCallbacks;
+}
+
 function createFakePapi() {
   let nextId = 1;
   let flushes = 0;
   const listenerCalls: ListenerCall[] = [];
   const cssIdCalls: CSSIdCall[] = [];
+  const creates: string[] = [];
+  const listCalls: FakeListCall[] = [];
+  let listCallbacks: FakeListCallbacks | undefined;
+  let listNode: FakeNode | undefined;
+  let listId = 1;
 
   const makeNode = (kind: FakeNode["kind"], tagName: string, text = ""): FakeNode => ({
     kind,
@@ -86,6 +110,12 @@ function createFakePapi() {
     children: [],
     listeners: [],
   });
+
+  /** Records the tag every create PAPI built, so a test can prove a row was reused. */
+  const created = (tagName: string) => {
+    creates.push(tagName);
+    return register(makeNode("element", tagName));
+  };
 
   const append = (parent: FakeNode, child: FakeNode, anchor?: FakeNode) => {
     if (child === anchor) return;
@@ -98,6 +128,13 @@ function createFakePapi() {
     parent.children.splice(index, 0, child);
   };
 
+  const detach = (parent: FakeNode, child: FakeNode) => {
+    const index = parent.children.indexOf(child);
+    if (index < 0) throw new Error("Cannot remove a node from the wrong parent");
+    parent.children.splice(index, 1);
+    child.parent = undefined;
+  };
+
   const page = makeNode("element", "page");
   const ids = new WeakMap<object, number>([[page, nextId++]]);
 
@@ -108,24 +145,41 @@ function createFakePapi() {
 
   const papi: LynxPapi = {
     __CreatePage: () => page,
-    __CreateElement: (tag: string) => register(makeNode("element", tag)),
-    __CreateView: () => register(makeNode("element", "view")),
-    __CreateText: () => register(makeNode("element", "text")),
-    __CreateImage: () => register(makeNode("element", "image")),
-    __CreateScrollView: () => register(makeNode("element", "scroll-view")),
-    __CreateWrapperElement: () => register(makeNode("element", "wrapper")),
+    __CreateElement: (tag: string) => created(tag),
+    __CreateView: () => created("view"),
+    __CreateText: () => created("text"),
+    __CreateImage: () => created("image"),
+    __CreateScrollView: () => created("scroll-view"),
+    __CreateWrapperElement: () => created("wrapper"),
+    // Mirrors the host contract: the row callbacks arrive with the creation
+    // call, and `__UpdateListCallbacks` replaces the pair the host holds.
+    __CreateList: (
+      parentComponentUniqueId: number,
+      componentAtIndex: FakeListCallbacks["componentAtIndex"],
+      enqueueComponent: FakeListCallbacks["enqueueComponent"],
+    ) => {
+      listNode = created("list");
+      const callbacks = { componentAtIndex, enqueueComponent };
+      listCallbacks = callbacks;
+      listCalls.push({ op: "create", parentComponentUniqueId, list: listNode, callbacks });
+      return listNode;
+    },
+    __UpdateListCallbacks: (
+      element: LynxNode,
+      componentAtIndex: FakeListCallbacks["componentAtIndex"],
+      enqueueComponent: FakeListCallbacks["enqueueComponent"],
+    ) => {
+      const callbacks = { componentAtIndex, enqueueComponent };
+      listCallbacks = callbacks;
+      listCalls.push({ op: "update", list: element as FakeNode, callbacks });
+    },
     __CreateRawText: (text: string) => register(makeNode("text", "raw-text", text)),
     __GetElementUniqueID: (node: FakeNode) => ids.get(node)!,
     __AppendElement: (parent: FakeNode, child: FakeNode) => append(parent, child),
     __InsertElementBefore: (parent: FakeNode, child: FakeNode, anchor: FakeNode) => {
       append(parent, child, anchor);
     },
-    __RemoveElement: (parent: FakeNode, child: FakeNode) => {
-      const index = parent.children.indexOf(child);
-      if (index < 0) throw new Error("Cannot remove a node from the wrong parent");
-      parent.children.splice(index, 1);
-      child.parent = undefined;
-    },
+    __RemoveElement: (parent: FakeNode, child: FakeNode) => detach(parent, child),
     __FirstElement: (node: FakeNode) => node.children[0] ?? null,
     __NextElement: (node: FakeNode) => {
       const siblings = node.parent?.children ?? [];
@@ -264,6 +318,41 @@ function createFakePapi() {
     papi,
     listenerCalls,
     cssIdCalls,
+    listCalls,
+    creates,
+    /** The callbacks the host currently holds for the list. */
+    installedListCallbacks: () => listCallbacks,
+    /** The list element the host created, if any. */
+    listNode: () => listNode,
+    /** A fresh list id, the way a host hands one out per list. */
+    nextListId: () => listId++,
+    /** Asks for the row at `cellIndex` the way a host drives `componentAtIndex`. */
+    requestCell(
+      cellIndex: number,
+      options: { listId?: number; operationId?: number; enableReuseNotification?: boolean } = {},
+    ): { children: number; sign: number | undefined } {
+      if (!listNode || !listCallbacks) throw new Error("No list was created");
+      const sign = listCallbacks.componentAtIndex(
+        listNode,
+        options.listId ?? listId,
+        cellIndex,
+        options.operationId ?? 1,
+        options.enableReuseNotification ?? false,
+      );
+      return { children: listNode.children.length, sign };
+    },
+    /** Removes a row the way a host does: name the element, then drop the node. */
+    removeCell(position: number): { sign: number; children: number } {
+      if (!listNode || !listCallbacks) throw new Error("No list was created");
+      const removed = listNode.children[position];
+      if (!removed) throw new Error("No row at that position");
+      const sign = ids.get(removed)!;
+      listCallbacks.enqueueComponent(listNode, listId, sign);
+      // The host drops the node itself; removing it a second time here is the
+      // failure this fake exists to make visible.
+      detach(listNode, removed);
+      return { sign, children: listNode.children.length };
+    },
     fire,
     dispatch,
     liveRegistrations,
@@ -1378,5 +1467,443 @@ describe("root-scoped CSS ids", () => {
 
     first.dispose();
     second.dispose();
+  });
+});
+
+describe("indexed list model", () => {
+  interface Task {
+    id: number;
+    label: string;
+  }
+
+  const tasks: Task[] = [
+    { id: 1, label: "first" },
+    { id: 2, label: "second" },
+    { id: 3, label: "third" },
+  ];
+
+  const createRoot = (fake: ReturnType<typeof createFakePapi>) =>
+    createLynxRoot({ papi: fake.papi });
+
+  const makeList = (
+    fake: ReturnType<typeof createFakePapi>,
+    items: () => readonly Task[],
+    keyOf: (task: Task) => unknown = task => task.id,
+  ) => {
+    const root = createRoot(fake);
+    const list = root.createList<Task>({
+      items,
+      getKey: keyOf,
+      children: (item, index) => {
+        const view = root.renderer.createElement("view");
+        root.renderer.insert(view, () => `${item.label}#${index()}`);
+        return view;
+      },
+    });
+    return { root, list };
+  };
+
+  const rowLabels = (fake: ReturnType<typeof createFakePapi>): string[] => {
+    const node = fake.listNode()!;
+    return node.children.map(child => child.children[0]?.text ?? child.text);
+  };
+
+  it("creates the list through __CreateList with the parent component id and both callbacks", () => {
+    const fake = createFakePapi();
+    const { root, list } = makeList(fake, () => tasks);
+
+    expect(fake.listCalls).toHaveLength(1);
+    const [call] = fake.listCalls;
+    expect(call.op).toBe("create");
+    expect(call.parentComponentUniqueId).toBe(fake.papi.__GetElementUniqueID!(fake.page));
+    expect(typeof call.callbacks.componentAtIndex).toBe("function");
+    expect(typeof call.callbacks.enqueueComponent).toBe("function");
+    // The list element is owned by the root, so it lands in the root's page.
+    expect(fake.page.children).toContain(list.list);
+    expect((list.list as FakeNode).tagName).toBe("list");
+
+    root.dispose();
+  });
+
+  it("materializes only the row the host asks for, in index order", () => {
+    const fake = createFakePapi();
+    const { root, list } = makeList(fake, () => tasks);
+
+    expect(fake.requestCell(2).children).toBe(1);
+    expect(rowLabels(fake)).toEqual(["third#2"]);
+
+    expect(fake.requestCell(0).children).toBe(2);
+    expect(rowLabels(fake)).toEqual(["first#0", "third#2"]);
+
+    expect(fake.requestCell(1).children).toBe(3);
+    expect(rowLabels(fake)).toEqual(["first#0", "second#1", "third#2"]);
+
+    root.dispose();
+  });
+
+  it("answers componentAtIndex with the unique id of the row it built", () => {
+    const fake = createFakePapi();
+    const { root, list } = makeList(fake, () => tasks);
+
+    // The host finds the element it should position through this id, so
+    // returning it is part of answering the request.
+    const { sign } = fake.requestCell(1);
+    expect(sign).toBe(
+      fake.papi.__GetElementUniqueID!(fake.listNode()!.children[0]!),
+    );
+
+    // An index the model does not cover has no row to name.
+    expect(fake.requestCell(9).sign).toBeUndefined();
+    expect(list.rows).toHaveLength(1);
+
+    root.dispose();
+  });
+
+  it("releases the row a host names for removal without removing its node", () => {
+    const fake = createFakePapi();
+    const { root, list } = makeList(fake, () => tasks);
+
+    fake.requestCell(0);
+    fake.requestCell(1);
+    expect(list.rows).toHaveLength(2);
+
+    // The host removes the element itself right after calling
+    // `enqueueComponent`, so the row's scope is released here and the node is
+    // left for the host. Removing it here too would make the host's own
+    // removal throw.
+    const { sign, children } = fake.removeCell(0);
+    expect(sign).toBeTypeOf("number");
+    expect(children).toBe(1);
+    expect(list.rows.map(row => row.index())).toEqual([1]);
+    expect(fake.page.children).toContain(list.list);
+
+    root.dispose();
+  });
+
+  it("keeps list children in ascending index order for sparse out-of-order requests", () => {
+    const fake = createFakePapi();
+    const sparse = Array.from({ length: 6 }, (_, index) => ({
+      id: index,
+      label: `row-${index}`,
+    }));
+    const { root, list } = makeList(fake, () => sparse);
+
+    // The positions a host asks for are model indices, not positions among the
+    // rows that happen to be materialized, so cell 5 then cell 3 must leave the
+    // list ordered 3, 5.
+    fake.requestCell(5);
+    expect(rowLabels(fake)).toEqual(["row-5#5"]);
+
+    fake.requestCell(3);
+    expect(rowLabels(fake)).toEqual(["row-3#3", "row-5#5"]);
+
+    // A request in the middle of the materialized rows lands between them.
+    fake.requestCell(4);
+    expect(rowLabels(fake)).toEqual(["row-3#3", "row-4#4", "row-5#5"]);
+
+    // Re-requesting an existing row changes nothing.
+    fake.requestCell(3);
+    expect(rowLabels(fake)).toEqual(["row-3#3", "row-4#4", "row-5#5"]);
+    expect(list.rows.map(row => row.index())).toEqual([3, 4, 5]);
+
+    root.dispose();
+  });
+
+  it("reconciles surviving rows on update without another host request", () => {
+    const fake = createFakePapi();
+    let items = [...tasks];
+    const { root, list } = makeList(fake, () => items);
+
+    fake.requestCell(0);
+    fake.requestCell(1);
+    fake.requestCell(2);
+    const nodes = [...fake.listNode()!.children];
+    const createdAfterFirstPass = fake.creates.length;
+
+    // The host asks for nothing this time: only the model changed.
+    items = [tasks[2]!, tasks[0]!, tasks[1]!];
+    list.update();
+
+    // Every key survived, so the rows moved rather than rebuilt.
+    expect(fake.creates).toHaveLength(createdAfterFirstPass);
+    expect(rowLabels(fake)).toEqual(["third#0", "first#1", "second#2"]);
+    expect(list.rows.map(row => row.index())).toEqual([0, 1, 2]);
+    expect(fake.listNode()!.children).toEqual([nodes[2], nodes[0], nodes[1]]);
+
+    // Shrinking the model releases what left and keeps the rest ordered.
+    items = [tasks[1]!, tasks[0]!];
+    list.update();
+    expect(rowLabels(fake)).toEqual(["second#0", "first#1"]);
+    expect(fake.listNode()!.children).toEqual([nodes[1], nodes[0]]);
+
+    root.dispose();
+  });
+
+  it("rebuilds a surviving key whose item was replaced", () => {
+    const fake = createFakePapi();
+    let items = [...tasks];
+    const { root, list } = makeList(fake, () => items);
+
+    fake.requestCell(0);
+    const original = fake.listNode()!.children[0]!;
+
+    // Same key, new item: the row's content came from the old item, so it is
+    // rebuilt under the same key rather than left stale.
+    items = [{ id: 1, label: "renamed" }];
+    list.update();
+
+    expect(rowLabels(fake)).toEqual(["renamed#0"]);
+    expect(list.rows).toHaveLength(1);
+    expect(fake.listNode()!.children[0]).not.toBe(original);
+
+    root.dispose();
+  });
+
+  it("releases host event registrations when the host removes a row itself", () => {
+    const fake = createFakePapi();
+    const root = createRoot(fake);
+    let taps = 0;
+    const list = root.createList<Task>({
+      items: () => tasks,
+      getKey: task => task.id,
+      children: (item, index) => {
+        const view = root.renderer.createElement("view");
+        root.renderer.setProp(view, "bindtap", () => {
+          taps += 1;
+        });
+        root.renderer.insert(view, () => `${item.label}#${index()}`);
+        return view;
+      },
+    });
+
+    fake.requestCell(0);
+    const row = fake.listNode()!.children[0]!;
+    expect(fake.registrations(row)).toEqual(["bindevent:tap"]);
+
+    // The host removes the element itself, so this host's `removeNode` never
+    // runs. The row's registrations have to be released anyway, or they stay on
+    // the orphaned element.
+    fake.removeCell(0);
+
+    expect(fake.registrations(row)).toEqual([]);
+    expect(fake.listenerCalls).toContainEqual({
+      op: "remove",
+      name: "tap",
+      eventType: "bindevent",
+      bindType: 1,
+      capture: undefined,
+      closureType: undefined,
+    });
+    expect(list.rows).toHaveLength(0);
+    expect(taps).toBe(0);
+
+    root.dispose();
+  });
+
+  it("keeps one node per key and reuses it when the host asks again", () => {
+    const fake = createFakePapi();
+    const { root, list } = makeList(fake, () => tasks);
+
+    fake.requestCell(0);
+    fake.requestCell(1);
+    const createdAfterFirstPass = fake.creates.length;
+
+    fake.requestCell(0);
+    fake.requestCell(1);
+
+    expect(fake.creates).toHaveLength(createdAfterFirstPass);
+    expect(list.rows).toHaveLength(2);
+    expect(list.materialize(1)).toBe(list.materialize(1));
+
+    root.dispose();
+  });
+
+  it("updates a row in place when its index changes and keeps its node", () => {
+    const fake = createFakePapi();
+    let items = [...tasks];
+    const { root, list } = makeList(fake, () => items);
+
+    fake.requestCell(0);
+    fake.requestCell(1);
+    const nodes = [...fake.listNode()!.children];
+    const createdAfterFirstPass = fake.creates.length;
+
+    // The same two keys, reversed: both rows must move rather than rebuild.
+    items = [tasks[1]!, tasks[0]!, tasks[2]!];
+    list.update();
+    fake.requestCell(0);
+    fake.requestCell(1);
+
+    expect(fake.creates).toHaveLength(createdAfterFirstPass);
+    expect(rowLabels(fake)).toEqual(["second#0", "first#1"]);
+    expect(list.rows.map(row => row.index())).toEqual([0, 1]);
+    // Row 0 is still the node the host was given for task 2.
+    expect(fake.listNode()!.children[0]).toBe(nodes[1]);
+    expect(fake.listNode()!.children[1]).toBe(nodes[0]);
+
+    root.dispose();
+  });
+
+  it("re-installs the callbacks through __UpdateListCallbacks when the model changes", () => {
+    const fake = createFakePapi();
+    let items = [...tasks];
+    const { root, list } = makeList(fake, () => items);
+
+    const created = fake.listCalls[0]!.callbacks;
+    list.update();
+
+    expect(fake.listCalls.map(call => call.op)).toEqual(["create", "update"]);
+    const updated = fake.listCalls[1]!.callbacks;
+    expect(updated.componentAtIndex).not.toBe(created.componentAtIndex);
+    expect(fake.installedListCallbacks()).toBe(updated);
+
+    // A pair from a superseded generation must not materialize anything.
+    fake.requestCell(1);
+    const materialized = fake.listNode()!.children.length;
+    created.componentAtIndex(fake.listNode()!, 1, 2, 1, false);
+    expect(fake.listNode()!.children.length).toBe(materialized);
+
+    items = [tasks[0]!];
+    root.dispose();
+  });
+
+  it("releases rows whose key left the model", () => {
+    const fake = createFakePapi();
+    let items = [...tasks];
+    const { root, list } = makeList(fake, () => items);
+
+    fake.requestCell(0);
+    fake.requestCell(1);
+    expect(fake.listNode()!.children).toHaveLength(2);
+
+    items = [tasks[0]!, tasks[2]!];
+    list.update();
+
+    expect(rowLabels(fake)).toEqual(["first#0"]);
+    expect(list.rows).toHaveLength(1);
+
+    root.dispose();
+  });
+
+  it("materializes nothing for an index past the model and releases a row that left it", () => {
+    const fake = createFakePapi();
+    let items = [...tasks];
+    const { root, list } = makeList(fake, () => items);
+
+    fake.requestCell(2);
+    expect(fake.listNode()!.children).toHaveLength(1);
+
+    items = [tasks[0]!];
+    list.update();
+
+    // Task 3 is gone from the model, so its row is released instead of reused.
+    expect(fake.requestCell(2).children).toBe(0);
+    expect(list.rows).toHaveLength(0);
+
+    root.dispose();
+  });
+
+  it("rejects an index that is not a non-negative integer", () => {
+    const fake = createFakePapi();
+    const { root, list } = makeList(fake, () => tasks);
+
+    expect(() => list.materialize(-1)).toThrow(RangeError);
+    expect(() => list.materialize(1.5)).toThrow(RangeError);
+
+    root.dispose();
+  });
+
+  it("releases every row and detaches the callbacks on disposal", () => {
+    const fake = createFakePapi();
+    const { root, list } = makeList(fake, () => tasks);
+
+    fake.requestCell(0);
+    fake.requestCell(1);
+    const listNode = fake.listNode()!;
+    const installed = fake.installedListCallbacks()!;
+
+    list.dispose();
+
+    expect(list.disposed).toBe(true);
+    expect(listNode.children).toHaveLength(0);
+    expect(list.rows).toHaveLength(0);
+    expect(() => list.materialize(0)).toThrow(/disposed/);
+    // Disposal leaves an inert pair installed, so a host holding the list
+    // cannot repopulate the disposed model.
+    installed.componentAtIndex(listNode, 1, 0, 1, false);
+    expect(listNode.children).toHaveLength(0);
+
+    // Idempotent, and the root releases the list element itself.
+    expect(() => {
+      list.dispose();
+      root.dispose();
+    }).not.toThrow();
+    expect(fake.page.children).toHaveLength(0);
+  });
+
+  it("fails clearly when the host implements no list PAPI", () => {
+    const fake = createFakePapi();
+    const { __CreateList, __UpdateListCallbacks, ...papi } = fake.papi;
+    void __CreateList;
+    void __UpdateListCallbacks;
+    const root = createLynxRoot({ papi: papi as LynxPapi, page: fake.page });
+
+    expect(() => root.createList({ items: () => tasks, children: () => root.renderer.createElement("view") }))
+      .toThrow(/__CreateList/);
+
+    root.dispose();
+  });
+
+  it("fails fast when the host creates a list but cannot update its callbacks", () => {
+    const fake = createFakePapi();
+    // `__CreateList` without `__UpdateListCallbacks`: creation alone is not list
+    // support, because every model change and every disposal re-installs the
+    // callbacks through `__UpdateListCallbacks`.
+    const papi: LynxPapi = { ...fake.papi, __UpdateListCallbacks: undefined };
+    const host = createGlobalLynxHost({
+      papi,
+      getParentComponentId: () => fake.papi.__GetElementUniqueID!(fake.page),
+    });
+
+    // The adapter exposes neither wrapper, so the missing operation is named at
+    // the call that could report it rather than from a later update or dispose.
+    expect(host.createList).toBeUndefined();
+    expect(host.updateListCallbacks).toBeUndefined();
+    expect(() => host.createElement("list")).toThrow(/__UpdateListCallbacks/);
+
+    const root = createLynxRoot({ papi, page: fake.page });
+    expect(() => root.createList({
+      items: () => tasks,
+      children: () => root.renderer.createElement("view"),
+    })).toThrow(/__UpdateListCallbacks/);
+
+    // Nothing was created, and the rejected call leaves the root disposable.
+    expect(fake.listCalls).toHaveLength(0);
+    expect(() => root.dispose()).not.toThrow();
+  });
+
+  it("refuses to create <list> through createElement", () => {
+    const fake = createFakePapi();
+    const host = createGlobalLynxHost({
+      papi: fake.papi,
+      getParentComponentId: () => fake.papi.__GetElementUniqueID!(fake.page),
+    });
+
+    // The element needs row callbacks that `createElement` cannot pass, so it
+    // points at the indexed list API instead of creating a container that would
+    // virtualize nothing.
+    expect(() => host.createElement("list")).toThrow(/createList/);
+    expect(() => host.createElement("x-list")).toThrow(/createList/);
+    expect(fake.creates).not.toContain("list");
+  });
+
+  it("names the missing list PAPI when the host has no list support at all", () => {
+    const fake = createFakePapi();
+    const host = createGlobalLynxHost({
+      papi: { ...fake.papi, __CreateList: undefined, __UpdateListCallbacks: undefined },
+      getParentComponentId: () => fake.papi.__GetElementUniqueID!(fake.page),
+    });
+
+    expect(() => host.createElement("list")).toThrow(/does not implement Element PAPI __CreateList/);
   });
 });

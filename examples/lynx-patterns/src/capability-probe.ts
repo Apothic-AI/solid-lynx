@@ -73,6 +73,65 @@ type PapiGlobal = LynxPapi & Record<string, unknown> & {
   __GetPageElement?: () => LynxNode | undefined;
 };
 
+/** The list element shape web-core creates, with the row callbacks stored on it. */
+interface HostListElement {
+  componentAtIndex?: (
+    list: unknown,
+    listId: number,
+    cellIndex: number,
+    operationId: number,
+    enableReuseNotification: boolean,
+  ) => number | undefined;
+  enqueueComponent?: (list: unknown, listId: number, sign: number) => void;
+  children?: ArrayLike<{ firstElementChild: HTMLElement | null }>;
+  tagName?: string;
+}
+
+/** A rendered row's label, read from the host rather than from the DOM text. */
+function rowLabel(row: { firstElementChild: HTMLElement | null }): string {
+  return row.firstElementChild?.getAttribute("text") ?? "";
+}
+
+/** What the host's own list request path did with the row callbacks. */
+export interface ListHostDriven {
+  /** Cell positions asked for through `update-list-info`. */
+  inserted: number[];
+  /** Child position asked to be removed. */
+  removed: number;
+  childrenAfterInserts: number;
+  textAfterInserts: string[];
+  children: number;
+  textInListOrder: string[];
+  /** Rows this list still holds, which the host's removal must have released. */
+  rows: number;
+}
+
+/** What the probe measured about the indexed row model on this host. */
+export interface ListMeasurements {
+  hostCallbacksWired: boolean;
+  /** Child elements the list element held after each step. */
+  rows: {
+    afterCreate: number;
+    afterFirstCell: number;
+    afterMiddleCell: number;
+    afterRepeat: number;
+    afterModelChange: number;
+    afterDispose: number;
+  };
+  /** Elements created per step, from the traced create PAPI. */
+  creates: {
+    firstCell: number;
+    middleCell: number;
+    repeat: number;
+  };
+  textInListOrder: string[];
+  /** Number of `__CreateList` / `__UpdateListCallbacks` calls. */
+  createCalls: number;
+  updateCalls: number;
+  /** What happened when a host with no list PAPI was asked for a list. */
+  missingHostBehavior: string;
+}
+
 const describeArgs = (value: unknown): string => {
   if (value === null || value === undefined) return String(value);
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -110,37 +169,144 @@ export function runCapabilityProbe(label = "web-core"): CapabilityReport {
   const renderer = root.renderer;
 
   try {
-    // List virtualization: the host PAPI only recycles when the framework hands
-    // it `componentAtIndex` and `enqueueComponent`, which this renderer has no
-    // way to supply.
-    const listCalls: string[] = [];
-    const listView = renderer.createElement("list");
-    renderer.insert(container, listView);
-    renderer.setProp(listView, "recyclable", true);
-    const listTrace = tracePapi(papi, ["__CreateList", "__UpdateListCallbacks", "__SetAttribute"]);
-    renderer.setProp(listView, "item-count", 1000);
-    listCalls.push(...listTrace.calls.map(call => call.name));
-    listTrace.restore();
-    const hasCallbacks = (listView as unknown as Record<string, unknown>).componentAtIndex
-      !== undefined;
+    // List virtualization: the renderer creates the list through
+    // `__CreateList` with real row callbacks, and web-core stores that pair on
+    // the element it creates. Nothing in web-core calls the pair, so the probe
+    // calls it the way a host does and reads the tree the host owns.
+    const listId = papi.__GetElementUniqueID!(container);
+    let model: string[] = ["alpha", "beta", "gamma", "delta", "epsilon"];
+    const listTrace = tracePapi(papi, [
+      "__CreateList",
+      "__UpdateListCallbacks",
+      "__CreateView",
+      "__CreateRawText",
+    ]);
+    const createsAfter = (mark: number) => listTrace.calls
+      .slice(mark)
+      .filter(call => call.name === "__CreateView" || call.name === "__CreateRawText").length;
+    const list = root.createList<string>({
+      items: () => model,
+      children: (item, index) => {
+        const cell = renderer.createElement("view");
+        renderer.insert(cell, () => `${item}#${index()}`);
+        return cell;
+      },
+    });
+    const listElement = list.list as unknown as HostListElement;
+    const hostCallbacksWired = typeof listElement.componentAtIndex === "function"
+      && typeof listElement.enqueueComponent === "function";
+    const askForCell = (cellIndex: number, operationId: number) => {
+      listElement.componentAtIndex?.(listElement, listId, cellIndex, operationId, false);
+    };
+    const childCount = () => listElement.children?.length ?? 0;
 
-    findings.push({
+    let mark = listTrace.calls.length;
+    const rows: ListMeasurements["rows"] = {
+      afterCreate: childCount(),
+      afterFirstCell: 0,
+      afterMiddleCell: 0,
+      afterRepeat: 0,
+      afterModelChange: 0,
+      afterDispose: 0,
+    };
+    // Cells are asked for out of order and with gaps, which is where "position
+    // among the materialized rows" and "index in the model" come apart.
+    askForCell(4, 1);
+    rows.afterFirstCell = childCount();
+    const firstCell = createsAfter(mark);
+    mark = listTrace.calls.length;
+
+    askForCell(1, 2);
+    rows.afterMiddleCell = childCount();
+    const middleCell = createsAfter(mark);
+    mark = listTrace.calls.length;
+
+    // The same key again: a keyed row keeps its node, so nothing is created.
+    askForCell(1, 3);
+    rows.afterRepeat = childCount();
+    const repeat = createsAfter(mark);
+
+    // The model drops two rows and shifts the rest, and no further host request
+    // arrives: `update()` has to move the surviving rows and reset their index
+    // accessors on its own.
+    model = ["beta", "gamma", "epsilon"];
+    list.update();
+    rows.afterModelChange = childCount();
+    const textInListOrder = Array.from(listElement.children ?? []).map(rowLabel);
+
+    list.dispose();
+    rows.afterDispose = childCount();
+    const listMeasurements: ListMeasurements = {
+      hostCallbacksWired,
+      rows,
+      creates: { firstCell, middleCell, repeat },
+      textInListOrder,
+      createCalls: listTrace.calls.filter(call => call.name === "__CreateList").length,
+      updateCalls: listTrace.calls.filter(call => call.name === "__UpdateListCallbacks").length,
+      // A host with no list PAPI has to fail loudly; measured by asking for a
+      // list through the same root with the list PAPI removed.
+      missingHostBehavior: measureMissingListHost(),
+    };
+    listTrace.restore();
+    (globalThis as unknown as Record<string, unknown>).__SOLID_LYNX_LIST__ = listMeasurements;
+
+    // The host's own request path is measured after this probe's root is gone, so
+    // it runs in its own root and reports a promise the host settles itself.
+    const hostDriven = measureHostDrivenList(papi, page);
+    hostDriven.then(result => {
+      listFinding.observed.push(
+        `through the host's own update-list-info request (insert ${result.inserted.join(", ")},`
+          + ` remove ${result.removed}): ${result.childrenAfterInserts} child element(s) in order`
+          + ` [${result.textAfterInserts.join(", ")}], then ${result.children} left`
+          + ` [${result.textInListOrder.join(", ")}] with ${result.rows} row(s) still held`,
+      );
+    });
+    (globalThis as unknown as Record<string, unknown>).__SOLID_LYNX_LIST_HOST_DRIVEN__ = hostDriven;
+
+    const listFinding: CapabilityFinding = {
       capability: "list-virtualization",
-      status: "host-only",
+      status: "supported",
       papi: ["__CreateList", "__UpdateListCallbacks"].map(has),
       observed: [
-        `renderer created <list> as ${describeArgs((papi.__GetTag as ((n: unknown) => string) | undefined)?.(listView))}`,
-        `PAPI calls while setting list props: ${listCalls.join(", ") || "none"}`,
-        `host list callbacks wired: ${hasCallbacks ? "yes" : "no"}`,
+        `__CreateList calls: ${listMeasurements.createCalls}, __UpdateListCallbacks calls: ${listMeasurements.updateCalls}`,
+        `host list callbacks wired on the element: ${hostCallbacksWired ? "yes" : "no"}`,
+        `rows created after asking for cell 4: ${listMeasurements.creates.firstCell} element(s),`
+          + ` list children: ${listMeasurements.rows.afterFirstCell}`,
+        `rows created after asking for cell 1: ${listMeasurements.creates.middleCell} element(s),`
+          + ` list children: ${listMeasurements.rows.afterMiddleCell}`,
+        `rows created after asking for cell 1 again: ${listMeasurements.creates.repeat}`,
+        `list order after a model change with no further host request:`
+          + ` ${listMeasurements.textInListOrder.join(", ") || "empty"}`,
+        `list children after dispose: ${listMeasurements.rows.afterDispose}`,
+        `host without the list PAPI: ${listMeasurements.missingHostBehavior}`,
       ],
-      today: "`<list>` renders as an ordinary container. Every row is a real child node,"
-        + " so a long list costs one element per row and nothing is recycled.",
+      today: "`root.createList()` creates the list through `__CreateList` with a"
+        + " `componentAtIndex` and `enqueueComponent` pair, and re-installs the pair through"
+        + " `__UpdateListCallbacks` whenever the model changes. The host owns row selection:"
+        + " it asks for the cell index it wants and this model materializes exactly that row,"
+        + " keyed, in ascending index order even when the host asks out of order. A model"
+        + " change moves the surviving rows and resets their index accessors without another"
+        + " host request. `componentAtIndex` answers with the row's unique id and"
+        + " `enqueueComponent` releases the row the host is removing, including the event"
+        + " registrations it filed. On this host the request"
+        + " arrives as an `update-list-info` attribute; nothing asks for cells by itself, and"
+        + " `<list>` in JSX now fails instead of quietly rendering every row. Verified on this"
+        + " host only: no native list run has been done, so what a native list does with these"
+        + " callbacks is unknown.",
       requires: [
-        "a renderer path that calls __CreateList with componentAtIndex and enqueueComponent",
-        "a Solid list model that can instantiate a row component at an index",
-        "native validation of recycling and of the update-list-info protocol",
+        "native validation: nothing here has run on a device, so native list support is unverified",
+        "a host that recycles cells: this host creates a row for every cell it is asked for,"
+          + " and no recycling has been observed on either host",
       ],
+    };
+    hostDriven.then(result => {
+      listFinding.observed.push(
+        `through the host's own update-list-info request (insert ${result.inserted.join(", ")},`
+          + ` remove 1): ${result.children} child element(s) in order`
+          + ` [${result.textInListOrder.join(", ")}], ${result.rows} row(s) still held`,
+      );
     });
+    findings.push(listFinding);
 
     // Gestures: this renderer has no gesture binding form, so a gesture prop is
     // written as a plain attribute and never dispatched.
@@ -311,4 +477,103 @@ export function installCapabilityProbe(): CapabilityReport {
   const report = runCapabilityProbe();
   (globalThis as unknown as Record<string, unknown>).__SOLID_LYNX_CAPABILITIES__ = report;
   return report;
+}
+
+/**
+ * Asks for a list through a host that implements no list PAPI.
+ *
+ * Reported as text rather than an exception so the pattern card keeps rendering
+ * and the finding still says what an app on such a host would see.
+ */
+function measureMissingListHost(): string {
+  const papi = globalThis as unknown as PapiGlobal;
+  const withoutList: LynxPapi = { ...papi } as LynxPapi;
+  delete withoutList.__CreateList;
+  delete withoutList.__UpdateListCallbacks;
+  const page = papi.__GetPageElement?.();
+  if (!page) return "not measured: no page element";
+  try {
+    const container = papi.__CreateView?.(papi.__GetElementUniqueID!(page))
+      ?? papi.__CreateElement?.("view", papi.__GetElementUniqueID!(page));
+    if (!container) return "not measured: cannot create a container";
+    papi.__AppendElement?.(page, container);
+    const root = createLynxRoot({ page: container, papi: withoutList });
+    try {
+      root.createList({ items: () => [], children: () => root.renderer.createElement("view") });
+      return "no error: the list was created without the list PAPI";
+    } finally {
+      root.dispose();
+      papi.__RemoveElement?.(page, container);
+    }
+  } catch (error) {
+    return `throws ${(error as Error).message}`;
+  }
+}
+/**
+ * Drives the host's own list request path, end to end.
+ *
+ * web-core does not call `componentAtIndex` by itself. It calls it from the
+ * `update-list-info` attribute on the list element: `insertAction` names the
+ * cell positions to materialize, `removeAction` names the child positions to
+ * drop, and the host positions and removes the elements itself. This measures
+ * that path in its own root, because the host applies the request in a
+ * microtask and the probe's own root is disposed before that runs.
+ */
+async function measureHostDrivenList(papi: PapiGlobal, page: LynxNode): Promise<ListHostDriven> {
+  const empty: ListHostDriven = {
+    inserted: [2, 0],
+    removed: 1,
+    childrenAfterInserts: -1,
+    textAfterInserts: [],
+    children: -1,
+    textInListOrder: [],
+    rows: -1,
+  };
+  const parentId = papi.__GetElementUniqueID!(page);
+  const container = papi.__CreateView?.(parentId) ?? papi.__CreateElement?.("view", parentId);
+  if (!container) return empty;
+  papi.__AppendElement?.(page, container);
+
+  const root = createLynxRoot({ page: container as LynxNode });
+  try {
+    const list = root.createList<string>({
+      items: () => ["alpha", "beta", "gamma"],
+      children: (item, index) => {
+        const cell = root.renderer.createElement("view");
+        root.renderer.insert(cell, () => `${item}#${index()}`);
+        return cell;
+      },
+    });
+    const element = list.list as unknown as HostListElement;
+    const labels = () => Array.from(element.children ?? []).map(rowLabel);
+
+    root.renderer.setProp(list.list, "update-list-info", {
+      insertAction: [{ position: 2 }, { position: 0 }],
+      removeAction: [],
+    });
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    const childrenAfterInserts = element.children?.length ?? 0;
+    const textAfterInserts = labels();
+
+    // A second request drops the second child. The host calls `enqueueComponent`
+    // with that element's unique id and then removes the node itself.
+    root.renderer.setProp(list.list, "update-list-info", {
+      insertAction: [],
+      removeAction: [1],
+    });
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+
+    return {
+      inserted: [2, 0],
+      removed: 1,
+      childrenAfterInserts,
+      textAfterInserts,
+      children: element.children?.length ?? 0,
+      textInListOrder: labels(),
+      rows: list.rows.length,
+    };
+  } finally {
+    root.dispose();
+    papi.__RemoveElement?.(page, container);
+  }
 }

@@ -84,13 +84,22 @@ evidence is in [capabilities.md](capabilities.md).
 - The A03 exposes `__LoadStyleSheet`, `__AdoptStyleSheet`, and
   `__ReplaceStyleSheets`, but the app has not tested their signatures or
   lifecycle. Do not infer support from names alone.
+- A probe card for them is built and ready (`examples/lynx-for-native/src/stylesheet-probe.ts`,
+  built by `pnpm native:build`, loaded like the parity card, logging one
+  `[solid-lynx ss]` line per stage). Its A03 run has **not** happened: the device
+  was not attached over adb during the attempt. Until it does, the three
+  operations are known to exist and nothing else about them is known.
 - The web host does not implement runtime stylesheet loading/lifecycle. It has no
   corresponding stylesheet PAPI.
 - Web-core global-bind callbacks are registered but its global dispatch pass does
   not invoke function callbacks; this host limitation is documented.
-- List virtualization needs a renderer-side indexed row model. Gesture PAPI
-  functions are web-core no-op stubs; animation PAPI exists but is not exposed by
-  the renderer; overlays/portals are not implemented.
+- The renderer has a list adapter and an indexed row model (`root.createList()`),
+  measured against web-core only. A 2026-10-09 A03 smoke rendered the existing
+  native card and verified its counter tap from 0 to 1; that card did not create
+  a list or exercise either list callback, so native list behavior remains
+  unverified. No host has been seen to recycle a cell.
+- Gesture PAPI functions are web-core no-op stubs; animation PAPI exists but is
+  not exposed by the renderer; overlays/portals are not implemented.
 - `@lynx-js/types` is not installed/resolvable in this package; current JSX types
   are a bounded local surface, not an exhaustive official native schema.
 

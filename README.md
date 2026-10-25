@@ -190,6 +190,7 @@ Creates an isolated Solid root backed by a Lynx page. The returned object contai
 - `renderer`: the underlying Solid universal renderer.
 - `render(code)`: mounts the Solid tree and returns a disposer.
 - `setCSSId(cssId, entryName?)`: assigns a compiled CSS id to the elements this root owns in its page.
+- `createList(options)`: creates a list through `__CreateList` with an indexed row model. See [Indexed lists](#indexed-lists).
 - `dispose()`: disposes Solid owners, releases the listeners the root filed, and removes the nodes the root rendered.
 - `flush()`: explicitly calls `__FlushElementTree`.
 
@@ -311,10 +312,38 @@ The global adapter uses these current Lynx operation names:
 | `__SetAttribute`, `__SetClasses`, `__SetInlineStyles` | Update properties |
 | `__SetID`, `__AddDataset` or `__SetDataset` | Update id and dataset |
 | `__SetCSSId` (optional) | Assign a compiled CSS id to elements |
+| `__CreateList`, `__UpdateListCallbacks` (optional) | Create a list and refresh its row callbacks |
 | `__AddEventListener` / `__RemoveEventListener`, or `__AddEvent` | Bind and unbind event handlers |
 | `__FlushElementTree` | Commit mutations |
 
-`__CreatePage` and `__GetElementUniqueID` are additionally required when `createLynxRoot` creates a page or infers its parent component id. `__SetCSSId` is optional and used only by `setCSSId`.
+`__CreatePage` and `__GetElementUniqueID` are additionally required when `createLynxRoot` creates a page or infers its parent component id. `__SetCSSId` is optional and used only by `setCSSId`. The list operations are optional and used only by `createList`.
+
+## Indexed lists
+
+`<list>` is not an ordinary element: the host only recycles rows when the framework hands it `componentAtIndex` and `enqueueComponent`, which `createElement(tagName)` cannot pass. Writing `<list>` in JSX therefore throws, and the tag is not in the JSX element types, instead of silently rendering every row as a real child. `root.createList()` is the supported path:
+
+```ts
+const list = root.createList({
+  items: () => tasks,                       // read lazily, so a callback never sees a stale model
+  getKey: task => task.id,                  // optional; defaults to the item itself
+  children: (task, index) => (
+    <view>
+      <text>{task.label}</text>
+      <text>#{index()}</text>
+    </view>
+  ),
+});
+
+list.materialize(0);                         // what `componentAtIndex` does
+list.update();                               // model changed: move surviving rows, release dropped ones, re-install the callbacks
+list.dispose();                              // release every row and detach the callbacks
+```
+
+The host owns row selection: it asks for the `cellIndex` it wants, and this model materializes exactly that row. `children` runs once per key, so a key that moves to another index updates its row in place instead of rebuilding it, which is Solid's `For` identity. `index` is an accessor for the same reason.
+
+`update()` is what reflects a new model without another host request: surviving rows move to their new indices and the list is reordered, keeping their nodes. A key whose item was replaced is rebuilt, because its content came from the old item. Rows keep ascending index order however the host asks for them, including sparse and out-of-order requests.
+
+Verified against `@lynx-js/web-core@0.26.2` only. No host in this repository has been seen to recycle a cell, and nothing has run on a device, so native list support is unverified. A host that does not expose both `__CreateList` and `__UpdateListCallbacks` throws from `createList()` before anything is created, rather than degrading: the two are required together because every model change and every disposal re-installs the callbacks. Details and measurements are in [docs/capabilities.md](docs/capabilities.md#list-virtualization).
 
 ## Scope and limitations
 
@@ -323,7 +352,7 @@ This package currently focuses on the Solid renderer and Element PAPI bridge. Th
 - Rspeedy configuration and bundle generation
 - Native navigation and page lifecycle integration
 - Dual-thread worklet compilation and scheduling
-- Native list virtualization and list-specific optimizations
+- Cell recycling and native list behaviour (the list PAPI adapter is implemented and web-verified; see [Indexed lists](#indexed-lists))
 - Platform-specific native modules
 - Production Lynx-for-Web serving and host integration beyond the included example
 

@@ -46,7 +46,7 @@ pnpm exec playwright test --config test/browser/patterns.playwright.config.ts
 | Capability | Web (`@lynx-js/web-core` 0.26.2) | Native | Status today |
 | --- | --- | --- | --- |
 | Keyed lists (`For`) | supported, tested | not measured | Works. Rows move instead of being recreated. |
-| List virtualization (`<list>`, `__CreateList`) | host-only, measured | not measured | `<list>` is an ordinary container; one element per row, nothing recycled. |
+| List virtualization (`__CreateList`) | supported, measured | not measured | `root.createList()` materializes a row by index, keyed; the host owns which cells it asks for. No recycling observed; the A03 smoke did not exercise list callbacks. |
 | Gestures | unsupported, measured | not measured | `gesture-*` props become plain attributes and never fire. |
 | Animation | host-only, measured | not measured | Use inline styles and CSS transitions. |
 | Overlays and portals | unsupported, measured | not measured | `<overlay>` is an ordinary child; importing `Portal` fails at build time. |
@@ -66,29 +66,86 @@ adds, removes, and reverses rows and asserts that retained rows keep their
 identity.
 
 This is the supported way to render a list on both hosts. It is not virtualized:
-the number of live elements equals the number of rows.
+the number of live elements equals the number of rows. Use `root.createList()`
+when the host drives row selection through the list PAPI; see
+[List virtualization](#list-virtualization).
 
 ### List virtualization
 
-web-core has the full protocol: `__CreateList(parentComponentUniqueId,
+web-core implements the protocol. `__CreateList(parentComponentUniqueId,
 componentAtIndex, enqueueComponent)` creates an `x-list` element and stores those
-callbacks on it, `__UpdateListCallbacks` refreshes them, and an `update-list-info`
-attribute drives insertion and removal through them. The `list` tag maps to
-`x-list`, and the element accepts `recyclable`, `span-count`, `sticky-offset`, and
-`item-count`.
+two callbacks on it, and `__UpdateListCallbacks(element, componentAtIndex,
+enqueueComponent)` replaces them (`dist/client/mainthread/elementAPIs/createElementAPI.js`
+and `dist/client/mainthread/elementAPIs/pureElementPAPIs.js`, declared as
+`CreateListPAPI` and `UpdateListCallbacksPAPI` in `dist/types/IElementPAPI.d.ts`).
 
-The callbacks are the crux: the host only recycles rows when the framework
-supplies a way to instantiate a row component at an index, and this renderer has
-no such model. The probe records `host list callbacks wired: no`, which is the
-measured form of that statement.
+The renderer now supplies that pair. `root.createList()` creates the list element
+and hands over a `componentAtIndex` that materializes exactly the row for the
+`cellIndex` it was asked for, and an `enqueueComponent` that releases the row the
+host is removing. Two details the declarations leave open are settled by the host
+implementation rather than by a guess:
 
-Today: `<list>` renders as an ordinary container. A 1000-row list creates 1000
-elements, with no failure and no recycling. Nothing warns you, which is why this
-is called out here rather than left to be discovered.
+- `componentAtIndex` is declared `=> void`, but the host reads a number from it:
+  `const sign = componentAtIndex(...); if (typeof sign === "number")
+  insert(get_dom_by_unique_id(sign))`. It returns the row's unique id.
+- `enqueueComponent`'s `sign` is the unique id of the element being removed
+  (`enqueueComponent(element, uniqueId, __GetElementUniqueID(removedEle))`), not
+  a row index, so it releases that row's scope and leaves the node removal to
+  the host.
 
-Supporting it would need a renderer path that calls `__CreateList` with real
-callbacks, a Solid list model that can materialize a row at an index, and native
-validation of the recycling protocol.
+Row selection stays with the host. Nothing in web-core calls the pair on its own;
+it calls them from the `update-list-info` attribute on the list element, whose
+value is `{ insertAction: { position }[], removeAction: number[] }`. The pattern
+card drives that path directly and the browser suite asserts the result: asking
+for cells 2 and 0 materializes those two rows in index order, and then removing
+child 1 drops it from both the element tree and the row model.
+
+What is measured, on this host only:
+
+- Rows are keyed. The same key keeps its node across requests, so asking for the
+  same cell twice creates nothing the second time; a key that moves to another
+  index updates in place, exactly as Solid's `For` does.
+- Rows are placed at their index. The list element holds them in ascending index
+  order even when the host asks for cells out of order and sparse. The anchor is
+  the first materialized row with a greater index, not "the row at position
+  `index`": while rows are missing, the position among the rows that exist is
+  not the index they hold in the model.
+- A model change re-installs the callbacks through `__UpdateListCallbacks`, and
+  the surviving rows move to their new index and are reordered with no further
+  host request, keeping their nodes and their Solid scopes. A row whose key left
+  the model is released, and a surviving key whose *item* was replaced is
+  rebuilt under the same key, because its content came from the old item.
+- A host-driven removal is complete. `enqueueComponent` releases the row's scope
+  *and* the event registrations it filed, because a host that removes an element
+  itself never reaches this host's `removeNode`, which is what normally detaches
+  them.
+- Disposal releases every row and leaves an inert pair installed, so a host that
+  still holds the list cannot repopulate a disposed model.
+
+Two things it does not do:
+
+- **No recycling is observed.** Every cell the host asks for becomes a real child
+  element, and no host in this repository has been seen to recycle one.
+  `operationId` and `enableReuseNotification` are accepted and given no meaning.
+- **`<list>` in JSX fails.** `createElement("list")` has no way to pass the row
+  callbacks, so it throws and the tag is not in the JSX element types, rather
+  than creating a container that would look correct and virtualize nothing. A
+  host that does not expose `__CreateList` and `__UpdateListCallbacks` together
+  throws the same way from `root.createList()`, before anything is created: the
+  adapter treats the pair as one capability, because a list that cannot re-install
+  its callbacks is a list that fails on the first model change instead of at the
+  call that could report it.
+
+**Native list behavior remains unmeasured.** The A03 smoke on 2026-10-09
+rendered the existing native card (`Native parity count: 0`) and a `bindtap`
+updated it to `1`, but the card did not create a list or call either list
+callback. No device run has exercised these callbacks; this smoke is evidence
+for native card rendering and tap delivery only, not for native list support.
+The renderer treats the list PAPI as optional and fails loudly when its required
+operations are absent. Nothing here establishes native list behavior.
+
+Real virtualization would need a host that asks for cells on its own, and native
+validation of both callbacks against the native list.
 
 ### Gestures
 
@@ -255,6 +312,41 @@ What they accept and do is untested here, so this document does not claim they
 work; `@lynx-js/types` is still not a dependency, so their contract is not
 described either.
 
+### The native stylesheet probe
+
+A measurement card for the three native stylesheet operations now exists and
+builds: `examples/lynx-for-native/src/stylesheet-probe.ts`, built as
+`dist/stylesheet-probe.lynx.bundle` by `pnpm native:build` and loaded on a
+device through `lynx://open?url=...` exactly like the parity card. It records
+one JSON line per stage under a `[solid-lynx ss]` prefix, because the native
+console bridge drops everything after the first newline and a stage that fails
+hard must not take earlier evidence with it:
+
+| Stage | What it does | Why that is allowed |
+| --- | --- | --- |
+| `inventory` | `typeof`, `fn.length`, `fn.name`, `String(fn)` for each of the three | Reading a binding cannot mutate the card. `fn.length` is the declared parameter count, recorded as evidence about the binding and not read as a signature. |
+| `no-arguments` | Calls each of the three with no arguments | A call with no arguments cannot produce a stylesheet, so it cannot change anything; the error text is the only engine-authored statement of what the binding requires that exists without a handle. |
+| `load-missing-url` | `__LoadStyleSheet` pointed at a path the loopback server returns 404 for | The load has to fail, which separates "accepts a URL-shaped argument" from "rejects its argument" without letting anything load. |
+| `load-real-url` | `__LoadStyleSheet` pointed at a real, inert stylesheet next to the bundle | The only call that can change anything, and it changes a disposable card. It is the first step to any handle or ownership contract. |
+| `summary` | States explicitly what was not exercised and why | Keeps the report from being read as a claim about the unexercised operations. |
+
+Adopting and replacing are **not** called with fabricated arguments. Both need a
+stylesheet handle or a stylesheet set whose membership and ownership this probe
+has no contract for, so any call would either prove nothing or would strip the
+card's own styles. They are recorded as unmeasured with that reason rather than
+guessed at.
+
+**This has not been run yet.** The probe is built and its recorder is covered by
+host-free tests, but the A03 run has not happened: during this attempt the device
+was not attached over adb (`adb -s R9WT911JVVH get-state` reported
+`device 'R9WT911JVVH' not found` while a Samsung device was present on the USB
+bus). So this section records what the probe *will* measure, and the paragraph
+above is unchanged: the three names are known to exist on the A03, and their
+signatures and lifecycle remain unmeasured. Run
+`/tmp/solid-lynx-logs/run-stylesheet-probe.sh` once the device is attached; it
+serves `dist` on loopback, opens the probe card, captures `lynx_console`, and
+removes only the server it started and its reverse port.
+
 ## Remaining blockers
 
 - The Native column of the summary table. The shared Element PAPI parity card has
@@ -267,8 +359,10 @@ described either.
 - Gestures are the only silent failure. Making them fail loudly would mean
   changing the property path in `src/lynx-host.ts`, which is renderer behaviour
   rather than a platform capability, so it is left for a deliberate change.
-- List virtualization needs a Solid list model that can instantiate a row at an
-  index. That is a renderer design question, not a host capability question.
+- List virtualization now has a renderer-side indexed row model
+  (`root.createList()`), measured against web-core. What is still missing is a
+  host that recycles cells and any native run at all: native list support is
+  unverified, not merely untested.
 - Native `__SetCSSId` exists — the device inventory lists it — but
   `root.setCSSId()` has not been exercised on a device, so that path is still
   unmeasured even though the renderer already treats the PAPI as optional and
