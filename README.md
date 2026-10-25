@@ -370,6 +370,8 @@ continuation instructions, see [docs/session-handoff.md](docs/session-handoff.md
 ## Development
 
 Use Node.js 20.19+ or 22.12+ with pnpm for the Rspeedy/Vite example toolchain.
+The exact supported Solid, Lynx, and Rspeedy versions, and how narrow each
+range is, are recorded in [docs/compatibility.md](docs/compatibility.md).
 
 ```bash
 pnpm install
