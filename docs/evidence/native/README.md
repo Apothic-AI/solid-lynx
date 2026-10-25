@@ -11,23 +11,34 @@ manifest's `card` against what is stored here.
 
 ## The contract
 
-One directory per run, named by date or any stable id:
+One directory per run, named by date or any stable id. A directory holds exactly
+one of three records, and never two: the question "was this measured?" must have
+one answer.
 
 ```
 docs/evidence/native/<date-or-id>/
-  manifest.json                required: what the run was, and its verdict
-  <capture>.log                required: the log the manifest names
+  manifest.json                a run happened, and here is the log it produced
+  <capture>.log
 ```
-
-or, when a native-facing change genuinely needs no device run:
 
 ```
 docs/evidence/native/<date-or-id>/
-  decision.json                an explicit decision, with a reason
+  decision.json                a deliberate decision that no run is needed
 ```
 
-A directory holds one or the other. It is never evidence to hold both: the
-question "was this measured?" must have one answer.
+```
+docs/evidence/native/<date-or-id>/
+  pending.json                 a run is specified and scheduled, and has not happened
+```
+
+The third form exists because the first two do not describe a real state. A
+change can be native-facing, need a device run, have its card built and
+unit-tested and its capture format checkable, and still be waiting on a tablet
+that is not attached. Writing a `decision.json` for it would assert that no run
+is needed — false, and exactly the kind of falsehood this directory exists to
+prevent. Having no record at all makes a scheduled requirement indistinguishable
+from a dodge. `pending.json` is the record of the third state, and it is **not a
+pass**: `require-native-evidence.mjs` exits **3** for it, never 0.
 
 `TEMPLATE/` is a template, not evidence. It carries a `manifest.json` and no
 capture, and `require-native-evidence.mjs` rejects it by name — its only job is
@@ -91,6 +102,62 @@ deliberate, named act, not a default.
 | `timestamp` | ISO 8601 | When. |
 | `paths` | array | The native-facing paths this decision covers. It has to name **every** native-facing path the change touches: a record naming one file out of three is rejected, naming which ones it left out. |
 
+## pending.json
+
+Use this when the change needs a device run, the run is specified and reviewed,
+and it has not happened. It is not an alternative to measuring; it is the record
+that the measurement is missing and why, so that a release can be explicit about
+what it has not verified instead of either lying about it or failing its own gate
+as though it had dodged something.
+
+A pending record covers a **scheduled** requirement. It is a statement about a
+gap. `require-native-evidence.mjs` treats it as an answer about honesty, not an
+answer about behaviour: the range exits **3**, which is not a pass.
+
+| Field | Type | What it records |
+| --- | --- | --- |
+| `kind` | `"pending"` | Distinguishes this from `manifest.json` and `decision.json`. |
+| `card` | `"smoke"` \| `"stylesheet"` \| `"list"` | Which card will measure it. The card that has *not* run, named so the next person knows what to attach the device for. |
+| `reason` | string | Why no run has happened yet, at least 40 characters. Same bar as a decision's reason: "blocked" is not a reason, and "no device" alone is not either — say what was going to be measured and what stopped it. |
+| `blocked_by` | string | The physical or external dependency, named. At least 12 characters, and the shrugs (`n/a`, `tbd`, `no device`, `hardware`, `later`, …) are rejected. The honest shape names the thing: `"A03 R9WT911JVVH not attached over adb; work unit ub_y33g9p"`. |
+| `paths` | array | Every native-facing path this record stands in for. Same completeness rule as `decision.json`, and it is checked across the whole record set rather than per directory: a record naming one file out of three — or a set of records between them leaving one out — is rejected, naming the path nobody covered. |
+| `author` | string | Who recorded the pending state. |
+| `timestamp` | ISO 8601 | When. |
+| `commit` | git sha | The commit this record speaks for. It must be reachable from the range's tip; unlike a capture's, it may be the change's own head, because it states a fact about the tip rather than describing a run taken before it. |
+
+A file may hold one record or an array of them. An array is for a release that
+ships several cards and can say something different about each — the records
+still have to cover the change between them. A directory holds `pending.json`
+*or* a capture *or* a `decision.json`; carrying two is rejected, including a
+pending record beside a capture in the same directory, because "was this
+measured?" would then have two answers.
+
+What a pending record cannot do, and this is the load-bearing rule:
+
+- **It cannot produce exit 0.** A release whose native behaviour is unverified
+does not look like a pass to a script or to a CI green tick. Exit 3 is its own
+result, documented as "pending, not a pass", and the output prints a warning
+block naming every uncovered path, the card that will measure it, and the
+blocker, plus a `verdict: pending` line stating that nothing was verified.
+- **It cannot cover part of a change.** Every native-facing path in the range has
+to be accounted for by a pending or decision record, or the result is exit 1,
+and the report names the paths nobody covered.
+- **It cannot sit beside a broken record.** A failed capture, a malformed
+manifest, or a directory carrying two records means the record set is not the
+complete truth, so the range is exit 1 rather than 3: a real defect must not be
+buried under a scheduled one.
+- **It cannot outrank a capture.** If a capture for the same range verifies, that
+is exit 0 and the pending record is reported as superseded. The measurement is
+the better answer, and a release does not have to delete its pending record to
+record the run that finally happened.
+
+Exit codes, all of them, in one place: **0** satisfied (a capture verified, a
+decision covers the change, or nothing native-facing changed); **1** missing
+evidence (unmet and nothing says so, or the record set is not complete); **2**
+could not evaluate (git, the range, or a stored byte stream could not be read);
+**3** pending, not a pass (unmet, and every path is covered by a record that says
+so).
+
 ## Recording a run
 
 The commands that produce a capture are in `docs/parity-checklist.md`
@@ -123,6 +190,46 @@ node scripts/require-native-evidence.mjs --range <base>..HEAD
 A capture that is committed without its manifest is a file nobody can verify; a
 manifest without its capture is a claim. Both are rejected.
 
+## Recording that a run is pending
+
+When the run cannot happen — the tablet is somewhere else, the runner has no
+adb, the work is queued behind someone attaching hardware — the honest record is
+a `pending.json`, not a decision and not silence. The shape is in
+`pending.json` above; the mechanical version:
+
+```bash
+mkdir -p docs/evidence/native/$(date +%F)-pending
+cat > docs/evidence/native/$(date +%F)-pending/pending.json <<'JSON'
+[
+  {
+    "kind": "pending",
+    "card": "stylesheet",
+    "reason": "The card is built and its captures are verifiable, but no stage line has
+               been emitted on a device, so no stylesheet behaviour is measured.",
+    "blocked_by": "A03 R9WT911JVVH not attached over adb; work unit ub_y33g9p",
+    "paths": [ "examples/lynx-for-native/src/stylesheet-probe.ts" ],
+    "author": "<you>",
+    "timestamp": "2026-10-25T03:26:00-04:00",
+    "commit": "<git rev-parse HEAD>"
+  }
+]
+JSON
+node scripts/require-native-evidence.mjs --range <base>..HEAD
+# exit 3 — pending, not a pass. The output names every path and the blocker.
+```
+
+When the run finally happens, store the capture in its **own** directory with its
+`manifest.json` and leave the pending record where it is. The capture verifies
+and the range exits 0; the report says the pending record is superseded, and it
+can be deleted in a later tidy-up. Do not add the capture beside the pending
+record: a directory holding two records is rejected.
+
+The worked example in this tree is
+`2026-10-25-1.0.0-pending/pending.json`: three records, one per card, that between
+them name all 22 native-facing paths of the 1.0.0 range and the A03 they are
+waiting on. It is the reason that range reports `verdict: pending` rather than
+`verdict: missing evidence`, and it is not evidence that anything ran.
+
 ## What is machine-checked, and what is not
 
 Checked on every pull request by the `native-evidence` job
@@ -146,7 +253,14 @@ Checked on every pull request by the `native-evidence` job
   `stylesheet` or `list` capture, including whether `enqueueComponent` was ever
   called;
 - that the manifest's own recorded verdict matches that live run;
-- that the manifest's `commit` is inside the range.
+- that the manifest's `commit` is inside the range;
+- that a `pending.json` names a real card, a reason a reviewer can weigh, a
+  blocker that is a named dependency rather than a shrug, and an author, a
+  timestamp and a commit reachable from the range — and that the pending and
+  decision records together cover **every** native-facing path in the range. If
+  they do not, the result is exit 1 and the report names the uncovered paths;
+  if they do, the result is exit 3 and the output says plainly that nothing was
+  verified as a pass.
 
 **Not checked, and cannot be:** that a device was attached. `device.getState`
 is a string someone typed from their own terminal. CI has no Android device and

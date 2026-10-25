@@ -19,8 +19,8 @@
  *   does this change touch native-facing behaviour, and if so, is there a
  *   stored evidence artifact committed with it that satisfies the requirement?
  *
- * The requirement has exactly two satisfying forms, both of which have to be
- * *committed by the change itself*:
+ * The requirement has three forms, all of which have to be *committed by the
+ * change itself*. Two of them are passes and one is deliberately not:
  *
  *   1. `docs/evidence/native/<id>/manifest.json` plus the capture it names.
  *      This script runs the verifier for the manifest's card against the stored
@@ -31,9 +31,29 @@
  *   2. `docs/evidence/native/<id>/decision.json`: an explicit recorded
  *      decision that this native-facing change needs no device run, with a
  *      reason, an author, a timestamp, and the paths it covers.
+ *   3. `docs/evidence/native/<id>/pending.json`: the run is specified and
+ *      scheduled but has not happened, with the card it will run, the reason it
+ *      has not, the blocker named as a physical or external dependency, the
+ *      native-facing paths it stands in for, an author, a timestamp, and the
+ *      commit. This does NOT satisfy the requirement in the sense of a pass: it
+ *      is the release saying out loud that its native behaviour is unverified,
+ *      and it exits 3 (`pending, not a pass`) rather than 0. That code exists so
+ *      the one honest case — an unmet, scheduled requirement — cannot be
+ *      confused with either a pass (0) or a dodge (1). See EXIT_PENDING.
  *
- * A native-facing change with neither is exit 1. `.github/workflows/ci.yml`
+ * A native-facing change with none of the three is exit 1. `.github/workflows/ci.yml`
  * runs this over the pull-request range as the `native-evidence` job.
+ *
+ * Why a pending record is exit 3 and not 0: the alternative is to make the two
+ * honest outcomes the checker could express be "a capture verifies" and "an
+ * explicit decision that no run is needed". A release whose probes are built,
+ * unit-tested, and waiting on a device that is not attached fits neither, so it
+ * must either write a decision.json asserting that no run is needed — which is
+ * false, and is the lie this whole directory exists to prevent — or fail its own
+ * gate as though it had dodged the requirement. A distinct code keeps those
+ * apart: 3 says the record is complete and the requirement is unmet, 1 says the
+ * record is absent or wrong. CI surfaces 3 as a warning annotation rather than a
+ * failure, so a red `native-evidence` job always means missing evidence.
  *
  * What this cannot do, and does not claim: no device runs here. The manifest's
  * `device.getState` is a record written by whoever ran the capture, not a
@@ -50,10 +70,37 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Exit codes, the same discipline the verifier and dagr use. */
+/**
+ * Exit codes, the same discipline the verifier and dagr use, plus one this
+ * script needs and they do not.
+ *
+ *   0  satisfied      a capture verified, a decision covers the change, or
+ *                     nothing native-facing changed
+ *   1  missing        the requirement is unmet and nothing says so
+ *   2  could not evaluate — the range, git, or a stored byte stream could not be
+ *                     read; never a pass
+ *   3  pending        the requirement is unmet *and the change says so*: every
+ *                     native-facing path is covered by a `pending.json`, which
+ *                     names the card that will run, why it has not, and the
+ *                     physical blocker. This is NOT a pass and must never be
+ *                     treated as one — a CI job that swallowed 3 would be
+ *                     reporting unverified native behaviour as green. It is not
+ *                     1 either: 1 means someone did not do the paperwork, and
+ *                     this means someone did and is blocked on hardware.
+ *
+ * 3 is distinct because the two honest outcomes the contract could previously
+ * express were "a capture verifies" and "an explicit decision that no run is
+ * needed". A release with built, unit-tested probes waiting on an unattached
+ * device fits neither; folding it into 1 makes a scheduled requirement
+ * indistinguishable from a dodge, and folding it into 0 makes "unverified" look
+ * like a green tick. `.github/workflows/ci.yml` turns 3 into a workflow warning
+ * annotation (visible on the run and the PR, and not a failure); 1 and 2 stay
+ * job failures.
+ */
 const EXIT_SATISFIED = 0;
 const EXIT_MISSING = 1;
 const EXIT_COULD_NOT_EVALUATE = 2;
+const EXIT_PENDING = 3;
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = path.dirname(SCRIPT_PATH);
@@ -78,6 +125,13 @@ export const TEMPLATE_DIR_NAME = "TEMPLATE";
 export const CAPTURE_MANIFEST = "manifest.json";
 /** The alternative: an explicit recorded decision instead of a device run. */
 export const DECISION_RECORD = "decision.json";
+/**
+ * The third form: a scheduled run that has not happened. Not a pass — see
+ * EXIT_PENDING — but a complete, checkable statement of what is missing.
+ */
+export const PENDING_RECORD = "pending.json";
+/** The record filenames a directory may carry, exactly one of. */
+export const RECORD_FILES = Object.freeze([CAPTURE_MANIFEST, DECISION_RECORD, PENDING_RECORD]);
 
 /** Cards `examples/lynx-for-native/scripts/run-native-probe.sh` accepts. */
 export const NATIVE_CARDS = Object.freeze(["smoke", "stylesheet", "list"]);
@@ -226,6 +280,16 @@ What it decides
     2. ${EVIDENCE_ROOT}/<date-or-id>/${DECISION_RECORD}: an explicit recorded decision
        that this change needs no device run — a reason, an author, a timestamp,
        and the native-facing paths it covers.
+    3. ${EVIDENCE_ROOT}/<date-or-id>/${PENDING_RECORD}: the run is specified and scheduled
+       but has not happened — \`card\` (which of the three cards will measure it),
+       \`reason\` (why not, at least 40 characters), \`blocked_by\` (the physical or
+       external dependency, named — not "n/a"), \`paths\` (every native-facing path
+       it stands in for), \`author\`, \`timestamp\`, \`commit\`. This does NOT make
+       the range a pass: it exits 3. It is the third form because a release can
+       honestly be blocked on a device, and the alternative was to write a
+       decision saying no run is needed, which would be false.
+
+  A directory holds exactly one of the three.
 
   ${EVIDENCE_ROOT}/${TEMPLATE_DIR_NAME}/ is a template, never evidence.
 
@@ -243,16 +307,33 @@ Exit codes
   1  missing evidence   something native-facing changed and no committed evidence
                         satisfies it: none present, a failed or mismatched
                         verifier run, a manifest missing a field, a capture taken
-                        outside this range, or a decision with no reason
+                        outside this range, a decision with no reason, or a
+                        pending record that does not cover every native-facing
+                        path. This is a dodge: the requirement is unmet and
+                        nothing says so
   2  could not evaluate git failed, the range would not resolve, or a stored
                         capture could not be verified at all (a 2 from the
                         verifier: a missing \`dist/\` for a smoke capture, or a
                         probe capture with no stage line — run \`pnpm build\`).
-                        Never a pass.
+                        Never a pass
+  3  pending, not a pass
+                        every native-facing path in the range is covered by a
+                        committed ${PENDING_RECORD}, which names the card that will
+                        run, why it has not, and the physical blocker. The
+                        record set is complete and honest; the requirement is
+                        unmet. NOT 0: "this release's native behaviour is
+                        unverified" must not look like a green tick. NOT 1: a
+                        scheduled requirement is not a dodge. The output prints
+                        an unmissable warning block naming the paths, the card,
+                        and the blocker. CI surfaces this as a warning
+                        annotation, and a red \`native-evidence\` job therefore
+                        still means missing evidence rather than pending
+                        evidence
 
-  These follow the same discipline as dagr: 0 means the artefact is clean, 1
-  means it was read and is insufficient, 2 means it could not be read. A 2 must
-  never be cited as a pass.
+  These follow the same discipline as dagr (0 clean, 1 read and insufficient, 2
+  could not be read), with one code dagr has no use for: 3, a result that was
+  read, is complete, and still is not a pass. A 2 must never be cited as a pass,
+  and neither must a 3.
 
 No device, no adb, no network: this reads git and the filesystem only.
 `;
@@ -843,6 +924,110 @@ function validateCaptureManifest(manifest, dir) {
   return problems;
 }
 
+/**
+ * The pending record: a scheduled run that has not happened.
+ *
+ * Structurally this is a `decision.json` with the verb reversed — a decision says
+ * "this change needs no run", a pending record says "this change needs a run and
+ * the run is blocked". The two fields that carry the difference are `card` (which
+ * of the three cards will measure it) and `blocked_by` (the physical or external
+ * thing that is missing). `reason` is the same 40-character bar as a decision's,
+ * because "why has this not run yet" deserves the same weight as "why is no run
+ * needed".
+ *
+ * `paths` is checked against the change the same way a decision's is, and for
+ * the same reason: a pending record that names one path out of three silently
+ * stands in for the other two, and "we are honest that this is unverified" stops
+ * being true the moment the honesty covers less than the change.
+ *
+ * The blocker rule is deliberately mechanical and deliberately blunt. A free-text
+ * `blocked_by` that says "hardware" or "n/a" names nothing a reader can act on,
+ * so it has to be long enough to name something (12 characters) and it must not
+ * be one of the shrugs this check has actually seen. It cannot confirm the
+ * device is absent — nothing here can — but it can refuse to file a shrug.
+ */
+const BLOCKED_BY_MIN_LENGTH = 12;
+const BLOCKED_BY_SHRUGS = Object.freeze([
+  "none", "n/a", "na", "nothing", "tbd", "todo", "unknown", "hardware",
+  "no device", "blocked", "pending", "later", "soon",
+]);
+
+function isShrug(value) {
+  const normalized = value.trim().toLowerCase().replace(/[.!,;]+$/g, "");
+  return BLOCKED_BY_SHRUGS.includes(normalized);
+}
+
+function validatePendingRecord(record, label) {
+  const problems = [];
+  const add = message => problems.push(message);
+
+  if (!isPlainObject(record)) {
+    return [`${label} is not a JSON object`];
+  }
+  if (record.kind !== "pending") {
+    add(`${label}: "kind" must be "pending", got ${describeValue(record.kind)}`);
+  }
+  if (!NATIVE_CARDS.includes(record.card)) {
+    add(`${label}: "card" must be one of ${NATIVE_CARDS.join(", ")} (the card that will`
+      + ` measure this), got ${describeValue(record.card)}`);
+  }
+  // The same bar a decision's reason has to clear: a reviewer has to be able to
+  // weigh it, and "blocked" is not a reason.
+  if (!isText(record.reason) || record.reason.trim().length < 40) {
+    add(`${label}: "reason" must be at least 40 characters explaining why no run has`
+      + ` happened, got ${describeValue(record.reason)}`);
+  }
+  if (!isText(record.blocked_by)) {
+    add(`${label}: "blocked_by" must name the physical or external dependency, got`
+      + ` ${describeValue(record.blocked_by)}`);
+  } else if (isShrug(record.blocked_by)) {
+    // Checked before the length rule on purpose: every shrug in the list is short,
+    // so a length-first order would bury the specific complaint ("that word names
+    // nothing") under a generic one ("that is too short").
+    add(`${label}: "blocked_by" must name what is actually missing, not`
+      + ` ${describeValue(record.blocked_by)} — say what the run needs (for example`
+      + ` "A03 not attached over adb; ub_y33g9p")`);
+  } else if (record.blocked_by.trim().length < BLOCKED_BY_MIN_LENGTH) {
+    add(`${label}: "blocked_by" must name the dependency in at least`
+      + ` ${BLOCKED_BY_MIN_LENGTH} characters (a serial, a bus, a person, a queue), got`
+      + ` ${describeValue(record.blocked_by)}`);
+  }
+  if (!Array.isArray(record.paths) || record.paths.length === 0
+    || record.paths.some(entry => !isText(entry))) {
+    add(`${label}: "paths" must be a non-empty array of the native-facing paths this`
+      + ` pending record covers, got ${describeValue(record.paths)}`);
+  }
+  if (!isText(record.author)) {
+    add(`${label}: "author" must name who recorded the pending state, got`
+      + ` ${describeValue(record.author)}`);
+  }
+  if (!isTimestamp(record.timestamp)) {
+    add(`${label}: "timestamp" must be an ISO 8601 timestamp, got`
+      + ` ${describeValue(record.timestamp)}`);
+  }
+  if (!isText(record.commit) || !/^[0-9a-f]{7,40}$/.test(record.commit)) {
+    add(`${label}: "commit" must be a git commit sha inside the range this record`
+      + ` speaks for, got ${describeValue(record.commit)}`);
+  }
+
+  return problems;
+}
+
+/**
+ * `pending.json` as a list of records.
+ *
+ * One file, one card most of the time, so a single object is the common shape.
+ * A release that ships three cards and is blocked on one device has three
+ * findings to record, and putting them in three directories would be three names
+ * for one date; an array is accepted for exactly that case. Both shapes are
+ * validated record by record, and an empty array is rejected rather than read as
+ * "nothing is pending", which would be a pass in disguise.
+ */
+function pendingRecordsIn(value) {
+  if (Array.isArray(value)) return value;
+  return [value];
+}
+
 /** The decision record: an explicit "no device run" with its reason. */
 function validateDecisionRecord(record, dir) {
   const problems = [];
@@ -877,90 +1062,198 @@ function validateDecisionRecord(record, dir) {
 }
 
 /**
- * One evidence directory, judged. Returns `{ satisfied, problems, note, exit }`
- * — `exit` is the exit code this directory implies if nothing else satisfies
- * the requirement, so a missing `dist/` cannot be reported as missing evidence.
+ * One evidence directory, judged. Returns `{ satisfied, exit, note, problems }`
+ * plus the three fields the collective pass needs:
+ *
+ *   `kind`      which of the three forms this directory holds (`capture`,
+ *               `decision`, `pending`, plus the non-forms `template`, `none`,
+ *               `invalid`), so the report can say what it found rather than only
+ *               what it did not find
+ *   `covers`     the native-facing paths this record accounts for. Only a valid
+ *               `decision.json` or `pending.json` contributes any; a capture
+ *               contributes none, because a capture is a pass or a failure and
+ *               is never a partial statement about paths
+ *   `blocking`  whether this result forbids a `pending` verdict for the range.
+ *               A dodge, a failed capture, a malformed record, and a directory
+ *               carrying two records all block it: "pending" is meant to mean
+ *               the record set is complete and honest, so a broken record beside
+ *               a pending one is exit 1, not exit 3. A directory with no record
+ *               (`template`, `none`) does not block, because it can never
+ *               satisfy anything and its absence of coverage is already what the
+ *               union check measures
+ *   `pending`   the pending records' own details, for the warning block
+ *
+ * `exit` is the exit code this directory implies if nothing else satisfies the
+ * requirement, so a missing `dist/` cannot be reported as missing evidence.
  */
 function judgeEvidenceDir(repoRoot, from, to, nativeChanges, dirName) {
   const dir = path.join(repoRoot, EVIDENCE_ROOT, dirName);
   const manifestPath = path.join(dir, CAPTURE_MANIFEST);
   const decisionPath = path.join(dir, DECISION_RECORD);
-  const hasManifest = existsSync(manifestPath);
-  const hasDecision = existsSync(decisionPath);
+  const pendingPath = path.join(dir, PENDING_RECORD);
+  // Which record files are actually present, in the contract's own order. The
+  // rest of the function reads this rather than three separate "has" booleans,
+  // so "exactly one" and "this one" cannot drift apart.
+  const present = RECORD_FILES.filter(name => existsSync(path.join(dir, name)));
   const label = `${EVIDENCE_ROOT}/${dirName}`;
+
+  const insufficient = (note, problems = [], extra = {}) => ({
+    satisfied: false,
+    exit: EXIT_MISSING,
+    kind: "invalid",
+    blocking: true,
+    covers: [],
+    note,
+    problems,
+    ...extra,
+  });
 
   if (dirName === TEMPLATE_DIR_NAME) {
     return {
       satisfied: false,
       exit: EXIT_MISSING,
+      kind: "template",
+      blocking: false,
+      covers: [],
       note: `${label} is the template, not evidence: copy it to a new directory and`
         + " fill it in with a real run (see the README beside it)",
       problems: [],
     };
   }
-  if (!hasManifest && !hasDecision) {
+  if (present.length === 0) {
     return {
       satisfied: false,
       exit: EXIT_MISSING,
-      note: `${label} has neither ${CAPTURE_MANIFEST} nor ${DECISION_RECORD}`,
+      kind: "none",
+      blocking: false,
+      covers: [],
+      note: `${label} has none of ${RECORD_FILES.join(", ")}`,
       problems: [],
     };
   }
-  if (hasManifest && hasDecision) {
-    return {
-      satisfied: false,
-      exit: EXIT_MISSING,
-      note: `${label} carries both ${CAPTURE_MANIFEST} and ${DECISION_RECORD}; an entry`
-        + " is a capture or a decision, not both",
-      problems: [],
-    };
+  // One directory, one answer. A release that is both "measured" and "waiting to
+  // measure" the same change has not made up its mind, and "was this measured?"
+  // must have exactly one answer.
+  if (present.length > 1) {
+    return insufficient(
+      `${label} carries ${present.join(" and ")}; an entry is exactly one of`
+        + ` ${RECORD_FILES.join(", ")}, not several — a release cannot be both measured`
+        + " and awaiting measurement for the same change",
+    );
   }
 
-  if (hasDecision) {
-    const { value, problems: readProblems } = readJson(decisionPath);
-    if (readProblems) return { satisfied: false, exit: EXIT_MISSING, note: label, problems: readProblems };
+  if (present.includes(PENDING_RECORD)) {
+    const { value, problems: readProblems } = readJson(pendingPath);
+    if (readProblems) return insufficient(label, readProblems);
 
-    const problems = validateDecisionRecord(value, dir);
-    if (problems.length > 0) {
-      return { satisfied: false, exit: EXIT_MISSING, note: `${label}/${DECISION_RECORD}`, problems };
+    const records = pendingRecordsIn(value);
+    if (records.length === 0) {
+      return insufficient(
+        `${label}/${PENDING_RECORD} is an empty list, which is a pass in disguise: a`
+          + " pending record has to name what is pending",
+      );
     }
 
-    // A decision has to account for the change, not a file in it: naming one
-    // path out of several is how a decision record becomes a rubber stamp on
-    // everything else that rode along with it.
+    const problems = [];
+    for (const [index, record] of records.entries()) {
+      const recordLabel = records.length === 1
+        ? `${label}/${PENDING_RECORD}`
+        : `${label}/${PENDING_RECORD}[${index}]`;
+      problems.push(...validatePendingRecord(record, recordLabel));
+    }
+    if (problems.length > 0) return insufficient(`${label}/${PENDING_RECORD}`, problems);
+
+    // A pending record's `commit` has to be one this repository has, and it has
+    // to sit inside the range it speaks for. Unlike a capture's, it is allowed to
+    // be the change itself: the record states a fact about the tip, not a run
+    // taken before it.
+    for (const record of records) {
+      const resolved = resolveEvidenceCommit(repoRoot, record.commit);
+      if (resolved.problem !== undefined) {
+        problems.push(`${label}/${PENDING_RECORD}: ${resolved.problem}`);
+        continue;
+      }
+      if (git(repoRoot, ["merge-base", "--is-ancestor", resolved.sha, to]).status !== 0) {
+        problems.push(
+          `${label}/${PENDING_RECORD} records commit ${resolved.sha.slice(0, 7)}, which is not`
+            + " in this range's history — a pending record speaks for the change it rides with",
+        );
+      }
+    }
+    if (problems.length > 0) return insufficient(`${label}/${PENDING_RECORD}`, problems);
+
     const nativePaths = new Set(nativeChanges.map(change => change.path));
-    const covered = value.paths.filter(entry => nativePaths.has(entry));
-    const unaccounted = [...nativePaths].filter(entry => !value.paths.includes(entry));
-    if (covered.length === 0) {
-      return {
-        satisfied: false,
-        exit: EXIT_MISSING,
-        note: `${label}/${DECISION_RECORD} covers none of the native-facing paths in this`
-          + ` change (it names ${value.paths.map(entry => `\`${entry}\``).join(", ")})`,
-        problems: [],
-      };
-    }
-    if (unaccounted.length > 0) {
-      return {
-        satisfied: false,
-        exit: EXIT_MISSING,
-        note: `${label}/${DECISION_RECORD} covers ${covered.length} of`
-          + ` ${nativePaths.size} native-facing path(s) in this change`,
-        problems: [
-          `the decision does not name ${unaccounted.map(entry => `\`${entry}\``).join(", ")}`,
-        ],
-      };
-    }
-    const ignored = value.paths.filter(entry => !nativePaths.has(entry));
+    const named = records.flatMap(record => record.paths);
+    const covered = named.filter(entry => nativePaths.has(entry));
+    const ignored = named.filter(entry => !nativePaths.has(entry));
+    const cards = [...new Set(records.map(record => record.card))];
+    const blockers = [...new Set(records.map(record => record.blocked_by.trim()))];
+
     return {
-      satisfied: true,
-      exit: EXIT_SATISFIED,
-      note: `${label}/${DECISION_RECORD}: decision recorded by ${value.author} —`
-        + ` "${value.decision}" (covers ${covered.map(entry => `\`${entry}\``).join(", ")})`
+      satisfied: false,
+      exit: EXIT_PENDING,
+      kind: "pending",
+      blocking: false,
+      // The record's own paths, not the intersection: the union pass decides
+      // completeness, and it can only do that if it sees what the record claims
+      // rather than what it happened to overlap.
+      covers: [...new Set(named)],
+      note: `${label}/${PENDING_RECORD}: pending, not a pass — ${records.length} record(s)`
+        + ` for card(s) ${cards.join(", ")}, covering ${covered.length} of`
+        + ` ${nativePaths.size} native-facing path(s), blocked by`
+        + ` ${blockers.map(blocker => `"${blocker}"`).join("; ")}`
         + (ignored.length > 0
           ? `; ignores non-native ${ignored.map(entry => `\`${entry}\``).join(", ")}`
           : ""),
       problems: [],
+      pending: records.map(record => ({
+        dir: label,
+        card: record.card,
+        blocked_by: record.blocked_by,
+        reason: record.reason,
+        author: record.author,
+        paths: record.paths.filter(entry => nativePaths.has(entry)),
+      })),
+    };
+  }
+
+  if (present.includes(DECISION_RECORD)) {
+    const { value, problems: readProblems } = readJson(decisionPath);
+    if (readProblems) return insufficient(label, readProblems);
+
+    const problems = validateDecisionRecord(value, dir);
+    if (problems.length > 0) return insufficient(`${label}/${DECISION_RECORD}`, problems);
+
+    // A decision has to account for the change, not a file in it: naming one path
+    // out of several is how a decision record becomes a rubber stamp on
+    // everything else that rode along with it. Its uncovered paths are what the
+    // union pass counts as missing, so `covers` is every path it names and the
+    // incompleteness is judged once, against the whole record set.
+    const nativePaths = new Set(nativeChanges.map(change => change.path));
+    const covered = value.paths.filter(entry => nativePaths.has(entry));
+    const unaccounted = [...nativePaths].filter(entry => !value.paths.includes(entry));
+    const ignored = value.paths.filter(entry => !nativePaths.has(entry));
+    const complete = covered.length > 0 && unaccounted.length === 0;
+    return {
+      satisfied: complete,
+      exit: complete ? EXIT_SATISFIED : EXIT_MISSING,
+      kind: "decision",
+      blocking: false,
+      covers: [...new Set(value.paths)],
+      note: complete
+        ? `${label}/${DECISION_RECORD}: decision recorded by ${value.author} —`
+          + ` "${value.decision}" (covers ${covered.map(entry => `\`${entry}\``).join(", ")})`
+          + (ignored.length > 0
+            ? `; ignores non-native ${ignored.map(entry => `\`${entry}\``).join(", ")}`
+            : "")
+        : covered.length === 0
+          ? `${label}/${DECISION_RECORD} covers none of the native-facing paths in this`
+            + ` change (it names ${value.paths.map(entry => `\`${entry}\``).join(", ")})`
+          : `${label}/${DECISION_RECORD} covers ${covered.length} of`
+            + ` ${nativePaths.size} native-facing path(s) in this change`,
+      problems: complete || covered.length === 0
+        ? []
+        : [`the decision does not name ${unaccounted.map(entry => `\`${entry}\``).join(", ")}`],
     };
   }
 
@@ -969,7 +1262,7 @@ function judgeEvidenceDir(repoRoot, from, to, nativeChanges, dirName) {
   // the verifier rejects says both things in one run instead of sending the
   // author round the loop twice.
   const { value: manifest, problems: readProblems } = readJson(manifestPath);
-  if (readProblems) return { satisfied: false, exit: EXIT_MISSING, note: label, problems: readProblems };
+  if (readProblems) return insufficient(label, readProblems);
 
   const problems = [];
   const couldNotEvaluate = [];
@@ -1101,6 +1394,9 @@ function judgeEvidenceDir(repoRoot, from, to, nativeChanges, dirName) {
     return {
       satisfied: false,
       exit: couldNotEvaluate.length > 0 ? EXIT_COULD_NOT_EVALUATE : EXIT_MISSING,
+      kind: "capture",
+      blocking: true,
+      covers: [],
       note: `${label}/${CAPTURE_MANIFEST}`,
       problems: allProblems,
     };
@@ -1109,6 +1405,9 @@ function judgeEvidenceDir(repoRoot, from, to, nativeChanges, dirName) {
   return {
     satisfied: true,
     exit: EXIT_SATISFIED,
+    kind: "capture",
+    blocking: false,
+    covers: [],
     note: `${label}: ${manifest.card} capture from ${manifest.device.serial}`
       + ` (${manifest.device.getState}) at ${recordedCommit.sha.slice(0, 7)}, verified exit 0`
       + ` by ${verifier.label} — ${verifierVerdict}`,
@@ -1127,7 +1426,7 @@ function resolveEvidenceCommit(repoRoot, recorded) {
   return { sha: resolved.stdout.trim() };
 }
 
-/** `docs/evidence/native/<id>/manifest.json` → `<id>`, in diff order. */
+/** `docs/evidence/native/<id>/<record>` → `<id>`, in diff order. */
 function evidenceDirsInDiff(paths) {
   const dirs = [];
   for (const file of paths) {
@@ -1137,7 +1436,7 @@ function evidenceDirsInDiff(paths) {
     // Only the record files count: a stray edit inside an old evidence
     // directory must not re-open evidence for a new change.
     const record = parts.slice(4).join("/");
-    if (record !== CAPTURE_MANIFEST && record !== DECISION_RECORD) continue;
+    if (!RECORD_FILES.includes(record)) continue;
     const name = parts[3];
     if (name === undefined) continue;
     if (!dirs.includes(name)) dirs.push(name);
@@ -1224,6 +1523,13 @@ async function main(argv) {
 
   const satisfied = verdicts.filter(entry => entry.satisfied);
   if (satisfied.length > 0) {
+    // A capture wins over a pending record for the same range, and that order is
+    // not arbitrary: a verified capture is a measurement, a pending record is the
+    // absence of one, and the presence of the measurement is the better answer to
+    // "was this measured?". A release that ran the card after writing its pending
+    // record gets exit 0 from the capture without having to delete the record —
+    // and the report names both, so the leftover is visible rather than silent.
+    const alsoPending = verdicts.filter(entry => entry.kind === "pending");
     report({
       repoRoot,
       range,
@@ -1233,9 +1539,59 @@ async function main(argv) {
       verdicts,
       verdict: `satisfied — ${satisfied.length} committed record(s) cover this change:`
         + ` ${satisfied.map(entry => entry.note).join("; ")} — ${nativeChanges.length}`
-        + " native-facing path(s) required it. The device run itself remains manual.",
+        + " native-facing path(s) required it. The device run itself remains manual."
+        + (alsoPending.length > 0
+          ? ` A pending record is also committed (${alsoPending.map(entry => entry.note).join("; ")})`
+            + " and is superseded by the verified capture; it can be removed, but it is not"
+            + " standing in for anything now."
+          : ""),
     });
     return EXIT_SATISFIED;
+  }
+
+  // Nothing verified. Before calling that a dodge, ask the one question that
+  // separates a dodge from a scheduled requirement: is every native-facing path
+  // accounted for by a decision or a pending record? Coverage is a union across
+  // the whole record set, not per directory, because a release may honestly split
+  // its statement ("this file needs no run; this one is waiting on the tablet")
+  // and each record on its own would look partial.
+  const nativePathList = nativeChanges.map(change => change.path);
+  const accounted = new Set();
+  for (const entry of verdicts) {
+    if (entry.kind !== "pending" && entry.kind !== "decision") continue;
+    for (const covered of entry.covers ?? []) {
+      if (nativePathList.includes(covered)) accounted.add(covered);
+    }
+  }
+  const uncovered = nativePathList.filter(entry => !accounted.has(entry));
+  const pendingEntries = verdicts.filter(entry => entry.kind === "pending");
+  const pendingRecords = pendingEntries.flatMap(entry => entry.pending ?? []);
+  const blocked = verdicts.filter(entry => entry.blocking);
+
+  if (pendingRecords.length > 0 && blocked.length === 0 && uncovered.length === 0) {
+    // Exit 3, not 0 and not 1. See EXIT_PENDING: this is the honest middle the
+    // contract used to have no way to express, and it has to be loud, because a
+    // reader who skims must not come away thinking something passed.
+    const detail = pendingWarningBlock({
+      normalized: nativeChanges.length,
+      paths: nativePathList,
+      records: pendingRecords,
+    });
+    report({
+      repoRoot,
+      range,
+      changed,
+      nativeChanges,
+      dirs,
+      verdicts,
+      detail,
+      verdict: "pending — every one of this change's"
+        + ` ${nativeChanges.length} native-facing path(s) is covered by a recorded pending`
+        + " run, and nothing was verified as a pass: no capture for this range exists, the"
+        + ` card(s) ${[...new Set(pendingRecords.map(record => record.card))].join(", ")}`
+        + " have not run, and the blocker is recorded below. Exit 3 is not a pass.",
+    });
+    return EXIT_PENDING;
   }
 
   const detail = [
@@ -1245,9 +1601,32 @@ async function main(argv) {
       + ` ${PROBE_VERIFIER_LABEL} for a \`stylesheet\` or \`list\` one; must exit 0)`,
     `  ${EVIDENCE_ROOT}/<date-or-id>/${DECISION_RECORD}`
       + " (an explicit recorded decision that no device run is needed)",
+    `  ${EVIDENCE_ROOT}/<date-or-id>/${PENDING_RECORD}`
+      + " (a scheduled, blocked run — required for *every* native-facing path in the"
+      + " change; it does not make the range a pass)",
+    ...(uncovered.length > 0 && (pendingRecords.length > 0 || verdicts.some(e => e.kind === "decision"))
+      ? [
+        "",
+        "the record set is incomplete — these native-facing path(s) are covered by no"
+          + ` ${PENDING_RECORD} and no ${DECISION_RECORD}, so the change is not even honest`
+          + " about being unverified:",
+        ...uncovered.map(entry => `  - ${entry}`),
+      ]
+      : []),
+    ...(pendingRecords.length > 0 && blocked.length > 0
+      ? [
+        "",
+        "a pending record is committed, but the record set also contains something that"
+          + " does not hold, so this is missing evidence rather than a scheduled run:",
+        ...blocked.map(entry => `  - ${entry.note}`),
+        ...blocked.flatMap(entry => entry.problems.map(problem => `      problem: ${problem}`)),
+      ]
+      : []),
   ].join("\n");
 
   const unsatisfied = verdicts.length > 0;
+  // 2 outranks 3: "this byte stream could not be read" is a failure of the check
+  // itself, and reporting it as "pending, not a pass" would bury it.
   const exit = verdicts.some(entry => entry.exit === EXIT_COULD_NOT_EVALUATE)
     ? EXIT_COULD_NOT_EVALUATE
     : EXIT_MISSING;
@@ -1264,10 +1643,54 @@ async function main(argv) {
       ? `missing evidence — ${nativeChanges.length} native-facing path(s) changed and the`
         + " committed record does not satisfy the requirement; nothing was verified as a pass."
       : `missing evidence — ${nativeChanges.length} native-facing path(s) changed and no`
-        + ` capture or decision was committed with them (${EVIDENCE_ROOT}/ is untouched by`
-        + " this change). Nothing was verified as a pass."),
+        + ` capture, decision, or pending record was committed with them (${EVIDENCE_ROOT}/`
+        + " is untouched by this change). Nothing was verified as a pass."),
   });
   return exit;
+}
+
+/**
+ * The block a pending verdict prints, and the reason it is this loud.
+ *
+ * Everything else this script emits is a summary a reader can skim. This one is
+ * the opposite: a release can pass every other check while its native behaviour
+ * is wholly unverified, and the only thing standing between that and a green
+ * tick is that somebody reads this. So it names the count, the paths, the card
+ * that will measure them, who recorded it and when, and the blocker in the
+ * words the record used — and it says in as many words that 3 is not a pass.
+ */
+function pendingWarningBlock({ normalized, paths, records }) {
+  const bar = "!".repeat(78);
+  const lines = [
+    bar,
+    "!! NATIVE EVIDENCE PENDING — THIS IS NOT A PASS",
+    "!!",
+    "!! Nothing in this range was verified as a pass. The change below is",
+    `!! ${String(normalized).padEnd(2)} native-facing path(s) covered only by a pending record: the run is`,
+    "!! specified, reviewed and blocked, not done. Do not cite this as a native",
+    "!! result, and do not read exit 3 as a green tick.",
+    "!!",
+  ];
+  const cards = [...new Set(records.map(record => record.card))];
+  lines.push(`!! Card(s) awaiting a run: ${cards.join(", ")}`);
+  for (const blocker of [...new Set(records.map(record => record.blocked_by.trim()))]) {
+    lines.push(`!! Blocker:               ${blocker}`);
+  }
+  for (const record of records) {
+    lines.push(`!! Why:                   ${record.reason.trim()}`);
+    lines.push(`!! Recorded by:           ${record.author} (${record.dir}/${PENDING_RECORD})`);
+  }
+  lines.push(`!! ${paths.length} pending native-facing path(s):`);
+  for (const entry of paths) lines.push(`!!   - ${entry}`);
+  lines.push(
+    "!!",
+    "!! Exit code 3 means \"pending, not a pass\": every native-facing path is",
+    "!! accounted for, so this is not a dodge (that is 1), but no card ran, so it",
+    "!! is not a measurement (that is 0). Run the card, store the capture with its",
+    "!! manifest, and the capture supersedes this record.",
+    bar,
+  );
+  return lines.join("\n");
 }
 
 const invokedDirectly = process.argv[1] !== undefined

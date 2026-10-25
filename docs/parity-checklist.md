@@ -49,9 +49,11 @@ node scripts/require-native-evidence.mjs --range <base>..HEAD
 
 That script is the `native-evidence` CI job. It fails a pull request that changes
 native-facing code and carries no capture the verifier accepts and no recorded
-`decision.json`; it re-runs the verifier against the stored bytes, so the
-manifest's verdict is checked against the capture beside it rather than taken on
-faith. Exit 0 satisfied, 1 missing evidence, 2 could not evaluate.
+`decision.json` or `pending.json`; it re-runs the verifier against the stored
+bytes, so the manifest's verdict is checked against the capture beside it rather
+than taken on faith. Exit 0 satisfied, 1 missing evidence, 2 could not evaluate,
+and 3 **pending, not a pass** — the code a `pending.json` returns, because a run
+that has not happened is not a result.
 
 The verifier is the same three checks a reviewer made by eye, in a process:
 

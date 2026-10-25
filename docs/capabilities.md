@@ -29,11 +29,17 @@ verifier-passing capture is stored at `docs/evidence/native/<date-or-id>/` besid
 a `manifest.json`, and `scripts/require-native-evidence.mjs` — run by the
 `native-evidence` CI job over every pull request — fails a change to
 native-facing code that carries neither that nor an explicit recorded
-`decision.json`. [evidence/native/README.md](evidence/native/README.md) is the
+`decision.json`. A third record, `pending.json`, states that the run is
+scheduled and blocked on hardware; it is accepted when it covers every
+native-facing path in the change, and it makes the gate exit 3 ("pending, not a
+pass") rather than 0, so a release can be explicit about an absent measurement
+without claiming one.
+[evidence/native/README.md](evidence/native/README.md) is the
 contract. It enforces that evidence exists and is re-verifiable; it does not
 execute a device, so a capability row still moves only on a run someone
-performed. No capture is stored at this commit, which is why nothing in the
-Native column below has moved. The
+performed. This release stores no capture; it stores
+`docs/evidence/native/2026-10-25-1.0.0-pending/pending.json`, and that is why
+nothing in the Native column below has moved. The
 capability probe below has only been run in a browser, so the Native column of
 the summary table stays `not measured`. `@lynx-js/types` is not a dependency of
 this repository, so native JSX typings remain unverified and are marked as such

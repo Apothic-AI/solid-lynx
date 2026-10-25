@@ -358,11 +358,21 @@ jobs:
   # per stage. A `decision.json` is an explicit recorded decision that this change
   # needs no device run. A native-facing change with neither is a red job.
   #
+  # A third form exists and is deliberately NOT a pass: `pending.json`, written
+  # when the run is specified and blocked on hardware. The script exits 3 for it,
+  # and the step below turns 3 into a workflow warning annotation plus a job
+  # summary line instead of a failure. That split is the point: exit 1 and 2 still
+  # fail this job, so a red `native-evidence` job always means the evidence is
+  # missing or unreadable, never merely scheduled. A reader who only looks at the
+  # green tick on a pending run is looking at the one thing this arrangement
+  # cannot fix — GitHub has no neutral job conclusion — which is why the warning
+  # names itself "pending, not a pass" and repeats in the summary.
+  #
   # What this job still cannot do: attach a device. `native-build` compiles the
   # bundle and executes nothing, and this job reads files. So the device run
   # itself stays manual (`docs/release.md` §3) — what is enforced is that a
   # native-facing change cannot land without either a stored, verifier-passing
-  # capture or an explicit recorded decision.
+  # capture, an explicit recorded decision, or an explicit recorded pending run.
   #
   # The range is the PR base sha..HEAD, so the gate covers exactly what the pull
   # request changes. On `push` and `workflow_dispatch` there is no PR base, and
@@ -400,11 +410,75 @@ jobs:
         run: pnpm build
 
       # A pull request: evaluate exactly the diff it proposes.
+      #
+      # Exit 0 is a pass, 1 is missing evidence, 2 is could not evaluate, and 3 is
+      # pending-and-not-a-pass. 0 and 3 end the step green (3 with a warning
+      # annotation and a summary block); 1 and 2 exit with their own code and fail
+      # the job. The explicit `set +e` is required because this shell runs with
+      # `-e -o pipefail`, so a 3 would otherwise abort before it was classified.
       - name: Require native evidence for this pull request
         if: github.event_name == 'pull_request'
         run: |
+          set +e
           node scripts/require-native-evidence.mjs \
-            --range "${{ github.event.pull_request.base.sha }}..HEAD"
+            --range "${{ github.event.pull_request.base.sha }}..HEAD" 2>&1 \
+            | tee native-evidence.log
+          status="${PIPESTATUS[0]}"
+          set -e
+
+          # Workflow-command payloads are single-line: % -> %25, CR dropped,
+          # LF -> %0A. The full report goes to the log and the step summary; the
+          # annotation carries only the lines that say what is wrong.
+          annotate() {
+            tr -d '\r' | sed -e 's/%/%25/g'
+          }
+
+          case "$status" in
+            0)
+              {
+                echo "### Native evidence: satisfied"
+                echo
+                echo '```'
+                cat native-evidence.log
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+              ;;
+            3)
+              # Pending, not a pass. The annotation names the verdict and the
+              # blocker; the summary carries the whole warning block, including
+              # every path, so the detail is one click away and nothing is
+              # silently dropped.
+              summary=$(grep -E '^verdict: ' native-evidence.log | head -1 | annotate)
+              blocker=$(grep -E '^!! Blocker:' native-evidence.log | head -1 | sed 's/^!! Blocker: *//' | annotate)
+              count=$(grep -cE '^!!   - ' native-evidence.log)
+              message="${summary}%0A%0A${count} native-facing path(s) are covered only by a pending record. Blocker: ${blocker}%0A%0ASee the job summary or native-evidence.log for every path. This is exit 3, not 0: nothing was verified as a pass."
+              echo "::warning title=Native evidence PENDING — not a pass::${message}"
+              {
+                echo "### Native evidence: **pending, not a pass**"
+                echo
+                echo 'This job is green because every native-facing path is covered by a'
+                echo 'committed `pending.json` — not because anything was measured. No'
+                echo 'native behaviour in this pull request has been verified.'
+                echo
+                echo '```'
+                cat native-evidence.log
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+              ;;
+            *)
+              echo "::error title=Native evidence MISSING::require-native-evidence exited $status: nothing satisfies the requirement. See the step log or native-evidence.log."
+              {
+                echo "### Native evidence: **missing** (exit $status)"
+                echo
+                echo '```'
+                cat native-evidence.log
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit "$status"
+              ;;
+          esac
 
       # No PR base: there is nothing to compare against, so say that out loud
       # rather than passing a range that cannot mean anything.

@@ -147,7 +147,7 @@ and [compatibility.md](compatibility.md#8-what-this-document-does-not-claim) §8
 What CI *does* now check is that evidence exists. The `native-evidence` job runs
 `scripts/require-native-evidence.mjs` over a pull request's diff
 (`pull_request.base.sha..HEAD`) and fails it when the change touches
-native-facing code and carries neither:
+native-facing code and carries none of:
 
 - a capture at `docs/evidence/native/<date-or-id>/` with a `manifest.json`, which
   the job re-verifies by running the verifier for that manifest's `card` against
@@ -158,7 +158,21 @@ native-facing code and carries neither:
   recycling answer the list card exists to give; or
 - a `decision.json` in the same place, recording explicitly that this
   native-facing change needs no device run, with a reason, an author, a
-  timestamp, and the paths it covers.
+  timestamp, and the paths it covers; or
+- a `pending.json` in the same place, recording that the run is specified,
+  reviewed, and blocked — the card that will measure it, why it has not run, the
+  physical dependency named, and every native-facing path it stands in for.
+
+A `pending.json` is not a pass, and the gate does not report it as one. The
+script exits **3** for it, and the `native-evidence` job turns 3 into a workflow
+warning annotation plus a job-summary block reading "pending, not a pass", while
+exit 1 and exit 2 still fail the job. That split is deliberate: a red
+`native-evidence` job always means the evidence is missing or unreadable, never
+merely scheduled — and a green one with a `pending.json` in the range carries a
+warning that says no native behaviour in the pull request was verified. The
+two lie-adjacent outcomes this avoids are a `decision.json` asserting that no run
+is needed when one is (false), and an exit 1 that reports a scheduled
+requirement as though someone had dodged it.
 
 The device run itself is still hand work, and this job does not pretend
 otherwise: `device.getState` in a manifest is a string a human typed, and no
@@ -276,13 +290,44 @@ node scripts/require-native-evidence.mjs --range <base>..HEAD
 ```
 
 Exit 0 is satisfied, 1 is missing or mismatched evidence, 2 is could not
-evaluate. The `native-evidence` CI job runs the same command from the PR base.
+evaluate, and 3 is **pending, not a pass**. The `native-evidence` CI job runs the
+same command from the PR base and turns 3 into a warning annotation.
 
-**No capture is stored in this repository at this commit**, so
-`docs/evidence/native/` holds only its README and the capture-less `TEMPLATE/`.
-That is deliberate: a synthetic capture filed as evidence would be exactly the
-thing this mechanism exists to prevent. It also means the first native-facing PR
-after this one will be red until someone runs the card — which is the point.
+**No capture is stored in this repository at this commit.** `docs/evidence/native/`
+holds its README, the capture-less `TEMPLATE/`, and one directory of pending
+records — `2026-10-25-1.0.0-pending/pending.json`. That is deliberate: a
+synthetic capture filed as evidence would be exactly the thing this mechanism
+exists to prevent, and the pending records are the honest alternative. On this
+release's range, `--range origin/master..HEAD` therefore exits **3** and prints
+`verdict: pending`, naming the 22 native-facing paths and the blocker. Anything
+other than 0 or 3 — an absent record, a record covering part of the range — is
+still exit 1, and a real native-facing PR with no record at all will be red
+until someone runs the card or records why they cannot.
+
+**What a release does when the device is absent**, stated as a procedure so the
+next one does not have to re-derive it:
+
+1. Run the gate on the release range. Expect exit 3 if the pending records are
+   complete, and 1 if they are not — the difference is whether every
+   native-facing path is named, and the report says which one was missed.
+2. Do not write a `decision.json` for a change that needs a run. That record
+   asserts no device run is needed; using it here would be false, and it is the
+   one failure this directory cannot catch.
+3. Keep the pending record in the release commit, and repeat in the release
+   notes, in the roadmap's open items, and in `docs/capabilities.md` that the
+   cards have not run. The gate's exit code is not a substitute for those
+   sentences; it is what makes them checkable.
+4. When the device arrives, store the capture in its own directory with its
+   manifest. The capture supersedes the pending record, the range goes to exit 0,
+   and nothing needs to be deleted first.
+
+**Always the same rule: a green `native-evidence` job with a `pending.json` in the
+range means nothing was measured.** The annotation says so. A reader who takes
+that green tick as "native verified" has read it wrong, and the one thing this
+arrangement cannot fix is that GitHub has no neutral job conclusion — which is
+exactly why the warning is loud, why the verdict line says `pending` rather than
+`satisfied`, and why the warning block names every path instead of only counting
+them.
 
 **Whether the device is attached right now:**
 
@@ -292,7 +337,8 @@ adb -s R9WT911JVVH get-state
 
 **Not run for this release**, and not passable here: at this commit the command
 prints `error: device 'R9WT911JVVH' not found` and exits 1. No device run is
-recorded in this release.
+recorded in this release, which is what `2026-10-25-1.0.0-pending/pending.json`
+records and what the gate's exit 3 states.
 
 **The rule that decides whether a release is done.** A release that changes
 native-facing behaviour — the host adapter, event names or dispatch, CSS ids,

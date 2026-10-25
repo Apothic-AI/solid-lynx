@@ -800,14 +800,24 @@ describe("require-native-evidence: the state of this repository", () => {
     expect(manifest.verifier.exitCode).toBe(0);
   });
 
-  it("ships evidence documentation and no stored captures yet", () => {
+  it("ships evidence documentation, the template, and only pending records", () => {
     const root = path.join(REPO_ROOT, "docs/evidence/native");
     expect(existsSync(path.join(root, "README.md"))).toBe(true);
 
-    // Everything else under the root is the template. When the first real
-    // capture lands this assertion changes with it, deliberately.
+    // Everything else under the root is the template or a pending record. No
+    // capture is stored in this repository and none is expected: a synthetic one
+    // filed as evidence would be exactly what this mechanism exists to prevent.
+    // The pending directories are what the release ships instead, and this
+    // assertion is what notices the day a real capture lands.
     const entries = readdirSync(root).sort();
-    expect(entries).toEqual(["README.md", "TEMPLATE"]);
+    expect(entries.filter(entry => entry !== "README.md" && entry !== "TEMPLATE"))
+      .toEqual(["2026-10-25-1.0.0-pending"]);
+    for (const entry of entries) {
+      if (entry === "README.md" || entry === "TEMPLATE") continue;
+      // A pending directory carries pending.json and nothing that looks like a
+      // measurement beside it.
+      expect(readdirSync(path.join(root, entry))).toEqual(["pending.json"]);
+    }
   });
 });
 
@@ -961,10 +971,12 @@ describe("require-native-evidence: refusing to guess", () => {
       "0  satisfied",
       "1  missing evidence",
       "2  could not evaluate",
+      "3  pending, not a pass",
       "dagr",
       "docs/evidence/native",
       "manifest.json",
       "decision.json",
+      "pending.json",
       "TEMPLATE",
       "pnpm build",
       // The per-card verifier pairing has to be in the help text, because a
@@ -974,5 +986,330 @@ describe("require-native-evidence: refusing to guess", () => {
     ]) {
       expect(run.stdout).toContain(phrase);
     }
+  });
+});
+
+describe("require-native-evidence: a pending record is not a pass", () => {
+  /**
+   * The third form, and the reason it exists.
+   *
+   * The contract used to have two outcomes: a capture verifies, or a decision
+   * says no run is needed. A release whose probes are built and unit-tested and
+   * waiting on an unattached device fits neither, so it had to either write a
+   * decision asserting no run was needed — false — or be reported as having
+   * dodged the requirement. Both are wrong in kind, and the first is a lie the
+   * whole evidence directory exists to prevent.
+   *
+   * What these cases pin:
+   *
+   *  - complete coverage exits 3, never 0: "this release's native behaviour is
+   *    unverified" must not look like a pass to a script or a CI green tick;
+   *  - one path left out exits 1, because "pending" has to mean the record set
+   *    is the complete truth about the range, not that somebody wrote the word;
+   *  - a verified capture for the same range still wins with exit 0, because the
+   *    measurement is the better answer and a release should not have to delete
+   *    its pending record to record the run that finally happened;
+   *  - a decision still behaves exactly as before, and the template is still
+   *    rejected by name.
+   */
+  const NATIVE_PATHS = ["src/lynx-host.ts", "src/root.ts"];
+
+  /** The blocker text a real record would carry, short enough to assert on. */
+  const BLOCKER = "A03 R9WT911JVVH not attached over adb; work unit ub_y33g9p";
+
+  const pendingRecord = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    kind: "pending",
+    card: "stylesheet",
+    reason: "The stylesheet probe card is built and its captures are verifiable, but no stage"
+      + " line has been emitted on a device, so nothing about the stylesheet globals is measured.",
+    blocked_by: BLOCKER,
+    paths: [...NATIVE_PATHS],
+    author: "@maintainer",
+    timestamp: "2026-10-25T03:26:00-04:00",
+    commit: "0".repeat(40),
+    ...overrides,
+  });
+
+  /**
+   * A change to two native-facing paths plus a pending record that covers them,
+   * committed in that order — the record has to be able to name its own commit.
+   * `paths` on the record can be overridden to drop one and test the hole.
+   */
+  function storePendingInChange(
+    dir: string,
+    options: { paths?: string[]; record?: Record<string, unknown>; name?: string } = {},
+  ): string {
+    const name = options.name ?? "2026-10-25-pending";
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    write(dir, "src/root.ts", "export const alsoNativeFacing = true;\n");
+    const recorded = commitAll(dir, "native: two files waiting on a device");
+    write(dir, `docs/evidence/native/${name}/pending.json`, `${JSON.stringify(
+      pendingRecord({ commit: recorded, ...(options.paths ? { paths: options.paths } : {}) }),
+      null,
+      2,
+    )}\n`);
+    return commitAll(dir, "evidence: record that the run is pending");
+  }
+
+  it("exits 3 and warns when a pending record covers every native path", () => {
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    const head = storePendingInChange(dir);
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    // 3, not 0 and not 1. This is the whole point of the change.
+    expect(run.status).toBe(3);
+    expect(run.stderr).toBe("");
+
+    // The verdict says in as many words that nothing was verified.
+    expect(run.stdout).toContain("verdict: pending");
+    expect(run.stdout).toContain("nothing was verified as a pass");
+    expect(run.stdout).toContain("Exit 3 is not a pass");
+    expect(run.stdout).not.toContain("verdict: satisfied");
+
+    // The warning block: unmissable, and it names what is missing rather than
+    // only that something is.
+    expect(run.stdout).toContain("NATIVE EVIDENCE PENDING — THIS IS NOT A PASS");
+    expect(run.stdout).toContain("Card(s) awaiting a run: stylesheet");
+    expect(run.stdout).toContain(`Blocker:               ${BLOCKER}`);
+    expect(run.stdout).toContain("!! 2 pending native-facing path(s):");
+    for (const nativePath of NATIVE_PATHS) {
+      expect(run.stdout).toContain(`!!   - ${nativePath}`);
+    }
+  });
+
+  it("exits 1 when the pending record leaves one native path out", () => {
+    // A pending record has to be the complete truth for the range. Naming one of
+    // two paths is how "we are honest that this is unverified" stops being true:
+    // the second file is then dodge-shaped, and the gate says so.
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    const head = storePendingInChange(dir, { paths: ["src/lynx-host.ts"] });
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("verdict: missing evidence");
+    expect(run.stdout).not.toContain("verdict: pending");
+    // The report names the path nobody accounted for, not just the count.
+    expect(run.stdout).toContain("covered by no pending.json and no decision.json");
+    expect(run.stdout).toContain("  - src/root.ts");
+  });
+
+  it("lets a verifying capture win over a pending record for the same range", () => {
+    // The capture supersedes the pending record, and this is the transition a
+    // release actually makes: write "pending", attach the tablet, run the card,
+    // store the capture. Requiring the pending record to be deleted first would
+    // mean a red gate at exactly the moment the measurement arrived.
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    write(dir, "src/root.ts", "export const alsoNativeFacing = true;\n");
+    const pendingAt = commitAll(dir, "native: two files waiting on a device");
+    write(dir, "docs/evidence/native/2026-10-25-pending/pending.json", `${JSON.stringify(
+      pendingRecord({ commit: pendingAt }),
+      null,
+      2,
+    )}\n`);
+    commitAll(dir, "evidence: record that the run is pending");
+
+    // Now the run happens, at this commit, and its capture is stored beside the
+    // pending record — a different directory, because an entry holds one record.
+    write(dir, "docs/evidence/native/2026-10-25-smoke/lynx_console-smoke-test.log", GOOD_CAPTURE);
+    const recorded = commitAll(dir, "native: the run");
+    write(dir, "docs/evidence/native/2026-10-25-smoke/manifest.json",
+      manifestFor(dir, { capture: "lynx_console-smoke-test.log", commit: recorded }));
+    const head = commitAll(dir, "evidence: store the capture the pending record awaited");
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: satisfied");
+    expect(run.stdout).toContain("docs/evidence/native/2026-10-25-smoke");
+    expect(run.stdout).toContain("verified exit 0");
+    // The superseded pending record is still visible in the report, so a reader
+    // knows the two records are connected and one of them can be cleaned up.
+    expect(run.stdout).toContain("superseded by the verified capture");
+    expect(run.stdout).not.toContain("THIS IS NOT A PASS");
+  });
+
+  it("still exits 0 for a decision record, and still 1 for the template", () => {
+    // The two forms that existed before are unchanged by the third one. Asserted
+    // together so a future edit that loosens the pending path cannot quietly
+    // change what a decision or a template does.
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const commentOnly = true;\n");
+    write(dir, "docs/evidence/native/2026-10-25-comment/decision.json", `${JSON.stringify({
+      kind: "decision",
+      decision: "no device run needed for this change",
+      reason: "The change only rewrites a doc comment on the host adapter; the emitted Element"
+        + " PAPI calls are identical, so a device run would measure the same bundle.",
+      author: "@maintainer",
+      timestamp: "2026-10-25T03:26:00-04:00",
+      paths: ["src/lynx-host.ts"],
+    }, null, 2)}\n`);
+    const head = commitAll(dir, "native: a comment-only change with a decision");
+
+    const decided = runScript("--repo", dir, "--range", range(base, head));
+    expect(decided.status).toBe(0);
+    expect(decided.stdout).toContain("verdict: satisfied");
+    expect(decided.stdout).toContain("decision recorded by @maintainer");
+
+    // The template, in its own repository, is still rejected by name rather than
+    // read as a pending or a capture record.
+    const templateRepo = newRepo();
+    const templateBase = gitOutput(templateRepo, "rev-parse", "HEAD");
+    write(templateRepo, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    write(templateRepo, "docs/evidence/native/TEMPLATE/manifest.json", readFileSync(
+      path.join(REPO_ROOT, "docs/evidence/native/TEMPLATE/manifest.json"),
+      "utf8",
+    ));
+    write(templateRepo, "docs/evidence/native/TEMPLATE/lynx_console-smoke-test.log", GOOD_CAPTURE);
+    const templateHead = commitAll(templateRepo, "native: the template offered as evidence");
+
+    const template = runScript("--repo", templateRepo, "--range",
+      range(templateBase, templateHead));
+    expect(template.status).toBe(1);
+    expect(template.stdout).toContain("is the template, not evidence");
+  });
+
+  it("rejects a pending record that is missing a field, or leaves its blocker a shrug", () => {
+    // Each case breaks exactly one field, so a failure names the field that is
+    // wrong instead of "the record is bad". A `blocked_by` of "n/a" is the
+    // specific shape this refuses: it looks like an answer and names nothing.
+    const cases: { field: string; overrides: Record<string, unknown>; expect: string }[] = [
+      { field: "card", overrides: { card: "probe" }, expect: '"card" must be one of smoke, stylesheet, list' },
+      { field: "reason", overrides: { reason: "no device" }, expect: "at least 40 characters" },
+      { field: "blocked_by", overrides: { blocked_by: "n/a" }, expect: "must name what is actually missing" },
+      { field: "blocked_by", overrides: { blocked_by: "tbd" }, expect: "must name what is actually missing" },
+      { field: "blocked_by", overrides: { blocked_by: "no device" }, expect: "must name what is actually missing" },
+      { field: "paths", overrides: { paths: [] }, expect: '"paths" must be a non-empty array' },
+      { field: "author", overrides: { author: "" }, expect: '"author" must name who recorded' },
+      { field: "timestamp", overrides: { timestamp: "yesterday" }, expect: '"timestamp" must be an ISO 8601' },
+      { field: "commit", overrides: { commit: "HEAD" }, expect: '"commit" must be a git commit sha' },
+    ];
+
+    for (const testCase of cases) {
+      const dir = newRepo();
+      const base = gitOutput(dir, "rev-parse", "HEAD");
+      write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+      const recorded = commitAll(dir, "native: a change with a broken pending record");
+      write(dir, "docs/evidence/native/2026-10-25-pending/pending.json", `${JSON.stringify(
+        pendingRecord({ commit: recorded, ...testCase.overrides }),
+        null,
+        2,
+      )}\n`);
+      const head = commitAll(dir, `evidence: pending record with a bad ${testCase.field}`);
+
+      const run = runScript("--repo", dir, "--range", range(base, head));
+
+      expect(run.status, `bad ${testCase.field} should exit 1`).toBe(1);
+      expect(run.stdout, `bad ${testCase.field} should name the field`)
+        .toContain(testCase.expect);
+      // Never 3: an incomplete record is missing evidence, not a scheduled run.
+      expect(run.stdout).not.toContain("verdict: pending");
+    }
+  });
+
+  it("refuses a directory that holds both a pending record and a capture", () => {
+    // One directory, one answer. "Was this measured?" has to have exactly one
+    // answer, and a record set that says both has not made up its mind.
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    const recorded = commitAll(dir, "native: a change with an ambiguous record");
+    write(dir, "docs/evidence/native/2026-10-25-both/pending.json", `${JSON.stringify(
+      pendingRecord({ commit: recorded, paths: ["src/lynx-host.ts"] }),
+      null,
+      2,
+    )}\n`);
+    write(dir, "docs/evidence/native/2026-10-25-both/lynx_console-smoke-test.log", GOOD_CAPTURE);
+    write(dir, "docs/evidence/native/2026-10-25-both/manifest.json",
+      manifestFor(dir, { commit: recorded }));
+    const head = commitAll(dir, "evidence: a directory claiming both");
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("carries manifest.json and pending.json");
+    expect(run.stdout).toContain("a release cannot be both measured and awaiting measurement");
+  });
+
+  it("does not let a broken record beside a pending one turn the range into exit 3", () => {
+    // "Pending" is supposed to mean the record set is the complete and honest
+    // truth about the range. A failed capture in the same range means it is not,
+    // and reporting 3 there would bury a real defect under a scheduled one.
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    write(dir, "src/root.ts", "export const alsoNativeFacing = true;\n");
+    const recorded = commitAll(dir, "native: two files, one measured badly");
+    write(dir, "docs/evidence/native/2026-10-25-pending/pending.json", `${JSON.stringify(
+      pendingRecord({ commit: recorded }),
+      null,
+      2,
+    )}\n`);
+    write(dir, "docs/evidence/native/2026-10-25-smoke/lynx_console-smoke-test.log",
+      readFileSync(path.join(FIXTURES, "not-passing.log"), "utf8"));
+    write(dir, "docs/evidence/native/2026-10-25-smoke/manifest.json",
+      manifestFor(dir, { commit: recorded }));
+    const head = commitAll(dir, "evidence: a pending record and a failing capture");
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("verdict: missing evidence");
+    expect(run.stdout).toContain("this is missing evidence rather than a scheduled run");
+    expect(run.stdout).not.toContain("verdict: pending");
+  });
+
+  it("accepts a block of records, one per card, covering a split change", () => {
+    // A release may honestly split its statement: "this file is waiting on the
+    // tablet for the stylesheet card; these are waiting for the list card". Each
+    // record on its own looks partial, so coverage is judged as a union across
+    // the whole record set rather than per directory.
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    write(dir, "src/root.ts", "export const alsoNativeFacing = true;\n");
+    const recorded = commitAll(dir, "native: two files for two cards");
+    write(dir, "docs/evidence/native/2026-10-25-split/pending.json", `${JSON.stringify([
+      { ...pendingRecord({ commit: recorded, paths: ["src/lynx-host.ts"] }), card: "stylesheet" },
+      { ...pendingRecord({ commit: recorded, paths: ["src/root.ts"] }), card: "list" },
+    ], null, 2)}\n`);
+    const head = commitAll(dir, "evidence: one pending record per card");
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    expect(run.status).toBe(3);
+    expect(run.stdout).toContain("verdict: pending");
+    expect(run.stdout).toContain("Card(s) awaiting a run: stylesheet, list");
+    expect(run.stdout).toContain("!! 2 pending native-facing path(s):");
+  });
+
+  it("rejects a pending record that speaks for a range it is not in", () => {
+    // The same discipline a capture's `commit` gets: a record from outside this
+    // range describes a different release, and accepting it would let last
+    // release's pending note stand in for this one.
+    const dir = newRepo();
+    const before = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "docs/evidence/native/2026-10-24-stale/pending.json", `${JSON.stringify(
+      pendingRecord({ commit: before, paths: ["src/lynx-host.ts"] }),
+      null,
+      2,
+    )}\n`);
+    const base = commitAll(dir, "evidence: a pending record from before the range");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    const head = commitAll(dir, "native: a later change with no record of its own");
+
+    const run = runScript("--repo", dir, "--range", range(base, head));
+
+    // Not 3: the only record in this range is from before it, so nothing here
+    // says anything about this change.
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("verdict: missing evidence");
+    expect(run.stdout).not.toContain("verdict: pending");
   });
 });

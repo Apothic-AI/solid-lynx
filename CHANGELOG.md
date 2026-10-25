@@ -101,7 +101,9 @@ change itself: a capture under `docs/evidence/native/<date-or-id>/` with a
 `manifest.json`, which the script re-verifies by running the existing verifier
 against the stored bytes and requires to exit 0; or a `decision.json` recording
 explicitly that this change needs no device run. Exit 0 is satisfied, 1 is
-missing or mismatched evidence, 2 is could not evaluate.
+missing or mismatched evidence, 2 is could not evaluate. (A third form,
+`pending.json`, arrives in the entry below — at this commit the contract is still
+two.)
 
 It is wired in as the `native-evidence` CI job over
 `pull_request.base.sha..HEAD`, and on `push` / `workflow_dispatch` it prints that
@@ -110,18 +112,78 @@ nothing. `docs/evidence/native/README.md` documents the record contract and
 `docs/evidence/native/TEMPLATE/manifest.json` is a capture-less template the
 script rejects as evidence by name. 33 host-free tests build their own git
 repositories in `mkdtemp`, so the suite needs no device, no network, and not this
-repository's git state. (It is 41 at this commit, after the probe-capture entry
-above added eight cases for the per-card verifier.)
+repository's git state. (It is 50 at this commit, after the probe-capture entry
+above added eight cases for the per-card verifier and the pending-record entry
+below added nine.)
 
 What this does not do: run a device. `device.getState` in a manifest is a string
 a human typed; no runner can confirm hardware existed. The requirement that a
 run be recorded and re-verifiable is enforced; performing the run is still manual
-work. No capture is stored at this commit, so `docs/evidence/native/` ships its
-README and a capture-less `TEMPLATE/` only, and `docs/parity-checklist.md` still
+work. No capture is stored at this commit, and `docs/parity-checklist.md` still
 records the native column as reported, not reproduced.
 
 `ROADMAP.md` box 4 is ticked for that reason and that reason only, in as many
 words: the check that was missing now exists and is red when evidence is absent.
+
+### A pending native run is its own outcome, and it is not a pass
+
+Measured before the change: `node scripts/require-native-evidence.mjs --range
+origin/master..HEAD` on this release branch — 48 commits, 22 native-facing paths
+— exited 1 with `verdict: missing evidence`. That verdict was wrong in kind. The
+release is not shipping a native change that dodges measurement; it ships a
+stylesheet probe and a list probe that are built, unit-tested, and waiting on an
+A03 that is not attached. The contract could express two outcomes, "a capture
+verifies" and "an explicit decision that no run is needed", and neither
+describes "the run is specified, reviewed, and pending on hardware, and the
+release says so in the changelog, the roadmap, and `docs/capabilities.md`". So
+the release had to either write a `decision.json` asserting that no run was
+needed — false, and the exact falsehood `docs/evidence/native/` exists to
+prevent — or fail its own gate as though it had dodged the requirement.
+
+`pending.json` is the third form. It records `kind: "pending"`, the `card` that
+will measure the change, a `reason` of at least 40 characters, `blocked_by`
+naming the physical or external dependency (a shrug like `n/a`, `tbd`, or `no
+device` is rejected), every native-facing `path` it stands in for, an `author`, a
+`timestamp`, and a `commit` reachable from the range.
+
+**It exits 3, not 0, and the difference is the point of the whole entry.** "This
+release's native behaviour is unverified" must not look like a pass to a script
+or a CI green tick, so 3 is documented as **pending, not a pass** and is never
+folded into 0. It is not 1 either: 1 means the requirement is unmet and nothing
+says so, and a scheduled requirement is not a dodge. The script prints an
+unmissable warning block — every covered path, the card, the blocker, and a
+`verdict: pending` line stating that nothing was verified as a pass — and the
+`native-evidence` job turns 3 into a `::warning title=Native evidence PENDING —
+not a pass::` annotation plus a job-summary block, while exit 1 and exit 2 still
+fail the job. A red `native-evidence` job therefore always means the evidence is
+missing or unreadable, never merely scheduled.
+
+The pending form is accepted only as the complete truth for a range. Pending and
+decision records together have to cover *every* native-facing path; one path left
+out is exit 1, and the report names the path nobody accounted for. A verifying
+capture for the same range still wins with exit 0 and the pending record is
+reported as superseded, so a release does not have to delete its pending record
+at the moment the measurement finally arrives. A directory holding two records,
+a `pending.json` whose commit is outside the range, and a failed capture beside a
+pending record all stay exit 1: a real defect must not be buried under a
+scheduled one.
+
+This release uses it for real. `docs/evidence/native/2026-10-25-1.0.0-pending/`
+holds three records — one each for the smoke, stylesheet, and list cards — that
+between them name all 22 native-facing paths of the release range and the A03 the
+runs are waiting on. On that range the gate now reports `verdict: pending` and
+exits 3 instead of reporting a dodge that did not happen. Nine host-free tests
+cover the new form through throwaway `git init` repositories: full coverage exits
+3 with the warning text, one path missing exits 1, a capture wins with exit 0, a
+decision and the template behave exactly as before, a shrug `blocked_by` is
+rejected, two records in one directory are rejected, a broken record beside a
+pending one stays exit 1, a split record set is judged as a union, and a record
+from outside the range covers nothing.
+
+What did not change: what any document claims was measured. The stylesheet and
+list cards still have not run, `docs/capabilities.md` still says so, and the
+native column of `docs/parity-checklist.md` is still `reported`, not reproduced.
+The new record says that more loudly, not less.
 
 ## 1.0.0 — 2026-10-24
 
@@ -276,6 +338,12 @@ None of the following is implemented, or implemented and **not measured**. Each
 statement matches [docs/capabilities.md](docs/capabilities.md),
 [docs/contract.md](docs/contract.md) §15, and
 [docs/session-handoff.md](docs/session-handoff.md).
+
+The two device-run items below say "has not been run on a device" and "no device
+run", and that is still exactly true: this release ships the cards, the checker,
+and `docs/evidence/native/2026-10-25-1.0.0-pending/pending.json`, which records
+that the runs are blocked on an unattached A03. A pending record is not a
+measurement — the gate exits 3 for it — so nothing in this section improves.
 
 - **Native stylesheet lifecycle** — not implemented. The A03 device exposes
   `__LoadStyleSheet`, `__AdoptStyleSheet`, and `__ReplaceStyleSheets`; their

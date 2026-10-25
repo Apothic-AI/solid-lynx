@@ -156,6 +156,16 @@ Add platform features through explicit, testable adapters while keeping the core
     synthetic fixture: no stage line has been observed on a device. That is why
     the stylesheet half stays open and the box stays unticked, even though its
     CSS-id half is done and tested and its capture format is now checkable.
+  - **The absence is now recorded rather than implied.**
+    `docs/evidence/native/2026-10-25-1.0.0-pending/pending.json` names this card
+    among its pending records, with the A03 as the blocker and every
+    native-facing path the release touches. `scripts/require-native-evidence.mjs`
+    accepts that third form as an answer about honesty, not about behaviour: it
+    exits **3** and prints `verdict: pending`, never 0, and the `native-evidence`
+    job surfaces it as a warning rather than a pass. So this box staying open is
+    no longer a claim a reader has to take on trust — it is a state the release
+    gate reports, and `--range origin/master..HEAD` on this release returns that
+    code on its own.
 - [x] Add refs and imperative element access with deterministic cleanup.
 - [x] Evaluate native list virtualization and expose list callbacks if the Solid model can support them cleanly.
   - The renderer side is done: `root.createList()` creates the list through
@@ -284,23 +294,53 @@ Set a stable public contract after web validation, native validation, and toolin
       not a native change, while deleting or renaming a native job, or changing
       what it `needs:`, is. `test/require-native-evidence.test.ts` asserts the list covers
       every file in `src/`, so a new source file forces a decision here.
-    - Evidence has two satisfying forms, both committed by the change itself. A
-      capture: `docs/evidence/native/<date-or-id>/` holding the log plus a
-      `manifest.json` (device serial, `adb get-state` output, card, verifier exit
-      code, verifier verdict line, timestamp, commit sha). The checker **runs**
+    - Evidence has three forms, all committed by the change itself. A capture:
+      `docs/evidence/native/<date-or-id>/` holding the log plus a `manifest.json`
+      (device serial, `adb get-state` output, card, verifier exit code, verifier
+      verdict line, timestamp, commit sha). The checker **runs**
       `scripts/verify-native-parity.mjs` against the stored bytes and requires
       exit 0, and cross-checks the manifest's recorded exit code and verdict
       line against that live run, so editing either half makes them disagree. Or
       a `decision.json`: an explicit recorded decision that this change needs no
       device run, with a reason, an author, a timestamp, and the paths it covers.
+      Or a `pending.json`: the change *does* need a run, the run is specified and
+      reviewed, and it has not happened — the card that will measure it, a reason
+      at least 40 characters long, `blocked_by` naming the physical dependency
+      (a bare `n/a`, `tbd`, or `no device` is rejected), every native-facing path
+      it stands in for, an author, a timestamp, and a commit in the range.
+    - **A pending record is not a pass, and cannot be made into one.** The gate
+      exits **3** for it — never 0 — and prints `verdict: pending` plus a warning
+      block naming every covered path, the card, and the blocker, with the line
+      "NOTHING was verified as a pass" in it. It is accepted only when it is the
+      complete truth for the range: pending and decision records together must
+      cover every native-facing path, and one path left uncovered is exit 1 with
+      the path named. A capture for the same range still wins (exit 0) and the
+      pending record is reported as superseded. Why the third code exists at all:
+      without it, a release whose probes are built and waiting on an unattached
+      tablet had to either write a `decision.json` asserting no run was needed
+      (false) or fail its own gate as though it had dodged the requirement. 3 is
+      the difference between "unmet and scheduled" and "met" and "dodged".
+    - **CI surfaces 3 as a warning, not a failure, and 1/2 still fail.** The
+      `native-evidence` job captures the script's exit code, emits a
+      `::warning title=Native evidence PENDING — not a pass::` annotation and a
+      job-summary block for 3, and exits with the code for anything else. So a
+      red `native-evidence` job always means missing or unreadable evidence, and
+      a green one with a `pending.json` in the range says in the annotation that
+      nothing was measured.
     - The reuse holes are closed. A capture whose recorded commit is at or
       before the range base does not count; neither does one whose native-facing
-      files moved again after that commit. A manifest without its capture, and
-      `docs/evidence/native/TEMPLATE/`, are rejected by name.
+      files moved again after that commit. A manifest without its capture, a
+      directory carrying two records, a `pending.json` whose commit is outside
+      the range, and `docs/evidence/native/TEMPLATE/`, are all rejected by name.
     - The requirement's own logic is tested host-free:
       `test/require-native-evidence.test.ts` drives the script through
       `child_process` against git repositories built in `mkdtemp`, so it needs
-      no device, no network, and not this repository's git state (33 tests).
+      no device, no network, and not this repository's git state (50 tests, of
+      which nine cover the pending form: full coverage → exit 3 and the warning
+      text, one path missing → exit 1, capture wins → exit 0, a decision and the
+      template unchanged, a shrug blocker rejected, two records in one directory
+      rejected, a broken record beside a pending one → exit 1, a split record
+      set covering between them, and a record from outside the range).
   - **What is still manual, and is not claimed as automated.** No device runs in
     CI, and this change does not make one run. `native-build` still only
     compiles the bundles. `device.getState` in a manifest is a string a human
@@ -314,11 +354,16 @@ Set a stable public contract after web validation, native validation, and toolin
     the run, and confirming that the record describes one, is still a human
     step.** A reviewer remains the only thing that can confirm the serial in a
     manifest matches hardware someone actually held.
-  - **No capture is stored yet.** `docs/evidence/native/` ships its README and a
-    `TEMPLATE/` with no capture, because no device run has happened in this
-    worktree. `docs/parity-checklist.md` therefore still records the native
-    column as `reported`, and this box being ticked does not change that: the
-    requirement is enforced, the measurement it would carry is still missing.
+  - **No capture is stored yet, and the release says so in the gate's own
+    language.** `docs/evidence/native/` ships its README, a `TEMPLATE/` with no
+    capture, and `2026-10-25-1.0.0-pending/pending.json` — three pending records
+    covering all 22 native-facing paths of this release's range and naming the
+    A03 as the blocker. Running the gate on that range therefore exits 3 with
+    `verdict: pending`, not 0 and not 1. `docs/parity-checklist.md` still records
+    the native column as `reported`, and this box being ticked does not change
+    that: the requirement is enforced, the measurement it would carry is still
+    missing, and the difference between those two statements is now something a
+    script reports rather than something a reader has to notice.
 - [x] Confirm deterministic root, listener, ref, and list-callback cleanup.
       **Retitled from "Confirm deterministic root, listener, and stylesheet
       cleanup".** The original wording is kept in this paragraph because the
