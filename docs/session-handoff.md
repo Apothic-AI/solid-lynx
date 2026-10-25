@@ -41,12 +41,13 @@ out of your own output rather than out of this file — these numbers are dated.
 ```bash
 pnpm typecheck                     # exit 0
 pnpm typecheck:consumer            # exit 0; test/consumer/tsconfig.json + tsconfig.dev.json
-pnpm test                          # exit 0; 121 tests in 7 files (test/renderer.test.ts 62,
+pnpm test                          # exit 0; 150 tests in 8 files (test/renderer.test.ts 62,
+                                   #   test/require-native-evidence.test.ts 29,
                                    #   test/native-parity-verify.test.ts 19, test/list-probe-report.test.ts 14,
                                    #   test/parity.test.ts 9, test/stylesheet-probe-report.test.ts 7,
                                    #   test/rspeedy.test.ts 6, test/packaging.test.ts 4)
 pnpm build                         # exit 0
-pnpm pack --dry-run                # exit 0; 43 tarball entries (30 under dist/, 8 under docs/,
+pnpm pack --dry-run                # exit 0; 45 tarball entries (30 under dist/, 10 under docs/,
                                    #   plus LICENSE, package.json, README.md, CHANGELOG.md,
                                    #   ROADMAP.md) as solid-lynx-1.0.0.tgz
 pnpm native:build                  # exit 0; dist/main.lynx.bundle, dist/stylesheet-probe.lynx.bundle,
@@ -209,11 +210,13 @@ landed, and where to read it:
 - **Migration guide.** [migration.md](migration.md) is the `0.x` → frozen
   contract upgrade path: refs, CSS ids, event props, JSX types, the
   `<list>` → `root.createList()` move, root lifecycle.
-- **CI and PR template.** `.github/workflows/ci.yml` has five jobs (`unit`;
-  `node-matrix`, standing alone; then `solid-matrix`, `browser`, and
-  `native-build`, all `needs: unit`); `.github/pull_request_template.md`
-  repeats the same checks and adds the native-device question. CI compiles the
-  native bundle and **executes nothing native**.
+- **CI and PR template.** `.github/workflows/ci.yml` has six jobs (`unit`;
+  `node-matrix`, standing alone; then `solid-matrix`, `browser`, `native-build`,
+  and `native-evidence`, all `needs: unit`); `.github/pull_request_template.md`
+  repeats the same checks and states the native evidence requirement. CI
+  compiles the native bundle and **executes nothing native**; `native-evidence`
+  enforces that a native-facing change carries a stored, verifier-passing
+  capture or an explicit recorded decision (`docs/evidence/native/README.md`).
 - **Release process and 1.0.0.** [release.md](release.md) is the cut order with
   the command behind each step; [CHANGELOG.md](../CHANGELOG.md) carries the
   `1.0.0` entry, and `package.json` and `src/index.ts` both say `1.0.0`. Nothing

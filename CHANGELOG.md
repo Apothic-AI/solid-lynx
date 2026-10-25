@@ -15,6 +15,51 @@ only `ci.yml`), so nothing here was published by these commits. The npm name
 `solid-lynx` currently resolves to an unrelated package (MIT licence, a different
 maintainer, published 2025-03-10); this project ships Apache-2.0.
 
+## Unreleased
+
+### Native evidence is a requirement, not a convention
+
+`ROADMAP.md` box 4 said the native half of the compatibility requirement was
+enforced by nothing: the PR template was prose, `scripts/verify-native-parity.mjs`
+was a command someone had to remember to run, and no workflow invoked it, so a
+pull request that changed native-facing behaviour and ticked nothing merged
+green.
+
+`scripts/require-native-evidence.mjs` reads a git diff and answers that question
+mechanically. It takes a revision range (`--range A..B`, or the merge base
+against `origin/master` by default), computes the changed paths, and decides
+whether the change is native-facing from one exported constant,
+`NATIVE_FACING_PATHS`: the `src/` files the native bundle reaches, the type
+surface its cards compile against, `src/rspeedy.ts` because it configures the
+native build, `examples/lynx-for-native/`, and `.github/workflows/ci.yml` only
+when the changed lines land inside the `native-build` or `native-evidence` job.
+
+A native-facing change is satisfied by one of two things, both committed by the
+change itself: a capture under `docs/evidence/native/<date-or-id>/` with a
+`manifest.json`, which the script re-verifies by running the existing verifier
+against the stored bytes and requires to exit 0; or a `decision.json` recording
+explicitly that this change needs no device run. Exit 0 is satisfied, 1 is
+missing or mismatched evidence, 2 is could not evaluate.
+
+It is wired in as the `native-evidence` CI job over
+`pull_request.base.sha..HEAD`, and on `push` / `workflow_dispatch` it prints that
+there is no PR base and passes rather than evaluating a range that would mean
+nothing. `docs/evidence/native/README.md` documents the record contract and
+`docs/evidence/native/TEMPLATE/manifest.json` is a capture-less template the
+script rejects as evidence by name. 29 host-free tests build their own git
+repositories in `mkdtemp`, so the suite needs no device, no network, and not this
+repository's git state.
+
+What this does not do: run a device. `device.getState` in a manifest is a string
+a human typed; no runner can confirm hardware existed. The requirement that a
+run be recorded and re-verifiable is enforced; performing the run is still manual
+work. No capture is stored at this commit, so `docs/evidence/native/` ships its
+README and a capture-less `TEMPLATE/` only, and `docs/parity-checklist.md` still
+records the native column as reported, not reproduced.
+
+`ROADMAP.md` box 4 is ticked for that reason and that reason only, in as many
+words: the check that was missing now exists and is red when evidence is absent.
+
 ## 1.0.0 — 2026-10-24
 
 The first stable release. It freezes the public contract, pins the dependency set
@@ -151,7 +196,8 @@ Observed in this repository on Node 22.23.3 with pnpm 12.9.1:
 
 - `pnpm typecheck`, `pnpm typecheck:consumer`, `pnpm test`, `pnpm build`, and
   `pnpm pack --dry-run` all exit 0.
-- `pnpm test` reports **121 unit tests in 7 files** (`test/renderer.test.ts` 62,
+- `pnpm test` reports **150 unit tests in 8 files** (`test/renderer.test.ts` 62,
+  `test/require-native-evidence.test.ts` 29,
   `test/native-parity-verify.test.ts` 19, `test/list-probe-report.test.ts` 14,
   `test/parity.test.ts` 9, `test/stylesheet-probe-report.test.ts` 7,
   `test/rspeedy.test.ts` 6, `test/packaging.test.ts` 4), after

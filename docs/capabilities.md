@@ -20,7 +20,18 @@ operations were reported passing on Lynx Explorer 4.1.0 on an SM-A037U on
 2026-10-09. That run's capture was not kept, so
 [parity-checklist.md](parity-checklist.md) records the native column as
 **reported, not reproduced**, and `scripts/verify-native-parity.mjs` is what
-makes the next run checkable; see also [building.md](building.md). The
+makes the next run checkable; see also [building.md](building.md).
+
+How a run is kept is now a checked requirement rather than a convention. A
+verifier-passing capture is stored at `docs/evidence/native/<date-or-id>/` beside
+a `manifest.json`, and `scripts/require-native-evidence.mjs` — run by the
+`native-evidence` CI job over every pull request — fails a change to
+native-facing code that carries neither that nor an explicit recorded
+`decision.json`. [evidence/native/README.md](evidence/native/README.md) is the
+contract. It enforces that evidence exists and is re-verifiable; it does not
+execute a device, so a capability row still moves only on a run someone
+performed. No capture is stored at this commit, which is why nothing in the
+Native column below has moved. The
 capability probe below has only been run in a browser, so the Native column of
 the summary table stays `not measured`. `@lynx-js/types` is not a dependency of
 this repository, so native JSX typings remain unverified and are marked as such

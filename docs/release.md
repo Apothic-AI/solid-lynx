@@ -17,11 +17,11 @@ you read anything into the word "release".
 
 ## 1. Pre-flight: the gate CI repeats
 
-`.github/workflows/ci.yml` has five jobs: `unit`, `node-matrix`, `solid-matrix`,
-`browser`, `native-build`. `browser` and `native-build` both `needs: unit`, so
-`unit` gates them; `solid-matrix` also has `needs: unit`. `node-matrix` has no
-`needs:` on purpose, so a failing matrix leg reads as the matrix rather than as
-the unit gate. Every step below runs the same command a developer runs locally;
+`.github/workflows/ci.yml` has six jobs: `unit`, `node-matrix`, `solid-matrix`,
+`browser`, `native-build`, `native-evidence`. `browser`, `native-build`, and
+`native-evidence` all `needs: unit`, so `unit` gates them; `solid-matrix` also
+has `needs: unit`. `node-matrix` has no `needs:` on purpose, so a failing matrix
+leg reads as the matrix rather than as the unit gate. Every step below runs the same command a developer runs locally;
 none needs a secret. Green means exit status 0 on that exact command.
 
 | CI job | Step in `ci.yml` | Command | Green means | Result here |
@@ -29,15 +29,16 @@ none needs a secret. Green means exit status 0 on that exact command.
 | `unit` | Install | `pnpm install --frozen-lockfile` | lockfile and `package.json` agree; no resolution step | exit 0 |
 | `unit` | Type check | `pnpm typecheck` | `tsc -p tsconfig.build.json`, then `tsc --noEmit`, then both consumer fixtures | exit 0 |
 | `unit` | Type check consumer fixtures | `pnpm typecheck:consumer` | `test/consumer/tsconfig.json` and `test/consumer/tsconfig.dev.json` compile against the built `dist/` | exit 0 |
-| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **121 tests in 7 files** |
+| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **150 tests in 8 files** |
 | `unit` | Build | `pnpm build` | `dist/` is written | exit 0 |
-| `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 43 entries |
+| `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 45 entries |
 | `node-matrix` | Install / Type check / Unit tests, on `20.x`, `22.x`, `24.x` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` | the unit gate passes at the top of each declared Node line | exit 0 on 20.20.2, 22.23.3, 24.22.1 locally (98 tests each at that commit — the count predates `test/packaging.test.ts`, which was added afterwards and is not re-measured here; the floors 20.19.0 and 22.12.0 also exit 0) |
 | `browser` | Install Chromium | `pnpm exec playwright install --with-deps chromium` | Chromium present for Playwright | **not run** — the browser was already installed in this worktree; CI runs it because the runner starts bare |
 | `browser` | Lynx-for-Web suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | builds the web bundle, serves it, drives it in Chromium | exit 0, **17 passed** (43.8s, on the 1.9.17 overlay — the pinned run was 54.2s) |
 | `browser` | Pattern suite | `PLAYWRIGHT_PORT=4200 pnpm exec playwright test --config test/browser/patterns.playwright.config.ts` | the separate `examples/lynx-patterns` suite passes | exit 0, **9 passed** (41.5s) |
 | `native-build` | Build the native bundle | `pnpm native:build` | `examples/lynx-for-native/dist/` holds the three bundles | exit 0, `main`, `stylesheet-probe`, `list-probe` |
-| `solid-matrix` | Install / Overlay / Type check / Unit tests / Web build, on solid `1.9.16`+preset `1.9.16` and solid `1.9.17`+preset `1.9.16` | `pnpm install --frozen-lockfile`, `pnpm add`-free `overrides` in `pnpm-workspace.yaml` then `pnpm install --no-frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm web:build` | the gate passes on every published Solid the peer range admits | exit 0 on both legs locally, 121 tests each — **not yet run on GitHub Actions** |
+| `native-evidence` | Require native evidence for this pull request | `node scripts/require-native-evidence.mjs --range <pr base sha>..HEAD` | a native-facing change carries a committed capture the verifier accepts, or a recorded decision | **not run on GitHub Actions**; the script's 29 host-free tests are, and the three exit codes were demonstrated by hand (§3) |
+| `solid-matrix` | Install / Overlay / Type check / Unit tests / Web build, on solid `1.9.16`+preset `1.9.16` and solid `1.9.17`+preset `1.9.16` | `pnpm install --frozen-lockfile`, `pnpm add`-free `overrides` in `pnpm-workspace.yaml` then `pnpm install --no-frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm web:build` | the gate passes on every published Solid the peer range admits | exit 0 on both legs locally, 121 tests each at the time of that run (the suite is 150 now) — **not yet run on GitHub Actions** |
 
 Two things about the scripts, so you do not run work twice. `pnpm typecheck` is
 `pnpm build && tsc --noEmit && pnpm typecheck:consumer`, and `pnpm test` is
@@ -142,6 +143,26 @@ Bump sequence:
 device or emulator is attached to a runner, so **no native behaviour is executed
 in CI** (`.github/workflows/ci.yml`, the comment above the `native-build` job,
 and [compatibility.md](compatibility.md#8-what-this-document-does-not-claim) §8).
+
+What CI *does* now check is that evidence exists. The `native-evidence` job runs
+`scripts/require-native-evidence.mjs` over a pull request's diff
+(`pull_request.base.sha..HEAD`) and fails it when the change touches
+native-facing code and carries neither:
+
+- a capture at `docs/evidence/native/<date-or-id>/` with a `manifest.json`, which
+  the job re-verifies by running `scripts/verify-native-parity.mjs` against the
+  stored bytes and requiring exit 0, cross-checked against the manifest's own
+  recorded exit code and verdict line; or
+- a `decision.json` in the same place, recording explicitly that this
+  native-facing change needs no device run, with a reason, an author, a
+  timestamp, and the paths it covers.
+
+The device run itself is still hand work, and this job does not pretend
+otherwise: `device.getState` in a manifest is a string a human typed, and no
+check on a runner can confirm hardware existed. On `push` and
+`workflow_dispatch` there is no PR base, so the job prints that and passes rather
+than evaluating a range that would mean nothing.
+
 Three things are therefore hand work:
 
 1. **The A03 smoke card** — `examples/lynx-for-native/src/main-thread.tsx`,
@@ -228,9 +249,33 @@ Then keep the capture. A log left in `/tmp` cannot be re-checked, which is
 exactly what happened to the 2026-10-09 A03 run: it reported all twenty
 operations, its `[solid-lynx parity]` line was never copied out of `/tmp`, and
 `docs/parity-checklist.md` now records the native column as **reported, not
-reproduced**. Copy the capture somewhere durable, name that path in the record
-`docs/capabilities.md`, and re-run the verifier against the copy so the stored
-bytes are the ones that were verified.
+reproduced**.
+
+The durable place is now a specific one, and the release gate depends on it.
+Commit the capture under `docs/evidence/native/<date-or-id>/` beside a
+`manifest.json`, following [evidence/native/README.md](evidence/native/README.md)
+and `docs/evidence/native/TEMPLATE/manifest.json` — `device.serial`,
+`device.getState` (the `adb get-state` output, which has to read `device`),
+`card`, `timestamp`, `commit`, and the verifier's exit code and verdict line.
+The `commit` has to be inside the change the capture backs: a run from before the
+change, or one whose native files moved again afterwards, does not satisfy the
+requirement and `require-native-evidence.mjs` says so.
+
+A fifth command closes the loop, and it is the one that decides whether the
+evidence is acceptable rather than merely present:
+
+```bash
+node scripts/require-native-evidence.mjs --range <base>..HEAD
+```
+
+Exit 0 is satisfied, 1 is missing or mismatched evidence, 2 is could not
+evaluate. The `native-evidence` CI job runs the same command from the PR base.
+
+**No capture is stored in this repository at this commit**, so
+`docs/evidence/native/` holds only its README and the capture-less `TEMPLATE/`.
+That is deliberate: a synthetic capture filed as evidence would be exactly the
+thing this mechanism exists to prevent. It also means the first native-facing PR
+after this one will be red until someone runs the card — which is the point.
 
 **Whether the device is attached right now:**
 
@@ -270,14 +315,17 @@ present-tense pass, and it may not upgrade anything else from "unmeasured".
 
 ```bash
 pnpm build          # tsc -p tsconfig.build.json -> dist/     exit 0
-pnpm pack --dry-run # list the tarball without writing it     exit 0, 43 entries
+pnpm pack --dry-run # list the tarball without writing it     exit 0, 45 entries
 ```
 
-`pnpm pack --dry-run` ran here and listed **43 entries**: 30 files under
-`dist/` (`*.js` and `*.d.ts` for every `src/` module), the eight files in
-`docs/`, `CHANGELOG.md`, `ROADMAP.md`, plus `LICENSE`, `package.json`,
-`README.md`. It ends with `Tarball Details` / `solid-lynx-1.0.0.tgz` and writes
-no file (`git status` was clean afterwards).
+`pnpm pack --dry-run` ran here and listed **45 entries**: 30 files under
+`dist/` (`*.js` and `*.d.ts` for every `src/` module), the ten files in
+`docs/` (`building`, `capabilities`, `compatibility`, `contract`, `migration`,
+`parity-checklist`, `release`, `session-handoff`, and the two under
+`docs/evidence/native/`: its `README.md` and `TEMPLATE/manifest.json`),
+`CHANGELOG.md`, `ROADMAP.md`, plus `LICENSE`, `package.json`, `README.md`. It
+ends with `Tarball Details` / `solid-lynx-1.0.0.tgz` and writes no file
+(`git status` was clean afterwards). No capture ships, because none is stored.
 
 What ends up in the tarball is decided by `files` in `package.json`:
 `["dist", "docs", "CHANGELOG.md", "README.md", "ROADMAP.md", "LICENSE"]`.
@@ -325,7 +373,7 @@ registry credential wired into any workflow here.
 
 What the command would do, if it were ever run deliberately:
 
-- `pnpm publish` packs the same 43 entries §4 lists and uploads them to
+- `pnpm publish` packs the same 45 entries §4 lists and uploads them to
   `https://registry.npmjs.org/` as `solid-lynx@<package.json version>`. A dry
   run was executed here to confirm the target and that nothing was uploaded:
   `pnpm publish --dry-run --no-git-checks` printed
@@ -382,6 +430,7 @@ per-capability version of the same statement.
 | --- | --- | --- |
 | A03 smoke card on a device | **not run** | `adb -s R9WT911JVVH get-state` → `device 'R9WT911JVVH' not found`, exit 1. No hardware attached in this worktree, so there is no capture for the verifier to read. |
 | `node scripts/verify-native-parity.mjs <capture>` on a device capture | **not run** | Same reason: no capture exists. The verifier itself is exercised host-free against fixtures for every outcome (0, 1, and 2, including a capture with no parity line). |
+| `node scripts/require-native-evidence.mjs --range <base>..HEAD` against a real device capture | **not run** | No capture exists to point it at. The script's own three exit codes were demonstrated against throwaway git repositories under `/tmp`, and its 29 host-free tests build their own repositories; the `native-evidence` job has not run on GitHub Actions, because no runner can be dispatched from this worktree. |
 | Stylesheet probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0), which reviews the sequence and touches nothing. |
 | List probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0). The list card has had a runner since `run-native-probe.sh` took a card argument — it is no longer loaded by hand — but a reviewed command sequence is not a device result. |
 | `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; CI runs it on a bare runner. |

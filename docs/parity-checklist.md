@@ -29,15 +29,29 @@ Then, before citing the run anywhere:
 
 1. **Move the capture out of `/tmp`.** A log left in a temporary directory is the
    reason the 2026-10-09 result cannot be re-checked — `/tmp` does not survive a
-   reboot, and nothing copied it. Commit it under `docs/evidence/` (created with
-   the first capture; it is empty today, because no capture survived), attach it
-   to the PR or release issue, or store it anywhere durable the record can name.
-   Name the path in the record.
-2. **Record the verifier's exit code and its verdict line** next to the capture.
-   `0` is the only code that may be cited as a pass.
+   reboot, and nothing copied it. The durable place is
+   `docs/evidence/native/<date-or-id>/`: commit the capture there with a
+   `manifest.json` beside it. The contract is
+   [evidence/native/README.md](evidence/native/README.md) and the fields are in
+   `docs/evidence/native/TEMPLATE/manifest.json`. Nothing is stored there yet,
+   because no capture has survived.
+2. **Record the verifier's exit code and its verdict line** next to the capture,
+   in that manifest. `0` is the only code that may be cited as a pass.
 3. **Keep them together.** A verdict without the capture it came from is a claim,
    not evidence, and a capture without a verdict asks the next reader to do the
    comparison by eye again.
+
+Once the run is stored, the requirement is machine-checked rather than trusted:
+
+```bash
+node scripts/require-native-evidence.mjs --range <base>..HEAD
+```
+
+That script is the `native-evidence` CI job. It fails a pull request that changes
+native-facing code and carries no capture the verifier accepts and no recorded
+`decision.json`; it re-runs the verifier against the stored bytes, so the
+manifest's verdict is checked against the capture beside it rather than taken on
+faith. Exit 0 satisfied, 1 missing evidence, 2 could not evaluate.
 
 The verifier is the same three checks a reviewer made by eye, in a process:
 
@@ -79,9 +93,15 @@ The history, in full, because the distinction is the point:
   show that.
 
 **No verifier-verified native capture exists in this repository at this commit.**
-The verifier makes the next run recordable; it does not manufacture the run that
-is missing, and this document does not pretend otherwise. The honest status of
-every native cell below is `reported`.
+The verifier makes the next run recordable, and `scripts/require-native-evidence.mjs`
+now makes a missing record fail a pull request that touches native-facing code;
+neither manufactures the run that is missing, and this document does not pretend
+otherwise. The honest status of every native cell below is `reported`.
+
+`docs/evidence/native/` therefore holds only its README and a capture-less
+`TEMPLATE/`. The first native-facing change after this mechanism lands will be
+red until someone attaches the A03 and runs the card — which is the mechanism
+working, not a bug.
 
 ## Status values
 
@@ -148,12 +168,18 @@ examples/lynx-for-native/scripts/run-native-probe.sh smoke
 # 4. Verify the capture. Do not do this by eye.
 node scripts/verify-native-parity.mjs /tmp/solid-lynx-logs/lynx_console-smoke-<stamp>.log
 
-# 5. Keep the evidence: copy the capture somewhere durable and name that path
-#    in the record, so the next reader can re-run step 4 on the same bytes.
-#    docs/evidence/ is created by the first capture; it is empty today.
-mkdir -p docs/evidence
-cp /tmp/solid-lynx-logs/lynx_console-smoke-<stamp>.log docs/evidence/
-node scripts/verify-native-parity.mjs docs/evidence/lynx_console-smoke-<stamp>.log
+# 5. Keep the evidence where the requirement looks for it: a directory per run
+#    holding the capture and a manifest.json. See docs/evidence/native/README.md
+#    and copy docs/evidence/native/TEMPLATE/manifest.json.
+#    Nothing is stored there yet; the template directory holds no capture.
+mkdir -p docs/evidence/native/$(date +%F)-smoke
+cp /tmp/solid-lynx-logs/lynx_console-smoke-<stamp>.log \
+   docs/evidence/native/$(date +%F)-smoke/capture.log
+node scripts/verify-native-parity.mjs \
+  docs/evidence/native/$(date +%F)-smoke/capture.log
+
+# 6. Commit the capture with the manifest, then check the requirement itself.
+node scripts/require-native-evidence.mjs --range <base>..HEAD
 ```
 
 How to read the result:

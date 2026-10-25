@@ -240,46 +240,61 @@ Set a stable public contract after web validation, native validation, and toolin
   - The `unit` job's accounting of what closes this box: `solid-matrix` has
     `needs: unit`, so a red unit gate stops it from running rather than
     producing a second, confusing failure.
-- [ ] Require native and web compatibility checks for changes to shared behavior.
+- [x] Require native and web compatibility checks for changes to shared behavior.
   - **Web half: enforced.** The `browser` job runs both suites on every pull
     request — `PLAYWRIGHT_PORT=4186 pnpm web:test` (17 tests) and
     `PLAYWRIGHT_PORT=4200` with `test/browser/patterns.playwright.config.ts`
     (9 tests) — and a red suite fails the PR.
-  - **Native half: cannot run in CI, and does not.** The `native-build` job only
-    compiles the bundles with `pnpm native:build` and uploads
-    `examples/lynx-for-native/dist`; no device or emulator is attached, and the
-    job's own comment (`.github/workflows/ci.yml:308-310`) says native runtime
-    behaviour is not covered. Nothing in CI fails when a change breaks native
-    rendering, tap dispatch, or the `[solid-lynx parity]` report.
-  - **What now exists in place of automation: a recorded, verifiable native run.**
-    Three pieces, all present:
-    1. `examples/lynx-for-native/scripts/run-native-probe.sh smoke` produces the
-       capture (pinned serial, loopback serve, Explorer deep link, logcat).
-    2. `scripts/verify-native-parity.mjs <capture>` turns that capture into an
-       exit code — 0 verified, 1 findings, 2 could not evaluate — by parsing the
-       `[solid-lynx parity]` line and checking it against `parityOperationIds`
-       from `dist/parity.js`. Its own logic is tested host-free against capture
-       fixtures (`test/native-parity-verify.test.ts`, 19 tests).
-    3. `.github/pull_request_template.md:22-39` asks every PR to tick one of
-       "Not required" or "Required and done", and lists what a required run
-       must record: `adb -s R9WT911JVVH get-state` returning `device`, the
-       `[solid-lynx parity]` line recorded in `docs/parity-checklist.md`, the
-       stylesheet probe reviewed if that PAPI moved, `docs/capabilities.md`
-       updated with what the run showed, and the captures in
-       `/tmp/solid-lynx-logs` read rather than only produced.
-  - **What is enforced, exactly, and what is not.** The template checklist and
-    the verifier are both **convention**: the template is prose a contributor
-    ticks by hand, and the verifier is a command someone has to remember to run
-    on a capture someone has to keep. No workflow invokes
-    `verify-native-parity.mjs`; `rg` finds no reference to it under
-    `.github/` or in any test other than its own host-free suite. So a PR that
-    changes native-facing behaviour and ticks nothing still merges, and no check
-    goes red. The box's word is "Require", and nothing requires anything yet.
-  - What would actually close it: a CI job that at minimum fails when the
-    template's native section is unaddressed, and ideally a stored capture under
-    `docs/evidence/` (which does not exist yet — no capture has survived) that
-    the verifier is run against on every change to `src/lynx-host.ts` or the
-    examples' native entries. Neither exists. This box stays unticked.
+  - **Native half: enforced as a requirement on evidence, not as an execution.**
+    The `native-evidence` job runs `scripts/require-native-evidence.mjs` over
+    `pull_request.base.sha..HEAD` on every pull request, and a change to
+    native-facing code with no satisfying record is **red**. That is the
+    specific gap this box named: it used to say "a PR that changes
+    native-facing behaviour and ticks nothing still merges, and no check goes
+    red". It no longer does.
+    - The path list is `NATIVE_FACING_PATHS` in
+      `scripts/require-native-evidence.mjs`, exported so it is testable, and
+      derived by reading the bundle rather than guessing. Runtime-reachable:
+      `src/{index,jsx-runtime,jsx-dev-runtime,parity,universal,renderer,root,lynx-host,list,refs,events,render-context}.ts`.
+      Type-only but compiled against by the cards: `src/{host,jsx-types}.ts`.
+      `src/rspeedy.ts` configures the native build, so flipping `generate` to
+      `"dom"` — which produces a bundle that builds and renders nothing — is
+      caught. Everything under `examples/lynx-for-native/`. `.github/workflows/ci.yml`
+      only when the changed lines land inside the `native-build` or
+      `native-evidence` job, attributed per hunk against the revision each side
+      belongs to, so deleting a native job counts and a comment fix in `unit`
+      does not. `test/require-native-evidence.test.ts` asserts the list covers
+      every file in `src/`, so a new source file forces a decision here.
+    - Evidence has two satisfying forms, both committed by the change itself. A
+      capture: `docs/evidence/native/<date-or-id>/` holding the log plus a
+      `manifest.json` (device serial, `adb get-state` output, card, verifier exit
+      code, verifier verdict line, timestamp, commit sha). The checker **runs**
+      `scripts/verify-native-parity.mjs` against the stored bytes and requires
+      exit 0, and cross-checks the manifest's recorded exit code and verdict
+      line against that live run, so editing either half makes them disagree. Or
+      a `decision.json`: an explicit recorded decision that this change needs no
+      device run, with a reason, an author, a timestamp, and the paths it covers.
+    - The reuse holes are closed. A capture whose recorded commit is at or
+      before the range base does not count; neither does one whose native-facing
+      files moved again after that commit. A manifest without its capture, and
+      `docs/evidence/native/TEMPLATE/`, are rejected by name.
+    - The requirement's own logic is tested host-free:
+      `test/require-native-evidence.test.ts` drives the script through
+      `child_process` against git repositories built in `mkdtemp`, so it needs
+      no device, no network, and not this repository's git state (29 tests).
+  - **What is still manual, and is not claimed as automated.** No device runs in
+    CI, and this change does not make one run. `native-build` still only
+    compiles the bundles. `device.getState` in a manifest is a string a human
+    typed after `adb -s R9WT911JVVH get-state`; nothing here can confirm a device
+    existed. So the honest statement is: **the existence and re-verifiability of
+    a run is required; performing the run is still a human step.** A reviewer is
+    still the only thing that can confirm the serial in a manifest matches
+    hardware someone actually held.
+  - **No capture is stored yet.** `docs/evidence/native/` ships its README and a
+    `TEMPLATE/` with no capture, because no device run has happened in this
+    worktree. `docs/parity-checklist.md` therefore still records the native
+    column as `reported`, and this box being ticked does not change that: the
+    requirement is enforced, the measurement it would carry is still missing.
 - [ ] Confirm deterministic root, listener, and stylesheet cleanup.
   - **Proven: root, listener, and ref cleanup.** `docs/contract.md` §9 names the
     mechanism and the covering test for each. The line numbers below are this
@@ -348,18 +363,16 @@ Set a stable public contract after web validation, native validation, and toolin
 
 **Milestone complete when:** consumers can build and maintain a Solid Lynx app using documented APIs, with core behavior continuously validated in supported runtimes.
 
-**Status of this milestone:** not complete. Two of the five items are done (three
-once the Solid half above counts as done). The remaining two stay open for two
-different reasons, and this revision records which is which rather than one
-shared blocker:
+**Status of this milestone:** not complete. Four of the five items are done
+(three once the Solid half above counts as done, plus the compatibility-check
+box below). One stays open:
 
 | Box | Why it is still open |
 | --- | --- |
-| Require native and web compatibility checks for changes to shared behavior | Web is enforced in CI. Native cannot run in CI; the recorded-run mechanism (`run-native-probe.sh smoke` + `verify-native-parity.mjs`) and the PR template exist, but both are convention — nothing red fails a PR. |
 | Confirm deterministic root, listener, and stylesheet cleanup | Root, listener, and ref cleanup are proven and were strengthened in 1.0.0 (`380284f`, `8b01d05`). Stylesheet cleanup is absent on web and unmeasured on native, so the box cannot close on evidence. |
 
-Neither remaining item is waiting on a contributor decision. Both need work nobody
-has done: a native runtime check that can fail a PR, and a stylesheet device run.
+The remaining item is not waiting on a contributor decision. It needs a
+stylesheet device run, which no check can perform without hardware.
 The 0.3 native-only box is absent from this table because it is scope-excluded,
 not pending.
 

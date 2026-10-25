@@ -15,28 +15,49 @@ commands `.github/workflows/ci.yml` runs; run them locally in this order.
 - [ ] `PLAYWRIGHT_PORT=<free port> pnpm web:test` — exit 0
 - [ ] `PLAYWRIGHT_PORT=<other free port> pnpm exec playwright test --config test/browser/patterns.playwright.config.ts` — exit 0
 - [ ] `pnpm native:build` — exit 0
+- [ ] `node scripts/require-native-evidence.mjs --range <base>..HEAD` — exit 0
+      (`<base>` is this PR's base sha; the `native-evidence` job runs the same
+      command for you)
 
-CI (`unit`, then `browser` and `native-build`) must be green too; a local pass on
-a different Node version is not the same evidence (`docs/compatibility.md` §8).
+CI (`unit`, then `browser`, `native-build`, and `native-evidence`) must be green
+too; a local pass on a different Node version is not the same evidence
+(`docs/compatibility.md` §8).
 
-## Native device run
+## Native evidence
 
-Tick one. CI compiles the native bundle and executes nothing, so this is hand
-work on the A03 (`adb -s R9WT911JVVH`; the tablet `19779010` is not yours to
-target).
+This section is checked, not just asked. `scripts/require-native-evidence.mjs`
+computes whether this PR touches native-facing behaviour and fails the
+`native-evidence` job if it does and carries no satisfying record; the full path
+list is `NATIVE_FACING_PATHS` in that script and is documented in
+`docs/evidence/native/README.md`. One of the first two boxes below therefore has
+to be true of the committed diff, not of this text.
 
-- [ ] **Not required** — this PR does not change native-facing behaviour
-      (`src/lynx-host.ts`, event names or dispatch, CSS ids, list callbacks, or
-      anything else that changes the emitted native bundle).
-- [ ] **Required and done** — the behaviour changed, and the run is recorded:
-      - [ ] `adb -s R9WT911JVVH get-state` returned `device`, not an error
-      - [ ] A03 smoke card: `[solid-lynx parity]` line captured, result recorded in `docs/parity-checklist.md`
-      - [ ] `examples/lynx-for-native/scripts/run-stylesheet-probe.sh --dry-run` reviewed if the stylesheet PAPI moved
-      - [ ] `docs/capabilities.md` updated with what the run actually showed
-      - [ ] Captures in `/tmp/solid-lynx-logs` read, not just produced
+- [ ] **No native-facing path changed** — `src/` files the native bundle reaches,
+      `src/host.ts` / `src/jsx-types.ts`, `src/rspeedy.ts`,
+      `examples/lynx-for-native/`, or the `native-build` / `native-evidence` jobs.
+      The check confirms this from the diff.
+- [ ] **Native-facing, and the run is recorded** — both of:
+      - [ ] The capture is committed at `docs/evidence/native/<date-or-id>/` with
+            a `manifest.json`, and `node scripts/verify-native-parity.mjs` exits 0
+            against that stored copy
+      - [ ] `docs/parity-checklist.md` and `docs/capabilities.md` updated with
+            what the run showed; the stylesheet probe reviewed if that PAPI moved
+- [ ] **Native-facing, and no device run is needed** — a `decision.json` is
+      committed at `docs/evidence/native/<date-or-id>/` with a reason, an author,
+      a timestamp, and the paths it covers. Use this for a comment rewrite or a
+      docs-only change inside native code, not for a behaviour change.
 
-A PR that changes native-facing behaviour and has neither box ticked is not
-mergeable. "CI was green" is not a native result.
+Hand work still required for a required run, on the A03
+(`adb -s R9WT911JVVH`; the tablet `19779010` is not yours to target):
+
+- [ ] `adb -s R9WT911JVVH get-state` returned `device`, not an error
+- [ ] `examples/lynx-for-native/scripts/run-native-probe.sh smoke` captured the
+      `[solid-lynx parity]` line, and it was read rather than only produced
+
+Nothing in CI executes native code: `native-build` compiles the bundle and
+`native-evidence` reads files. So a green `native-evidence` job means the
+evidence is complete and re-verifiable, **not** that native behaviour was
+measured on this PR. "CI was green" is not a native result.
 
 ## Docs the change forces
 

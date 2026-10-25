@@ -86,7 +86,7 @@ after `pnpm install --frozen-lockfile`, the overlay applied, and then:
 | Command | `1.9.16` / preset `1.9.16` | `1.9.17` / preset `1.9.16` |
 | --- | --- | --- |
 | `pnpm typecheck` | exit 0 | exit 0 |
-| `pnpm test` | exit 0, 121 tests in 7 files | exit 0, 121 tests in 7 files |
+| `pnpm test` | exit 0, 121 tests in 7 files at the time of that run | exit 0, 121 tests in 7 files at the time of that run |
 | `pnpm web:build` | exit 0 | exit 0 |
 
 Nothing failed on either version, so nothing was narrowed. `1.9.0`–`1.9.14`
@@ -281,7 +281,10 @@ app to install.
 - **No native runtime in CI.** The `native-build` job compiles the bundle and
   uploads it as an artifact. No device or emulator is attached, so nothing native
   is executed by CI (`.github/workflows/ci.yml`, the comment above
-  `native-build`).
+  `native-build`). The `native-evidence` job does not change that: it reads a
+  diff and re-runs `scripts/verify-native-parity.mjs` over a stored capture, so a
+  green run means the evidence is complete and re-verifiable, not that native
+  behaviour was executed on the runner.
 - **No second native runtime.** No iOS run, no newer or older Explorer build, no
   device other than the A03 recorded in `docs/building.md`.
 - **No cross-host stylesheet or list claims.** [capabilities.md](capabilities.md)
