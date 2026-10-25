@@ -384,6 +384,8 @@ This package currently focuses on the Solid renderer and Element PAPI bridge. Th
 - Platform-specific native modules
 - Production Lynx-for-Web serving and host integration beyond the included example
 
+One host defect is worth knowing about before you build on the web path: `@lynx-js/web-core` 0.26.2 (and 0.26.5, inspected) can boot a card into `<lynx-view>` and never render it, with no error on any page, console, or network channel, because its decode worker's `done` message can overtake the import that its section handlers await. **This package does not fix that for you** — it has no dependency on web-core and no shipped code could change the ordering; this repository patches web-core for its own test harness only, and the patch is not in the published package. What it looks like, which versions carry it, and what a consumer can do are in [docs/capabilities.md](docs/capabilities.md#the-lynx-for-web-boot-race-in-web-core-0262).
+
 Solid control-flow components such as `For`, `Show`, `Switch`, `Index`, `Suspense`, and `ErrorBoundary` are re-exported from the package.
 
 See [ROADMAP.md](ROADMAP.md) for planned milestones and completion goals.

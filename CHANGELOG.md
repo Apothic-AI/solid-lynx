@@ -13,11 +13,59 @@ Release status: `package.json` and the exported `version` constant in
 `@apothic-ai/solid-lynx`, scoped and marked `publishConfig.access: "public"` —
 see "Package name" under 1.0.0 for why. This repository has no git tags and no
 publish workflow (`.github/workflows/` contains only `ci.yml`), so nothing here
-was published by these commits. The unscoped npm name `solid-lynx` resolves to an
-unrelated package (MIT licence, a different maintainer, published 2025-03-10);
-this project ships Apache-2.0 and is not that package.
+was published by these commits. **`1.0.0` is nonetheless on the public registry:**
+npm reports it published 2026-10-25 with `gitHead aded55b`, an ancestor of this
+tree, which means this repository is now ahead of the artifact that consumers
+have. Everything under "Unreleased" below is work that happened after that
+publish and is in no published tarball. The unscoped npm name `solid-lynx`
+resolves to an unrelated package (MIT licence, a different maintainer, published
+2025-03-10); this project ships Apache-2.0 and is not that package.
 
 ## Unreleased
+
+No version number is assigned to this section, and the reason is recorded rather
+than left implicit: **every commit since the publish changes no shipped code.**
+The published tarball's `dist/` is byte-identical to a build of this tree, so a
+republish under a new number would ship the same renderer, the same types, and
+the same exports — a version that moved without a byte changing, which is the
+kind of number this file exists to stop. The one caveat is documentation: `docs/`
+and `CHANGELOG.md` **are** in `files[]`, so the next tarball would carry different
+prose. That makes a republish *worth doing* for a consumer who reads documentation
+from the installed package instead of the repository; it does not make it a
+version. If one is cut for that reason, `1.0.1` is the number, and it is a
+release decision rather than a fix — nothing a consumer imports changes. See
+[release.md](docs/release.md) §2 for the check that keeps this honest at the next
+publish.
+
+### The web-core boot race is patched for the test harness, and disclosed to consumers
+
+`@lynx-js/web-core` 0.26.2 can boot a card into `lynx-view` and never render it,
+with no error on any channel: the decode worker's `done` message overtakes the
+`LynxViewInstance` dynamic import that every section handler awaits, the bundle is
+moved out of `#loadingBundles` while a handler is still waiting to write into it,
+and `lepusCode` is silently lost. `patches/@lynx-js__web-core@0.26.2.patch` is
+applied through `patchedDependencies` in `pnpm-workspace.yaml` and defers settling
+the bundle until the last section handler has finished; `scripts/repro-boot-stall.mjs`
+reproduces the stall on demand without it. 0.26.5 was inspected afterwards and its
+`done` handler is unchanged, so a dependency bump does not address it.
+
+This is a **change to this repository's development tree, not to the package**. It
+touches no file under `src/`, changes no export, and adds no dependency: the
+renderer has no `dependencies` block, `@lynx-js/web-core` is not a peer, and
+nothing in `dist/` imports it. A consumer is therefore not fixed by anything in
+this entry — which is exactly why it is written down. Capabilities that only the
+browser suites have measured are now stated with the caveat attached: the defect,
+what it looks like, which versions carry it, and what a consumer can do about it
+are in [capabilities.md](docs/capabilities.md#the-lynx-for-web-boot-race-in-web-core-0262),
+and [compatibility.md](docs/compatibility.md) §3 records that the supported 0.26.2
+carries it and that this repository's web results depend on the local patch, so a
+consumer's results may differ. One sentence in the README's Lynx-for-Web section
+carries the same caveat to the npm page, because that is where a consumer reads it
+first.
+
+The 1.0.0 entry below is left as it was: it describes a shipped artifact, and
+editing it to mention a patch that artifact does not contain would make the record
+of what shipped wrong.
 
 ### The browser suite reports both realms, and names the stage a view stopped in
 
@@ -764,7 +812,12 @@ exercised), and `Suspense`, `SuspenseList`, `Switch`, `Match`, `Index`, and
 `package.json` said `0.1.0` from the first commit until this release, so there
 were no separately versioned `0.2`, `0.3`, or `0.4` packages. The subsections
 below reproduce the [ROADMAP](ROADMAP.md) milestones those numbers name, as
-built across the commits listed for each. No `0.x` build was published.
+built across the commits listed for each. No `0.x` version of *this* package was
+released — the `0.x` milestones were development milestones that share the one
+package version. (The registry's `0.0.0-stage` on 2026-10-25 is a separate puzzle:
+no commit in this repository's history ever set that version, so it came from a
+checkout or a temporary manifest edit that was never committed. It is a staging
+entry, not a release, and the 1.0.0 entry is the artifact to read.)
 
 ### 0.1.0 — 2026-09-27, first commit
 

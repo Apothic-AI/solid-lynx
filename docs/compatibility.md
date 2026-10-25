@@ -148,6 +148,26 @@ package does not promise. This repository passes `@lynx-js/web-core` 0.26.2 to
 the browser suite and nothing else. 0.26.2 is the only supported version; any
 other version is untested, not "probably fine".
 
+**The supported version carries a boot defect, and this repository's web results
+depend on a local patch.** 0.26.2 has a race in `TemplateManager`: when the
+decode worker's `done` message overtakes the `LynxViewInstance` dynamic import
+that every section handler awaits, the bundle is moved out of `#loadingBundles`
+while a handler is still waiting to write into it, `lepusCode` is silently lost,
+and the card never renders — with no error on any page, console, or network
+channel. 0.26.5 was inspected and its `done` handler is unchanged, so the same
+ordering is there too and bumping the dependency does not remove it.
+
+This repository applies `patches/@lynx-js__web-core@0.26.2.patch` for its own
+test harness through `patchedDependencies` in `pnpm-workspace.yaml`, and that
+patch is **not part of the published package**. So the browser-suites column of
+every other document in this tree describes **0.26.2 plus this patch**, and it is
+the only configuration those results cover. A consumer on unpatched 0.26.2 can
+hit the stall and is not covered by those results: the patch, the symptom and the
+options are in [capabilities.md](capabilities.md#the-lynx-for-web-boot-race-in-web-core-0262).
+Nothing in this package's shipped code can change web-core's boot ordering, so
+this is a fact about the environment a result was measured in, not a guarantee
+the package extends.
+
 ## 4. Lynx native runtime (Lynx Explorer / Lynx engine)
 
 **Two runtimes have been measured, and they are kept separate.** They share the
@@ -313,7 +333,7 @@ specifier starts resolving again.
 | Node.js | `^20.19.0 \|\| >=22.12.0`; verified on 20.19.0, 20.20.2, 22.12.0, 22.23.3, 24.22.1 | toolchain `engines`, README, CI `node-matrix`, local runs | range, both floors and three line tops run |
 | pnpm | `12.9.1`, pinned by `packageManager: "pnpm@12.9.1"` in `package.json` | `package.json`, CI `pnpm/action-setup` | single version |
 | Solid | `^1.9.15`; verified on 1.9.15, 1.9.16, and 1.9.17 — the whole range | `babel-preset-solid` peer, lockfile, CI `solid-matrix`, local runs | range, every admitted version run |
-| `@lynx-js/web-core` | 0.26.2 only | lockfile, browser suite | single version |
+| `@lynx-js/web-core` | 0.26.2 only, carrying the boot defect described in §3 | lockfile, browser suite | single version — and every browser-suite result in this tree is for **0.26.2 with this repository's local patch applied**, not for the published 0.26.2 |
 | `@lynx-js/lynx-core` | 0.1.4 only | lockfile | single version |
 | Lynx Explorer / engine | 4.1.0 / 3.5 only | `docs/building.md`, the A03 hand run, the emulator captures | single version; measured on two runtimes (§4.1 A03 reported, §4.2 emulator captured) |
 | `@lynx-js/rspeedy` | 0.18.0 only | lockfile, `web:build`/`native:build` | single version |
@@ -353,6 +373,17 @@ specifier starts resolving again.
   `--frozen-lockfile` and it has `needs: unit`, so lockfile consistency is still
   `unit`'s claim, not `solid-matrix`'s. See §2 for the two `pnpm add` mechanisms
   that were tried and did not survive a real run.
+- **The web results are results for 0.26.2 plus a local patch.** Every Lynx-for-Web
+  and pattern-suite result this repository reports was measured with
+  `patches/@lynx-js__web-core@0.26.2.patch` applied through
+  `patchedDependencies`. That patch is a development-tree artifact: it is not in
+  the published package, it adds no dependency, and nothing in `dist/` imports
+  web-core. So this document's web claims describe the renderer **and** a patched
+  host, and a consumer running unpatched 0.26.2 is not covered by them and may hit
+  the stall instead. §3 states the defect and
+  [capabilities.md](capabilities.md#the-lynx-for-web-boot-race-in-web-core-0262)
+  states what a consumer can do about it. If the patch is ever removed, these
+  claims have to be re-measured rather than carried forward.
 - **No native runtime in CI.** The `native-build` job compiles the bundle and
   uploads it as an artifact. No device or emulator is attached, so nothing native
   is executed by CI (`.github/workflows/ci.yml`, the comment above

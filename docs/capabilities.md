@@ -100,6 +100,7 @@ pnpm exec playwright test --config test/browser/patterns.playwright.config.ts
 | Refs and imperative access | supported, tested | not measured | A ref receives the live Lynx node and is released with its Solid scope. |
 | CSS ids | supported, tested | not measured | `root.setCSSId()` assigns a compiled CSS id to a root's own page children. |
 | Stylesheet loading and lifecycle | unsupported, by inspection | load measured on the API 33 emulator; **lifecycle unmeasured** | web-core has no PAPI for it, so there is nothing implemented to call. Native exposes `__LoadStyleSheet` and friends; on the measured engine `[url, "utf-8"]` returns `null` and reaches `probe.css`, a `[url]`-only call and any non-String second argument throw with named errors, and **no call returned a stylesheet handle**, so nothing is owned, nothing can be removed, and no rule is shown to be applied. |
+| Lynx for Web boot | **host defect**, patched here for this repository's test harness only | not applicable — the native path does not run web-core | The host can drop a bundle's `lepusCode` and never render the card, with no error on any channel. Measured on 0.26.2; 0.26.5 was inspected and carries the same ordering. This package does **not** fix it for a consumer — see [The Lynx for Web boot race](#the-lynx-for-web-boot-race-in-web-core-0262). |
 
 ## Findings
 
@@ -807,6 +808,70 @@ questions come from the v1 capture, and v1's `load-real-url` fix comes from the 
 one — but none of them went through this script, so none of them makes a line
 above a runner result, and none of them is an A03 run. The runner's pinned serial
 is still `R9WT911JVVH`.
+
+### The Lynx for Web boot race in web-core 0.26.2
+
+This is a defect in the web host rather than a capability, and it is recorded
+here because it is the one thing about Lynx for Web that changes what a card
+*measures* without a line of this package changing.
+
+**What it looks like.** A card boots into `lynx-view` and never renders. The realm
+iframe exists and its document loads, web-core has installed its element APIs in
+it (`__CreatePage` is a function), the decode worker answers `ready` and every
+section and then `done` — and the card's own main-thread script is never
+inserted, so `[part="page"]` is never created and `lynx-view` stays
+`display: none`. **Nothing throws**: no page error, no console error, no failed
+request. That is why a report can list `(none)` on every channel next to a card
+that never appeared, and why the silence is the signature rather than the
+absence of a problem.
+
+**What the cause is.** `TemplateManager` boots a card through two halves that
+have to meet: the decode worker posts each decoded section and then `done`, and
+every section handler awaits web-core's in-flight dynamic import of
+`LynxViewInstance` before it writes its section into the bundle. `done` is what
+moves the bundle from `#loadingBundles` to `#bundles`, and the section writers
+look the bundle up in `#loadingBundles` by url. When `done` arrives before that
+import resolves, the bundle is moved while the handlers are still waiting; they
+resume and write `lepusCode` into an object that `getBundle()` no longer
+returns. `onMTSScriptsLoaded` then finds no `root` chunk and never calls
+`mtsRealm.loadScript`. The window is a few milliseconds on an idle machine and
+tens of milliseconds on a cold or CPU-starved one, which is why this appeared as
+an intermittent failure on 2-core CI runners rather than as a reproducible one.
+
+**Which versions carry it.** 0.26.2, the only version this repository supports,
+**measured**: it is what both browser suites run, and the stall is reproducible
+on demand in it. 0.26.5 was inspected afterwards and its `done` handler is
+unchanged — it still moves the bundle out of `#loadingBundles` before the
+section handlers can finish — so it carries the same ordering. **Bumping the
+dependency is not a fix for this**, which is the part a consumer is most likely
+to assume.
+
+**This repository patches it for its own test harness only.** `pnpm install`
+applies `patches/@lynx-js__web-core@0.26.2.patch`, registered under
+`patchedDependencies` in `pnpm-workspace.yaml`. It defers moving the bundle, and
+resolving the load, until the last in-flight section handler has finished
+writing, so the two maps cannot disagree whatever order the messages and the
+import resolve in. `scripts/repro-boot-stall.mjs` widens the race on purpose:
+with the patch absent every run of it stalls, with the patch present none do.
+Both files live in this repository's development tree. **Neither is in the
+published package**, and a consumer has no reason to have either.
+
+**What this package does not do for a consumer: fix it.** The published
+`@apothic-ai/solid-lynx` is a renderer over Element PAPI. It has no
+`dependencies` block, `@lynx-js/web-core` is not one of its peers, nothing in
+`dist/` imports it, and no shipped code could change web-core's boot ordering.
+A consumer whose web build stalls this way has three options, all of them
+theirs to weigh:
+
+| Option | What it involves |
+| --- | --- |
+| Patch it the way this repository does | Add a `patchedDependencies` entry to your own workspace and patch the installed `TemplateManager`. `patches/@lynx-js__web-core@0.26.2.patch` is one such patch, written against 0.26.2's emitted JavaScript; read it before reusing it, because it is a repository artifact with no compatibility promise of its own. |
+| Move off 0.26.2 | Untested by this repository, which supports 0.26.2 and nothing else ([compatibility.md](compatibility.md) §3). 0.26.5 was inspected and still has the race, so a bump on its own does not address it. |
+| Host the renderer on Lynx native instead | This defect is in the web host's boot path. The native path does not run web-core. |
+
+`docs/release.md` records the maintainer-side consequence: the browser suites'
+results are results for 0.26.2 **plus** this repository's patch, and that stays
+true until the ordering is fixed upstream.
 
 ## Remaining blockers
 

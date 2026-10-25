@@ -186,34 +186,26 @@ the version in prose that must not contradict them:
 
 | File | What it holds | Current value |
 | --- | --- | --- |
-| `package.json` | `"version"` (line 3) | `0.1.0` |
-| `src/index.ts` | `export const version = "0.1.0"` (line 72) | `0.1.0` |
-| `CHANGELOG.md` | the entry for the version being cut | **does not exist in this tree** — see below |
-| `README.md` | the `> **Status:**` line (line 7) names the release | `0.1.0` |
+| `package.json` | `"version"` (line 3) | `1.0.0` |
+| `src/index.ts` | `export const version = "1.0.0"` (line 72) | `1.0.0` |
+| `CHANGELOG.md` | the entry for the version being cut | an `Unreleased` section with no number, and a `1.0.0` entry below it |
+| `README.md` | the `> **Status:**` line (line 14) names the release | `1.0.0` |
 
-`docs/contract.md` (line 3, and line 57 where it quotes the constant) and
-`docs/migration.md` (line 3) also name `0.1.0`. Those two are the contract-freeze
-documents: a changed number there is a contract change, not a release chore. A
-version bump either updates them in the same commit or records why the frozen
-documents still describe the older release. Do not let `docs/release.md` be read
-as permission to edit them.
+`docs/contract.md` (line 3, and line 68 where it quotes the constant) and
+`docs/migration.md` also name `1.0.0`. Those are the contract-freeze documents: a
+changed number there is a contract change, not a release chore. A version bump
+either updates them in the same commit or records why the frozen documents still
+describe the older release. Do not let `docs/release.md` be read as permission to
+edit them.
 
-`docs/contract.md` cites `version` as `src/index.ts:70`; the constant is at line
-72 at this commit. The line reference is stale, the string is not. Grep for the
-constant rather than trusting the line number.
-
-**There is no `CHANGELOG.md` on this branch.** `git ls-files CHANGELOG.md`
-prints nothing, so the first release that wants one creates it, and a changelog
-that exists elsewhere is not evidence about this branch. If the file exists, add
-an entry at the top whose heading names the version; if it does not, creating it
-is part of the release commit. Either way:
-
-- `CHANGELOG.md` **is** in the published tarball, together with `docs/` and
-  `ROADMAP.md`: `package.json` `files` is
-  `["dist", "docs", "CHANGELOG.md", "README.md", "ROADMAP.md", "LICENSE"]`.
-  The README links to every one of those files, and `test/packaging.test.ts`
-  fails if any link a consumer can see stops resolving inside the tarball.
-  Verified in the `pnpm pack --dry-run` listing in §4.
+`CHANGELOG.md` **is** in the published tarball, together with `docs/` and
+`ROADMAP.md`: `package.json` `files` is
+`["dist", "docs", "CHANGELOG.md", "README.md", "ROADMAP.md", "LICENSE"]`.
+The README links to every one of those files, and `test/packaging.test.ts`
+fails if any link a consumer can see stops resolving inside the tarball.
+Verified in the `pnpm pack --dry-run` listing in §4. It follows that a change to
+the shipped prose is a change to the artifact without being a change to the code
+— §2's last subsection is about which of those earns a new number.
 
 Prove the version agrees before committing. Three commands, each run here with
 exit 0:
@@ -244,6 +236,109 @@ Bump sequence:
    `pnpm typecheck:consumer` goes red, the JSX or event type surface moved and
    that is a contract change, not a release chore (`docs/compatibility.md` §9
    says the same thing about dependency bumps).
+
+### What state `1.0.0` is actually in, and why this tree has no bump
+
+`@apothic-ai/solid-lynx@1.0.0` **is published**. `npm view
+@apothic-ai/solid-lynx time.modified dist-tags` reports it as `latest`, published
+2026-10-25, and `gitHead aded55b` on its manifest. `aded55b` is an ancestor of
+this tree, so "what is on the registry" and "what is at `HEAD`" are different
+commits and this document must not read as though they were the same.
+
+The difference does not reach the artifact. Measured, not assumed: unpack the
+published tarball, build this tree, and diff the two `dist/` trees.
+
+```bash
+npm pack @apothic-ai/solid-lynx@1.0.0 && tar -xzf apothic-ai-solid-lynx-1.0.0.tgz
+pnpm build && diff -r package/dist dist && echo "dist identical"
+```
+
+It prints nothing but `dist identical`. Everything in `aded55b..HEAD` is tests,
+scripts, patches, evidence, examples and documentation — no `src/`, no
+`package.json`, no build config — so a republish today would ship the same
+renderer, types and exports. That is why this tree carries no version bump:
+**a version number that moves while the shipped bytes do not is a false claim
+about what changed.**
+
+The one thing a republish *would* change is documentation: `files[]` includes
+`docs/`, `CHANGELOG.md`, `README.md` and `ROADMAP.md`, so the next tarball's prose
+differs from the installed one. That is a reason a republish could be justified
+and a consumer who reads docs from `node_modules` would benefit; it is not a
+reason to call it a fix. If one is cut for that, `1.0.1` is the number and the
+`CHANGELOG.md` entry says so. `1.0.0`'s own entry is not edited to mention work
+that postdates it.
+
+## 2a. Checks to run before the next publish
+
+Each of these is a question a publish makes urgent and nothing in CI asks.
+
+**1. Is the web-core patch still needed?** The patch in
+`patches/@lynx-js__web-core@0.26.2.patch` fixes an upstream boot race (see §1,
+"When a browser suite reports a card that never rendered"). Before publishing,
+check the version `package.json` pins, not the one that was checked last time:
+
+```bash
+grep -n 'web-core' package.json pnpm-workspace.yaml
+npm view @lynx-js/web-core versions --json | tail -20
+```
+
+Read the installed host's `done` handler. The defect is the ordering, so it is
+visible as code rather than inferred from a failing test:
+
+```bash
+sed -n "/case 'done':/,/break;/p" \
+  node_modules/@lynx-js/web-core/dist/client/mainthread/TemplateManager.js
+```
+
+If the handler still moves the bundle from `#loadingBundles` to `#bundles` before
+the section handlers finish, the upstream bug is live and the patch is still
+needed. 0.26.5 was inspected this way and still has it. If upstream has fixed it,
+delete the `patchedDependencies` entry **and** the patch file in one commit, then
+re-run the reproducer below with the patch gone — it must still boot. If it
+does, the removal is proven; if it stalls, the patch is still load-bearing.
+
+**2. Does the patch still apply?** A `patchedDependencies` entry that no longer
+matches its target fails the install, not the tests, so it can survive a green
+`pnpm test` in a tree installed before the drift. Re-apply from scratch:
+
+```bash
+rm -rf node_modules && pnpm install --frozen-lockfile
+```
+
+`pnpm` reports a patch that did not apply. Then run the reproducer, which is the
+thing that distinguishes "installed" from "in effect":
+
+```bash
+pnpm web:build
+pnpm exec vite examples/lynx-for-web/site \
+  --config examples/lynx-for-web/site/vite.config.ts \
+  --host 127.0.0.1 --port 4399 --strictPort &
+node scripts/repro-boot-stall.mjs 4399
+```
+
+Exit 0 means every run booted; exit 1 means at least one stalled, which means the
+patch is not in effect whatever the install said.
+
+**3. Is the shipped code what the version number claims?** A version asks the
+reader to assume the number and the bytes agree. Compare them instead of trusting
+that the last bump commit was complete:
+
+```bash
+git diff --stat <last-published-tag-or-gitHead>..HEAD -- src package.json tsconfig.build.json
+```
+
+An empty result means the number can stay and the changelog is the only thing a
+publish would change. A non-empty result means the shipped surface moved: the
+version must move, and the entry has to describe the change rather than the
+process that produced it. This is the check that would have caught a `src/` fix
+sitting under an unchanged `1.0.0`.
+
+**4. Does the prose still match the artifact?** `docs/capabilities.md` and
+`docs/compatibility.md` describe what this repository measured, and the browser
+results they cite were measured with the local patch applied. If the patch is
+removed or replaced, those sentences are wrong until they are rewritten. The
+`documented-counts` test catches stale *numbers* on every run; nothing catches a
+stale *claim*, so this one is by hand.
 
 ## 3. What CI cannot check
 
@@ -580,52 +675,71 @@ answers for or on a target that is not in the tarball.
 
 ## 5. Publishing
 
-**Nothing in this repository publishes, and this procedure is unproven.** No git
-tag exists (`git tag --list` is empty), `.github/workflows/` contains only
-`ci.yml`, and there is no `NPM_TOKEN` or registry credential wired into any
-workflow here. `package.json` now carries `publishConfig.access: "public"` — that
-is a packaging fact about a scoped package, not a publish: a scoped package
-defaults to `restricted`, so without it even a correct tarball would be
-unreachable outside the npm organisation.
+**Nothing in this repository publishes automatically, and this procedure is unproven
+from this worktree.** No git tag exists (`git tag --list` is empty),
+`.github/workflows/` contains only `ci.yml`, and there is no `NPM_TOKEN` or
+registry credential wired into any workflow here. `package.json` carries
+`publishConfig.access: "public"` — that is a packaging fact about a scoped
+package, not a publish: a scoped package defaults to `restricted`, so without it
+even a correct tarball would be unreachable outside the npm organisation.
+
+The registry is not empty, and this section has to start from what is actually
+there. `@apothic-ai/solid-lynx@1.0.0` **is published**, with `dist-tags.latest` at
+`1.0.0`, published 2026-10-25, `gitHead aded55b`. A second version,
+`0.0.0-stage`, was created 2026-10-25T14:40:38Z, about 90 seconds before it, by
+the same publisher account; nothing in this repository's files, changelogs or
+provenance describes it, so it is recorded here as a registry fact and as an open
+question rather than explained away. Its existence means the `@apothic-ai` npm
+organisation is live and something outside this tree has publish rights to it —
+which is a credential fact §2a's checklist assumes and this document cannot
+verify.
 
 What the command would do, if it were ever run deliberately:
 
-- `pnpm publish` packs the same 52 entries §4 lists and uploads them to
-  `https://registry.npmjs.org/` as
-  `@apothic-ai/solid-lynx@<package.json version>`, tarball
-  `apothic-ai-solid-lynx-<version>.tgz`. A dry run was executed here to confirm
-  the target and that nothing was uploaded:
-  `pnpm publish --dry-run --no-git-checks` printed
-  `📦 solid-lynx@0.1.0 → https://registry.npmjs.org/` and
+- `pnpm publish` packs the same 52 entries §4 lists and would upload them to
+  `https://registry.npmjs.org/` as `@apothic-ai/solid-lynx@<package.json
+  version>`. Because `1.0.0` is taken, a publish from this tree without a bump
+  fails; the number has to move first, and §2's last subsection says whether it
+  should. The 52 entries were re-measured against the published tarball: it
+  contains 52 files, so the entry count in §4 is the count a consumer actually
+  received.
+- A dry run was executed before the scope existed, in the `0.1.0` era, and
+  printed `📦 solid-lynx@0.1.0 → https://registry.npmjs.org/` and
   `[WARN] Skip publishing solid-lynx@0.1.0 (dry run)`, exit 0, no tarball left
-  behind. **That is not a publish** and must not be cited as one; it was run
-  before the scope existed, so its package name is the old one and its line
-  describes what that run printed, not what a run today would print. **Not
-  re-run** after the rename.
-- A real publish would need publish rights on the `@apothic-ai` npm organisation,
-  which is the operator's decision and is recorded outside this repository. The
-  unscoped name it used to target belongs to another maintainer
+  behind. **That is not a publish** and must not be cited as one; its package
+  name is the old one and its line describes what that run printed, not what a
+  run today would print. **Not re-run** after the rename.
+- A real publish needs publish rights on the `@apothic-ai` npm organisation. That
+  credential exists somewhere and is not in this repository; it is the operator's,
+  and it is the reason §2a's checks are worth doing before the command, not after.
+  The unscoped name this repository used to target belongs to another maintainer
   (`npm view solid-lynx version license maintainers` → `1.0.0`, `MIT`,
   `pranshuchittora`, exit 0), and that is why the scope exists.
 
-**Do not publish on the strength of this document.** No step in it has been
-executed against a registry, and there is no tag or workflow to make a publish
-repeatable. If publishing is ever wanted, the credential and the automation are
-decisions for the repository owner first, and this section gets rewritten from a
-run that actually happened.
+**Do not publish on the strength of this document.** No step in it was executed
+against a registry from this worktree, and there is no tag or workflow to make a
+publish repeatable — the one publish that has happened was done by hand, outside
+this procedure. Publishing is an owner's decision, and §2a is what to check before
+asking for it.
 
 ## 6. Rollback and known limitations
 
-Rollback is short because nothing has been released. There is no published
-version to unpublish or deprecate, no tag to move, and no registry state to
-restore. A version bump in this repository is rolled back by reverting the commit
-that changed `package.json`, `src/index.ts`, the changelog, and the README status
-line — they move together or not at all. `dist/` is gitignored and rebuildable
-(`pnpm build`), so it is never the thing to restore.
+Rollback has two shapes, and which one applies depends on what is being undone.
 
-If that changes — if a tag exists, or a publish happens — the rollback stops
-being a `git revert` and becomes a registry operation against a version that
-consumers may already have installed. That document does not exist yet.
+**Shipped code that is not published yet** — anything in `aded55b..HEAD` today —
+is still a `git revert` of the commit that changed it. `dist/` is gitignored and
+rebuildable (`pnpm build`), so it is never the thing to restore.
+
+**Anything consumers already have is a registry operation.** `1.0.0` is a
+published version, so reverting a commit here does not remove it from npm and
+does not change what an installed consumer runs. Undoing a published release
+means `npm deprecate` (with a message naming the reason and the version to move
+to) or a new patch version that supersedes it — never a republish of `1.0.0` and
+never an `npm unpublish` without the owner's explicit decision, since
+unpublishing takes the tarball away from anyone who has not installed it yet.
+`1.0.0` corresponds to commit `aded55b`. That mapping is the thing to preserve:
+if `1.0.1` is ever cut, record its own commit here, because a version whose
+commit nobody wrote down cannot be audited later.
 
 **What a release may not claim.**
 [compatibility.md §8](compatibility.md#8-what-this-document-does-not-claim),
@@ -664,7 +778,7 @@ per-capability version of the same statement.
 | Any job of `.github/workflows/ci.yml`, on GitHub Actions | **not run** | No workflow has ever executed for this repository: `gh run list` returns no runs, and the workflow file is not on `origin/master` (which sits at `e40d1c5`, 52 commits behind). The file is validated by static parse and its `run:` steps are replayed locally, which is not the same thing — the leg matrices, the `needs:` edges and every `actions/*` step are unexecuted. |
 | `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; a CI runner would install it because it starts bare. |
 | The `solid-matrix` job's steps, verbatim, on both legs | **run locally**, exit 0 | The job's `run:` blocks were extracted from the parsed YAML and executed in order for `solid-js` 1.9.16 / `babel-preset-solid` 1.9.16 and `solid-js` 1.9.17 / preset 1.9.16. Every command exited 0 and the tree was clean afterwards. What is **not** run is the workflow itself on GitHub Actions — no runner could be dispatched from this worktree, so the leg matrix, the `needs: unit` edge, and the `actions/*` steps are unverified until a push runs them. |
-| `pnpm publish` (real) | **not run**, deliberately | §5. The unscoped name belongs to another maintainer and this repository has no credential or release workflow. Only `--dry-run` was executed, before the scope existed, and it uploaded nothing. |
+| `pnpm publish` (real) | **not run here**, deliberately | §5. No publish was made from this worktree, and nothing in this document was produced by one. It is a fact about the registry's current state, not about this document's runs: `@apothic-ai/solid-lynx@1.0.0` was published on 2026-10-25 from commit `aded55b`, which is an ancestor of this tree, so the publish is real and predates everything §2a was written for. |
 
 Everything else in this document — the install, the five gate commands
 (`typecheck`, `typecheck:consumer`, `test`, `build`, `pack --dry-run`), both
