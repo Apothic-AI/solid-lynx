@@ -1,2 +1,4 @@
 allowBuilds:
   esbuild: true
+patchedDependencies:
+  '@lynx-js/web-core@0.26.2': patches/@lynx-js__web-core@0.26.2.patch

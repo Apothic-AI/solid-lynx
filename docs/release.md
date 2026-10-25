@@ -66,6 +66,105 @@ Both browser suites start their own server on the port given by
 running. Read test counts out of the run, not out of any document — some docs in
 this tree still quote older totals.
 
+### When a browser suite reports a card that never rendered
+
+Both browser suites once failed intermittently — on 2-core GitHub runners, in
+different tests, in both fixtures — with the same report: the card never
+rendered, and `page errors: none / console errors: none / failed requests: none`.
+That silence was not a healthy page. It was the shape of the failure.
+
+**What a stall looks like.** `lynx-view` has a shadow root containing an `iframe`
+and a `link` and nothing else. The realm iframe exists and its document loads;
+web-core has installed its element APIs in it (`__CreatePage` is a function); the
+decode worker answered `ready`, all five sections and `done`. The card's own
+main-thread script was never appended to the realm, so `[part="page"]` was never
+created, `lynx-view` stayed `display: none`, and the fixture's probe was never
+installed. No exception was thrown anywhere, which is why every page-level list
+was legitimately empty.
+
+**What each diagnostic field means.** `test/browser/realm-diagnostics.ts` holds
+the shared machinery, and both suites print the same report:
+
+| Field | What it tells you |
+| --- | --- |
+| `exceptions` / `console` under `Lynx iframe realm` | What the realm itself threw or logged. An empty list here means the realm is clean, *not* that nothing ran — the sink is installed inside that frame by an init script, and a frame with no sink prints `no error sink installed` instead. |
+| `phase` | The first boot stage that had not happened: no shadow root → no realm iframe → no `LynxViewInstance` stylesheet → element APIs not installed → **element APIs installed but the card's lepus code never reached `onMTSScriptsLoaded`** → card script inserted and not loaded → rendered. |
+| `elementApisInstalled` + `cardScriptInserted` | The two halves of the boot, read separately. `true`/`false` together is the race described below; `false`/`false` means the realm never got its config section either. |
+| `realmReachable` / `realmFailure` | Whether the page can read the realm's document at all. A detached or cross-origin realm is a different fault from one that ran and threw. |
+| `realmScripts` | Every script in the realm head: web-core's inline `lynx:mtsready` bootstrap first, then the card's `blob:` script if it was ever appended. |
+| `viewBox` / `viewIsVisible` / `viewBoxOverWait` | `lynx-view`'s own box. **A zero box is normal here, not a fault** — web-core's own CSS is `display: none` until the page is appended, and `[height="auto"]` adds `contain: content`. A healthy boot creates the realm iframe while the box is still `0x0`, so layout is not a precondition for the realm. |
+| `bootTrace` | Each phase with the elapsed milliseconds at which it was first seen. A phase reached at 200 ms and held for 30 s is a stall; a phase reached at 29 s is a slow step. This is what separates "stopped" from "slow". |
+| card bundle workers + message sequence | The decode worker's `sent`/`received` traffic, in order. `ready, section:6, section:3, section:4, section:2, section:1, done` with no card script afterwards is the stall. |
+| boot resources | The wasm, web-core module and bundle requests with their timings, so a fetch that never arrived is visible without a second run. |
+
+**Which hypothesis the evidence supported.** Not the two that were worth checking
+first:
+
+- *The realm's wasm/bundle fetches are slow under the dev-server transform graph.*
+  **Ruled out as the cause.** Under a deterministic reproduction the decode
+  worker completes in full — all five sections and `done` — before the stall. The
+  fetches are not the thing that stopped; the main thread is.
+- *`lynx-view` only boots once it has a non-zero layout box.* **Ruled out.**
+  Nothing in web-core gates the realm on layout: `createIFrameRealm` never reads
+  a rect, and `BoundingClientRectService`/`convertLengthToPx` read one only when
+  the card asks for it. Measured on a healthy boot, the realm iframe is created
+  while `lynx-view` is still `0x0` with `display: none`. Giving the fixture
+  explicit dimensions would not have changed anything; the fixtures already set
+  `width="auto"` and an explicit `style="width: min(100%, 40rem)"`.
+
+What the evidence did support is a race inside `@lynx-js/web-core`'s
+`TemplateManager`, upstream of this package: the worker's `done` message could
+overtake the `LynxViewInstance` dynamic import that every section handler awaits.
+`done` moves the in-flight bundle from `#loadingBundles` to `#bundles`, while the
+section writers (`#setLepusCode`, `#setConfig`, …) look the bundle up in
+`#loadingBundles` **by url**. A handler that resumed after `done` therefore wrote
+`lepusCode` into an object nobody read, `onMTSScriptsLoaded` found no `root`
+chunk, and it never called `mtsRealm.loadScript`. No throw, no console output, no
+failed request — exactly the silent stall.
+
+The fix is a dependency patch, `patches/@lynx-js__web-core@0.26.2.patch`,
+registered in `pnpm-workspace.yaml` under `patchedDependencies` and applied by
+`pnpm install`. It defers moving the bundle to `#bundles`, and `#resolvePromise`,
+until the last in-flight section handler has finished writing, so the two maps
+cannot disagree whatever order the messages and the import resolve in. No test
+timeout was raised, no retry was added and no assertion was relaxed. Upstream
+`@lynx-js/web-core` 0.26.5 still has the race, so this patch is not superseded by
+bumping the dependency.
+
+**Reproducing it deterministically.**
+
+```bash
+pnpm web:build
+pnpm exec vite examples/lynx-for-web/site \
+  --config examples/lynx-for-web/site/vite.config.ts \
+  --host 127.0.0.1 --port 4399 --strictPort &
+node scripts/repro-boot-stall.mjs 4399
+```
+
+The script holds `LynxViewInstance.js` for 1500 ms — several times the whole boot
+cost — which widens the real race to a certainty without touching the decoder,
+the wasm or the bundle. Exit 0 means every run booted; exit 1 means at least one
+stalled; exit 2 means it could not evaluate (no dev server, no Chromium).
+
+| Tree | `--runs=4`, default delay | Result |
+| --- | --- | --- |
+| patch not applied | 4 | **0 booted, 4 stalled** |
+| patch applied | 4 | **4 booted, 0 stalled** |
+| patch applied, `--baseline` (no delay) | 2 | 2 booted, 0 stalled |
+
+A stall from this script prints the stalled stage and
+`page-level channels: (none)`, which is the CI signature reproduced on demand. If
+it ever stalls with the patch in place, check that `pnpm install` actually applied
+the patch (`patches/` must be present and `pnpm-workspace.yaml` must list it)
+before looking anywhere else.
+
+**Reading a stall you did not cause.** The phase that names this bug is
+*"web-core installed the realm's element APIs from the config section, but the
+card's lepus code never reached onMTSScriptsLoaded"*. If instead `phase` stops at
+`no realm iframe` or at `element APIs not installed`, the boot stopped earlier and
+the bug is not this one — look at the realm's `exceptions`, its `realmScripts`,
+and the boot-resource list.
+
 The first three commands are also the `node-matrix` job. To repeat that locally,
 switch Node to a 20 >= 20.19.0, a 22 >= 22.12.0, and any 24, running those three
 commands on each; `docs/compatibility.md` §8 has the short form.

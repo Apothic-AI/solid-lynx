@@ -1,0 +1,106 @@
+diff --git a/dist/client/mainthread/TemplateManager.js b/dist/client/mainthread/TemplateManager.js
+index 019541bc364192b726f497afa226d998afc8c13e..b6f82b7072922ec79423bf1d80405d2e1635133d 100644
+--- a/dist/client/mainthread/TemplateManager.js
++++ b/dist/client/mainthread/TemplateManager.js
+@@ -20,6 +20,14 @@ export class TemplateManager {
+     #worker = null;
+     #workerReadyPromise = null;
+     #resolveWorkerReady = null;
++    /**
++     * Section handlers currently awaiting the LynxViewInstance import and the
++     * wasm module, per bundle url. A handler is counted from the moment its
++     * message arrives, so `done` can tell whether any payload is still to come.
++     */
++    #pendingSections = new Map();
++    /** Urls whose `done` arrived while section handlers were still in flight. */
++    #doneSeen = new Set();
+     constructor() {
+         this.#ensureWorker();
+     }
+@@ -62,6 +70,8 @@ export class TemplateManager {
+         });
+         this.#lynxViewInstancesMap.set(url, lynxViewInstancePromise);
+         await this.#ensureWorker();
++        this.#pendingSections.set(url, 0);
++        this.#doneSeen.delete(url);
+         const msg = {
+             type: 'load',
+             url,
+@@ -149,14 +159,34 @@ export class TemplateManager {
+                 this.#loadingPromises.delete(url);
+                 break;
+             case 'done':
++                // `done` is the last message the worker sends, but the section
++                // handlers above are asynchronous: each one awaits the
++                // LynxViewInstance dynamic import and the wasm module before it
++                // writes its section into the bundle. When that import is still
++                // in flight - a cold or busy machine, where fetching and
++                // evaluating web-core's own chunks loses the race against a
++                // bundle the worker has already decoded - `done` arrives first
++                // and moves the bundle from #loadingBundles to #bundles. Every
++                // handler that resumes afterwards then writes into an object
++                // that is no longer the one getBundle() returns, so lepusCode is
++                // silently lost and the card's main-thread script is never
++                // inserted into the realm. Nothing throws, so no page-level
++                // channel reports it: the view simply never renders.
++                //
++                // Handing the bundle to #bundles only once the last section has
++                // been written keeps the two maps from disagreeing, whatever
++                // order the messages and the import resolve in.
+                 this.#cleanup(url);
+-                const bundle = this.#loadingBundles.get(url);
+-                if (bundle) {
+-                    this.#bundles.set(url, bundle);
+-                    this.#loadingBundles.delete(url);
++                if ((this.#pendingSections.get(url) ?? 0) > 0) {
++                    // A section payload is still being written. The last handler
++                    // to finish settles the bundle and resolves the load.
++                    this.#doneSeen.add(url);
++                }
++                else {
++                    this.#settleBundle(url);
++                    this.#resolvePromise(url);
++                    this.#loadingPromises.delete(url);
+                 }
+-                this.#resolvePromise(url);
+-                this.#loadingPromises.delete(url);
+                 /* TODO: The promise resolution is deferred inside .then() without error handling.
+                  *
+                  */
+@@ -167,7 +197,36 @@ export class TemplateManager {
+                 break;
+         }
+     }
++    /**
++     * Moves a decoded bundle out of #loadingBundles once nothing can still write
++     * to it, so getBundle() returns the same object the section handlers write.
++     */
++    #settleBundle(url) {
++        const bundle = this.#loadingBundles.get(url);
++        if (bundle) {
++            this.#bundles.set(url, bundle);
++            this.#loadingBundles.delete(url);
++        }
++    }
+     async #handleSection(msg, instancePromise) {
++        const { url } = msg;
++        this.#pendingSections.set(url, (this.#pendingSections.get(url) ?? 0) + 1);
++        try {
++            await this.#handleSectionInner(msg, instancePromise);
++        }
++        finally {
++            const remaining = (this.#pendingSections.get(url) ?? 1) - 1;
++            this.#pendingSections.set(url, remaining);
++            if (remaining === 0 && this.#doneSeen.has(url)) {
++                this.#doneSeen.delete(url);
++                this.#pendingSections.delete(url);
++                this.#settleBundle(url);
++                this.#resolvePromise(url);
++                this.#loadingPromises.delete(url);
++            }
++        }
++    }
++    async #handleSectionInner(msg, instancePromise) {
+         const [instance, StyleSheetResource,] = await Promise.all([
+             instancePromise,
+             wasm.then((wasm) => (wasm.wasmInstance.StyleSheetResource)),

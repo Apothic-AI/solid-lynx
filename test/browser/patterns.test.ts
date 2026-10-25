@@ -1,5 +1,14 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import {
+  bootStateReport,
+  collectPageChannels,
+  createBootProbe,
+  diagnosticsReport,
+  installRealmSinks,
+  readBootState,
+} from "./realm-diagnostics.js";
+
 interface CapabilityFinding {
   capability: string;
   status: "supported" | "host-only" | "unsupported";
@@ -76,7 +85,6 @@ async function listMeasurements(view: Locator): Promise<ListMeasurements> {
 async function hostDrivenList(view: Locator): Promise<ListHostDriven> {
   return realmValue<ListHostDriven>(view, "__SOLID_LYNX_LIST_HOST_DRIVEN__");
 }
-
 interface LoadedFixture {
   view: Locator;
   pageErrors: string[];
@@ -85,88 +93,17 @@ interface LoadedFixture {
 }
 
 /**
- * What the page actually looked like when the card did not render.
- *
- * A bare "never rendered" report is not diagnosable: every candidate cause
- * (custom element not upgraded, no shadow root, empty shadow root, realm never
- * asked to render, or a stale document served by the dev server) looks
- * identical from the assertion's side. These fields separate them.
- */
-interface RenderDiagnosis {
-  url: string;
-  /** Whether the bootstrap script registered the element at all. */
-  lynxViewDefined: boolean;
-  viewCount: number;
-  shadowRootPresent: boolean;
-  /** Direct children of the shadow root; the main-thread iframe is one of them. */
-  shadowChildren: string[];
-  framePresent: boolean;
-  /**
-   * Whether web-core got as far as creating its page element.
-   *
-   * `__RenderPage` is only dispatched from `LynxViewInstance.onMTSScriptsLoaded`
-   * after the bundle's root chunk has been executed (`LynxViewInstance.js:133-139`),
-   * and the page element is what the card renders into. A missing page part means
-   * the host pipeline had not finished; a present page part with no content means
-   * the card's own render had not finished.
-   */
-  pagePartPresent: boolean;
-  /** Whether the realm the card runs in was created and holds globals. */
-  realmReady: boolean;
-  /** The exact text the poll was waiting on, or null when the node is absent. */
-  formTitle: string | null;
-  /** Every `#`-id the shadow root currently shows, to prove partial vs no render. */
-  renderedIds: string[];
-  readyState: string;
-}
-
-/**
- * Reads the failure state without asserting anything.
- *
- * Called only on the error path, so it costs the passing path nothing. Each probe
- * is individually guarded: the document may be mid-navigation, and a diagnostic
- * that throws would replace the real failure with its own.
- */
-async function diagnose(page: Page): Promise<RenderDiagnosis | { unavailable: string }> {
-  try {
-    return await page.evaluate((): RenderDiagnosis => {
-      const view = document.querySelector("lynx-view") as
-        (HTMLElement & { shadowRoot: ShadowRoot | null }) | null;
-      const shadow = view?.shadowRoot ?? null;
-      const frame = shadow?.querySelector("iframe") as
-        | (HTMLIFrameElement & { contentWindow: Record<string, unknown> | null })
-        | null;
-      const realm = frame?.contentWindow ?? null;
-      const shadowChildren = shadow
-        ? [...shadow.children].map(child => child.tagName.toLowerCase())
-        : [];
-      const ids = shadow
-        ? [...shadow.querySelectorAll("[id]")].map(node => node.id).slice(0, 40)
-        : [];
-      return {
-        url: location.href,
-        lynxViewDefined: Boolean(customElements.get("lynx-view")),
-        viewCount: document.querySelectorAll("lynx-view").length,
-        shadowRootPresent: Boolean(shadow),
-        shadowChildren,
-        framePresent: Boolean(frame),
-        pagePartPresent: Boolean(shadow?.querySelector('[part="page"]')),
-        // The card publishes its findings during render, so a created realm with
-        // no published global means the realm loaded but was never asked to
-        // render, which is a different failure from a missing realm.
-        realmReady: Boolean(realm && Object.keys(realm).length > 0),
-        formTitle: shadow?.querySelector("#form-title")?.textContent ?? null,
-        renderedIds: ids,
-        readyState: document.readyState,
-      };
-    });
-  } catch (error) {
-    return { unavailable: (error as Error).message };
-  }
-}
-
-/**
  * Loads the pattern card and waits until it has rendered.
+ *
+ * This suite and the Lynx-for-Web suite run different fixtures and different Vite
+ * servers, and both have stalled the same way on a 2-core CI runner: the card
+ * never renders, and every page-level channel reports nothing. The diagnosis
+ * machinery is therefore shared (`realm-diagnostics.ts`) rather than
+ * duplicated - the realm's own exceptions, the worker handshake, the phase the
+ * boot stopped in and the view's box are the same four questions here as there.
+ *
+ * What is specific to this fixture is only the marker: the pattern card's form
+ * heading, which the card writes during its first render.
  *
  * The first page load of a run pays for Vite's cold dependency optimization and
  * the Lynx wasm start-up, which can leave the main-thread realm empty, so a cold
@@ -177,53 +114,70 @@ async function diagnose(page: Page): Promise<RenderDiagnosis | { unavailable: st
  * passing runs took 5.1-6.1 s unloaded but 35.0 s and 35.9 s under that load, and
  * both failures burned the full 2 x 30 s budget. Every failure reported no page
  * error, no console error, no failed request, a fetched bundle, a present shadow
- * root, iframe and realm, and no `[part="page"]` content at all. That is the
- * host pipeline (wasm + decode worker) running out of wall-clock time, not a
- * throw and not a lost readiness signal: nothing in this package or in the
- * fixture gets a chance to fail before the pipeline finishes. The same 8
- * repetitions passed 8/8 at load average ~8-12, 5-6 s per test.
+ * root, iframe and realm, and no `[part="page"]` content at all.
  *
- * The 30 s budget is therefore left as-is: it is 5x the unloaded cost, and
- * inflating it would hide starvation instead of reporting it. The diagnostics
- * below are what make a starved failure say so on its own.
+ * The 30 s budget is left as-is: it is 5x the unloaded cost, and inflating it
+ * would hide starvation instead of reporting it.
+ *
+ * Read that 2026-10-25 record with the newer finding next to it. Some of those
+ * "starved" failures were not starvation: `@lynx-js/web-core`'s `TemplateManager`
+ * has a race where the decode worker's `done` can overtake the
+ * `LynxViewInstance` dynamic import every section handler awaits, so `lepusCode`
+ * lands in a bundle `getBundle()` no longer returns and the card's main-thread
+ * script is never inserted into the realm. That produces exactly the report
+ * above - present iframe and realm, no `[part="page"]`, every page-level list
+ * empty - and it gets likelier as the machine slows down, which is why it showed
+ * up under load average 30 and on 2-core CI runners. It is fixed by
+ * `patches/@lynx-js__web-core@0.26.2.patch`; `scripts/repro-boot-stall.mjs`
+ * reproduces it deterministically, and the shared diagnostics name the stage.
+ * The reload below stays for genuine cold-start slowness.
  */
 async function loadFixture(page: Page): Promise<LoadedFixture> {
-  const pageErrors: string[] = [];
-  const consoleErrors: string[] = [];
-  const failedRequests: string[] = [];
-  page.on("pageerror", error => pageErrors.push(error.message));
-  page.on("console", message => {
-    if (message.type() === "error") consoleErrors.push(message.text());
-  });
-  page.on("requestfailed", request => {
-    failedRequests.push(`${request.method()} ${request.url()}`);
-  });
+  const channels = collectPageChannels(page);
+  await installRealmSinks(page);
 
   const view = page.locator("lynx-view");
+  const probe = createBootProbe({
+    view,
+    markerSelector: "#form-title",
+    isReady: state => state.markerText === "Form",
+    errors: () => [...channels.pageErrors, ...channels.consoleErrors, ...channels.failedRequests],
+  });
+
   for (let attempt = 1; attempt <= 2; attempt += 1) {
-    if (attempt === 1) await page.goto("/");
-    else await page.reload();
+    if (attempt === 1) {
+      await page.goto("/");
+    } else {
+      // A reload is a fresh document and a fresh realm, so the probe's history
+      // restarts with it; the two traces are joined so the report keeps the
+      // first attempt's phases instead of overwriting them.
+      const previous = probe.trace.splice(0);
+      await page.reload();
+      if (previous.length > 0) probe.trace.push(`attempt 1: ${previous.join(" | ")}`);
+    }
 
     await expect(view).toHaveCount(1);
     await expect.poll(() => page.evaluate(() => Boolean(customElements.get("lynx-view"))))
       .toBe(true);
     try {
       await expect
-        .poll(() => view.evaluate(element =>
-          element.shadowRoot?.querySelector("#form-title")?.textContent ?? null), {
+        .poll(probe.poll, {
           timeout: 30_000,
           message: `waiting for the pattern card to render (attempt ${attempt} of 2)`,
         })
-        .toBe("Form");
-      return { view, pageErrors, consoleErrors, failedRequests };
+        .not.toBe("waiting");
+      return {
+        view,
+        pageErrors: channels.pageErrors,
+        consoleErrors: channels.consoleErrors,
+        failedRequests: channels.failedRequests,
+      };
     } catch (error) {
       if (attempt === 2) {
-        const diagnosis = await diagnose(page);
+        const state = probe.last() ?? await readBootState(view, "#form-title");
         throw new Error(
-          `the pattern card never rendered\n\npage errors: ${pageErrors.join("; ") || "none"}`
-          + `\nconsole errors: ${consoleErrors.join("; ") || "none"}`
-          + `\nfailed requests: ${failedRequests.join("; ") || "none"}`
-          + `\npage state: ${JSON.stringify(diagnosis)}`,
+          `the pattern card never rendered.\n\n${await diagnosticsReport(page, channels)}`
+          + `\n\nView state:\n${bootStateReport(state, probe)}`,
           { cause: error },
         );
       }
@@ -238,6 +192,7 @@ function expectClean(fixture: LoadedFixture): void {
   expect(fixture.consoleErrors).toEqual([]);
   expect(fixture.failedRequests).toEqual([]);
 }
+
 
 test.describe("solid-lynx patterns", () => {
   test("binds a text field through bindinput and submits through a tap", async ({ page }) => {
