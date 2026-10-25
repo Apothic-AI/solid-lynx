@@ -84,6 +84,16 @@ Add platform features through explicit, testable adapters while keeping the core
     non-virtualized container. What is still open is recycling and native
     validation: no host in this repository has been seen to recycle a cell, and
     nothing has run on a device, so native list support is unverified.
+  - A native measurement card now exists:
+    `examples/lynx-for-native/src/list-probe.ts`, built as
+    `dist/list-probe.lynx.bundle` by `pnpm native:build`, with one
+    `[solid-lynx lp]` stage line per step and host-free recorder tests in
+    `test/list-probe-report.test.ts`. Its **device run is pending**, so it
+    measures nothing yet; when run it reports the list-named globals, the created
+    handle, materialized children, keyed identity across a permuted model, and
+    whether the host ever called `enqueueComponent`. Viewport-driven recycling,
+    scroll behavior, and cell reuse timing stay outside it because it never
+    scrolls.
 - [x] Evaluate gesture, animation, and portal/overlay APIs as separate capabilities.
 - [x] Publish examples for forms, keyed lists, asynchronous content, and platform-specific capabilities.
 

@@ -147,6 +147,22 @@ operations are absent. Nothing here establishes native list behavior.
 Real virtualization would need a host that asks for cells on its own, and native
 validation of both callbacks against the native list.
 
+A measurement card for that validation exists and has not been run on a device
+yet. `examples/lynx-for-native/src/list-probe.ts` builds through
+`pnpm native:build` as `dist/list-probe.lynx.bundle`; it shares its shape with the
+stylesheet probe (`[solid-lynx lp]` stages, one JSON line each, recorder helpers
+in `list-probe-report.ts` covered by `test/list-probe-report.test.ts`) so a single
+runner can drive both cards later. It is a measurement, not support: it calls
+`root.createList()` with three toy items and logs one line per stage —
+`inventory` (what the host exposes, with `typeof`, `fn.length`, `fn.name`, and
+`String(fn)`, no calls), `create`, `materialize`, `reorder`, `shrunk`, `summary`,
+and `done`. **Its device run is pending.** No line from it has been observed, so
+nothing below changes: no native list behavior is measured, and no host has been
+seen to recycle a cell. What the card cannot establish even when it runs is
+also recorded in its own `summary` stage: recycling driven by a viewport, scroll
+behavior, and cell reuse timing all need a scrolling list, and the card creates
+none.
+
 ### Gestures
 
 web-core defines `__SetGestureDetector` and `__RemoveGestureDetector` as literal

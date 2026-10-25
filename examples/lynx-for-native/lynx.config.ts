@@ -4,16 +4,16 @@ import { pluginVanillaLynx } from "@lynx-js/vanilla-rsbuild-plugin";
 import { pluginSolidLynx } from "solid-lynx/rspeedy";
 
 /**
- * Native build for the parity card and the stylesheet probe.
+ * Native build for the parity card, the stylesheet probe, and the list probe.
  *
  * It differs from the Lynx-for-Web config in two ways only: the environment is
  * Lynx's own `lynx` instead of `web`, and the output goes to `dist` instead of
  * the demo site. Everything Solid specific comes from `pluginSolidLynx`, which
  * is the point of the shared plugin.
  *
- * Build with `pnpm native:build`, which produces `dist/main.lynx.bundle` and
- * `dist/stylesheet-probe.lynx.bundle`. Loading either needs Lynx Explorer or a
- * device; see `docs/building.md`.
+ * Build with `pnpm native:build`, which produces `dist/main.lynx.bundle`,
+ * `dist/stylesheet-probe.lynx.bundle`, and `dist/list-probe.lynx.bundle`.
+ * Loading any of them needs Lynx Explorer or a device; see `docs/building.md`.
  */
 export default defineConfig({
   source: {
@@ -24,6 +24,9 @@ export default defineConfig({
       // its own build, so a measurement runs against the same setup as the
       // parity smoke. `scripts/run-stylesheet-probe.sh` loads it.
       "stylesheet-probe": "./src/stylesheet-probe.ts",
+      // A third card, the same shape as the stylesheet probe, measuring the
+      // native list PAPI and cell recycling on a device.
+      "list-probe": "./src/list-probe.ts",
     },
   },
   environments: {
@@ -61,6 +64,10 @@ export default defineConfig({
         },
         "stylesheet-probe": {
           mainThread: "./src/stylesheet-probe.ts",
+          background: false,
+        },
+        "list-probe": {
+          mainThread: "./src/list-probe.ts",
           background: false,
         },
       },
