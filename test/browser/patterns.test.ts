@@ -85,11 +85,107 @@ interface LoadedFixture {
 }
 
 /**
+ * What the page actually looked like when the card did not render.
+ *
+ * A bare "never rendered" report is not diagnosable: every candidate cause
+ * (custom element not upgraded, no shadow root, empty shadow root, realm never
+ * asked to render, or a stale document served by the dev server) looks
+ * identical from the assertion's side. These fields separate them.
+ */
+interface RenderDiagnosis {
+  url: string;
+  /** Whether the bootstrap script registered the element at all. */
+  lynxViewDefined: boolean;
+  viewCount: number;
+  shadowRootPresent: boolean;
+  /** Direct children of the shadow root; the main-thread iframe is one of them. */
+  shadowChildren: string[];
+  framePresent: boolean;
+  /**
+   * Whether web-core got as far as creating its page element.
+   *
+   * `__RenderPage` is only dispatched from `LynxViewInstance.onMTSScriptsLoaded`
+   * after the bundle's root chunk has been executed (`LynxViewInstance.js:133-139`),
+   * and the page element is what the card renders into. A missing page part means
+   * the host pipeline had not finished; a present page part with no content means
+   * the card's own render had not finished.
+   */
+  pagePartPresent: boolean;
+  /** Whether the realm the card runs in was created and holds globals. */
+  realmReady: boolean;
+  /** The exact text the poll was waiting on, or null when the node is absent. */
+  formTitle: string | null;
+  /** Every `#`-id the shadow root currently shows, to prove partial vs no render. */
+  renderedIds: string[];
+  readyState: string;
+}
+
+/**
+ * Reads the failure state without asserting anything.
+ *
+ * Called only on the error path, so it costs the passing path nothing. Each probe
+ * is individually guarded: the document may be mid-navigation, and a diagnostic
+ * that throws would replace the real failure with its own.
+ */
+async function diagnose(page: Page): Promise<RenderDiagnosis | { unavailable: string }> {
+  try {
+    return await page.evaluate((): RenderDiagnosis => {
+      const view = document.querySelector("lynx-view") as
+        (HTMLElement & { shadowRoot: ShadowRoot | null }) | null;
+      const shadow = view?.shadowRoot ?? null;
+      const frame = shadow?.querySelector("iframe") as
+        | (HTMLIFrameElement & { contentWindow: Record<string, unknown> | null })
+        | null;
+      const realm = frame?.contentWindow ?? null;
+      const shadowChildren = shadow
+        ? [...shadow.children].map(child => child.tagName.toLowerCase())
+        : [];
+      const ids = shadow
+        ? [...shadow.querySelectorAll("[id]")].map(node => node.id).slice(0, 40)
+        : [];
+      return {
+        url: location.href,
+        lynxViewDefined: Boolean(customElements.get("lynx-view")),
+        viewCount: document.querySelectorAll("lynx-view").length,
+        shadowRootPresent: Boolean(shadow),
+        shadowChildren,
+        framePresent: Boolean(frame),
+        pagePartPresent: Boolean(shadow?.querySelector('[part="page"]')),
+        // The card publishes its findings during render, so a created realm with
+        // no published global means the realm loaded but was never asked to
+        // render, which is a different failure from a missing realm.
+        realmReady: Boolean(realm && Object.keys(realm).length > 0),
+        formTitle: shadow?.querySelector("#form-title")?.textContent ?? null,
+        renderedIds: ids,
+        readyState: document.readyState,
+      };
+    });
+  } catch (error) {
+    return { unavailable: (error as Error).message };
+  }
+}
+
+/**
  * Loads the pattern card and waits until it has rendered.
  *
  * The first page load of a run pays for Vite's cold dependency optimization and
  * the Lynx wasm start-up, which can leave the main-thread realm empty, so a cold
  * miss is retried once on a reload rather than reported as a rendering failure.
+ *
+ * Observed 2026-10-25, 12-core host driven to load average ~30 (40 spinners, 3.4x
+ * oversubscription), `--repeat-each=8` of the form test: 2 failed, 6 passed. The
+ * passing runs took 5.1-6.1 s unloaded but 35.0 s and 35.9 s under that load, and
+ * both failures burned the full 2 x 30 s budget. Every failure reported no page
+ * error, no console error, no failed request, a fetched bundle, a present shadow
+ * root, iframe and realm, and no `[part="page"]` content at all. That is the
+ * host pipeline (wasm + decode worker) running out of wall-clock time, not a
+ * throw and not a lost readiness signal: nothing in this package or in the
+ * fixture gets a chance to fail before the pipeline finishes. The same 8
+ * repetitions passed 8/8 at load average ~8-12, 5-6 s per test.
+ *
+ * The 30 s budget is therefore left as-is: it is 5x the unloaded cost, and
+ * inflating it would hide starvation instead of reporting it. The diagnostics
+ * below are what make a starved failure say so on its own.
  */
 async function loadFixture(page: Page): Promise<LoadedFixture> {
   const pageErrors: string[] = [];
@@ -122,10 +218,12 @@ async function loadFixture(page: Page): Promise<LoadedFixture> {
       return { view, pageErrors, consoleErrors, failedRequests };
     } catch (error) {
       if (attempt === 2) {
+        const diagnosis = await diagnose(page);
         throw new Error(
           `the pattern card never rendered\n\npage errors: ${pageErrors.join("; ") || "none"}`
           + `\nconsole errors: ${consoleErrors.join("; ") || "none"}`
-          + `\nfailed requests: ${failedRequests.join("; ") || "none"}`,
+          + `\nfailed requests: ${failedRequests.join("; ") || "none"}`
+          + `\npage state: ${JSON.stringify(diagnosis)}`,
           { cause: error },
         );
       }
