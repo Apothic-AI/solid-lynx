@@ -182,6 +182,11 @@ The root flushes the initial tree immediately. Later property, event, text, inse
 
 ## Public API
 
+The API below is frozen for the 1.0 line: [docs/contract.md](docs/contract.md)
+records every signature, marks each item stable, provisional, or unsupported,
+and names the test that covers it, including the parts that are explicitly not
+part of the contract.
+
 ### `createLynxRoot(options?)`
 
 Creates an isolated Solid root backed by a Lynx page. The returned object contains:
