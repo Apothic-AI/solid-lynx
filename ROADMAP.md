@@ -121,17 +121,34 @@ Set a stable public contract after web validation, native validation, and toolin
     `test/rspeedy.test.ts`), so a contract item that loses its covering test or
     its type rejection turns CI red.
 - [ ] Define supported Lynx and Solid version ranges and verify them in CI.
-  - Half done. `docs/compatibility.md` §5–§7 (commit `5ecace6`) defines the set:
-    exact pins for `solid-js` 1.9.15, `@lynx-js/web-core` 0.26.2,
-    `@lynx-js/rspeedy` 0.18.0, `@lynx-js/lynx-core` 0.1.4, the two Lynx Rsbuild
-    plugins, `@rsbuild/core` 2.2.11, `@rsbuild/plugin-babel` 2.1.0, and
-    `babel-preset-solid` 1.9.15, plus the Node and pnpm ranges.
-  - Not done: CI **verifies one pinned set, not the declared ranges**.
-    `.github/workflows/ci.yml` runs `node-version: 22` with that single
-    resolved Solid/web-core/Rspeedy set, and `docs/compatibility.md` §8 says so
-    outright ("No version matrix in CI … CI therefore repeats the local gate; it
-    does not widen the supported set"). Node 20.19.x and 22.12.x have never
-    been run. The box stays open until CI checks more than the one set.
+  - **Node half: done, and verified in CI.** `docs/compatibility.md` §5–§7
+    (commit `5ecace6`) defines the set: exact pins for `solid-js` 1.9.15,
+    `@lynx-js/web-core` 0.26.2, `@lynx-js/rspeedy` 0.18.0,
+    `@lynx-js/lynx-core` 0.1.4, the two Lynx Rsbuild plugins, `@rsbuild/core`
+    2.2.11, `@rsbuild/plugin-babel` 2.1.0, and `babel-preset-solid` 1.9.15, plus
+    the Node and pnpm ranges. The `node-matrix` job in
+    `.github/workflows/ci.yml` is what covers the Node range now: it runs
+    `pnpm install --frozen-lockfile`, `pnpm typecheck`, and `pnpm test` on
+    `20.x`, `22.x`, and `24.x` — the two declared Node lines plus the major the
+    open-ended `>=22.12.0` admits, chosen because no manifest in the graph caps
+    `engines.node`. Locally the same gate exits 0 on 20.19.0, 20.20.2, 22.12.0,
+    22.23.3, 24.22.1, and 26.1.0, 98 tests each.
+  - **Solid half: still not verified, so the box stays open.** The box says
+    "Lynx **and Solid** version ranges", and the Solid range is asserted rather
+    than exercised. `peerDependencies.solid-js` is `^1.9.15`, which admits
+    `solid-js` 1.9.16 and 1.9.17 — both now published — and this repository has
+    run neither: `devDependencies.solid-js` and `babel-preset-solid` are pinned
+    at exactly 1.9.15, so every check resolves 1.9.15 and no other. A Solid
+    matrix was considered and rejected in this change: this repo resolves one
+    Solid through `babel-preset-solid`, so a second version needs a dependency
+    swap in the job, not a matrix axis, and nobody has run that swap
+    (`docs/compatibility.md` §8, `.github/workflows/ci.yml` comment above
+    `node-matrix`).
+  - Remaining gap, precisely: either CI gains a job that installs `solid-js`
+    1.9.16/1.9.17 over the pinned set and runs the gate, or the peer range is
+    narrowed to `1.9.15` so the published claim matches the one version actually
+    run. Until one of those happens, the Solid half of this box is a declaration
+    with no check behind it.
 - [ ] Require native and web compatibility checks for changes to shared behavior.
   - Not satisfied, and the gap is a native runtime in CI. The `browser` job does
     run both web suites on every pull request — `PLAYWRIGHT_PORT=4186 pnpm

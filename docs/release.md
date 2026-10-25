@@ -17,10 +17,12 @@ you read anything into the word "release".
 
 ## 1. Pre-flight: the gate CI repeats
 
-`.github/workflows/ci.yml` has three jobs: `unit`, `browser`, `native-build`.
-`browser` and `native-build` both `needs: unit`, so `unit` gates the rest.
-Every step below runs the same command a developer runs locally; none needs a
-secret. Green means exit status 0 on that exact command.
+`.github/workflows/ci.yml` has four jobs: `unit`, `node-matrix`, `browser`,
+`native-build`. `browser` and `native-build` both `needs: unit`, so `unit` gates
+them. `node-matrix` has no `needs:` on purpose, so a failing matrix leg reads as
+the matrix rather than as the unit gate. Every step below runs the same command a
+developer runs locally; none needs a secret. Green means exit status 0 on that
+exact command.
 
 | CI job | Step in `ci.yml` | Command | Green means | Result here |
 | --- | --- | --- | --- | --- |
@@ -30,6 +32,7 @@ secret. Green means exit status 0 on that exact command.
 | `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **94 tests in 5 files** |
 | `unit` | Build | `pnpm build` | `dist/` is written | exit 0 |
 | `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 33 entries |
+| `node-matrix` | Install / Type check / Unit tests, on `20.x`, `22.x`, `24.x` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` | the unit gate passes at the top of each declared Node line | exit 0 on 20.20.2, 22.23.3, 24.22.1 locally (98 tests each; the floors 20.19.0 and 22.12.0 also exit 0) |
 | `browser` | Install Chromium | `pnpm exec playwright install --with-deps chromium` | Chromium present for Playwright | **not run** — the browser was already installed in this worktree; CI runs it because the runner starts bare |
 | `browser` | Lynx-for-Web suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | builds the web bundle, serves it, drives it in Chromium | exit 0, **17 passed** (54.2s) |
 | `browser` | Pattern suite | `PLAYWRIGHT_PORT=4200 pnpm exec playwright test --config test/browser/patterns.playwright.config.ts` | the separate `examples/lynx-patterns` suite passes | exit 0, **9 passed** (41.5s) |
@@ -51,6 +54,10 @@ Both browser suites start their own server on the port given by
 `PLAYWRIGHT_PORT`; neither may share a port with a `pnpm web:serve` you left
 running. Read test counts out of the run, not out of any document — some docs in
 this tree still quote older totals.
+
+The first three commands are also the `node-matrix` job. To repeat that locally,
+switch Node to a 20 >= 20.19.0, a 22 >= 22.12.0, and any 24, running those three
+commands on each; `docs/compatibility.md` §8 has the short form.
 
 Run `docs/building.md`'s table against your own output: it lists which of these
 steps this repository verifies, and the last row of it (running the bundle on a
@@ -326,11 +333,13 @@ consumers may already have installed. That document does not exist yet.
 **What a release may not claim.**
 [compatibility.md §8](compatibility.md#8-what-this-document-does-not-claim),
 "What this document does not claim", is the list a release note has to stay
-inside: one Node version in CI (`node-version: 22`, not the declared
-`^20.19.0 || >=22.12.0` range), no native runtime in CI, no second native runtime
-and no device other than the A03, no cross-host stylesheet or list claims, and no
-`@lynx-js/types` version. `docs/contract.md` §16 is the companion list for
-exports with no test, including `version` itself and every native runtime claim
+inside: three Node lines in CI (`20.x`, `22.x`, `24.x` from the `node-matrix`
+job) rather than the exact `20.19.0` / `22.12.0` floors of the declared
+`^20.19.0 || >=22.12.0` range, no Solid or web-core matrix, no native runtime in
+CI, no second native runtime and no device other than the A03, no cross-OS
+claim, no cross-host stylesheet or list claims, and no `@lynx-js/types` version.
+`docs/contract.md` §16 is the companion list for exports with no test, including
+`version` itself and every native runtime claim
 beyond the recorded smoke.
 
 `ROADMAP.md`'s 1.0 milestone has open boxes — among them "Require native and web

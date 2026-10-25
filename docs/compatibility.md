@@ -28,12 +28,22 @@ not something this repository has tested. The new range is the intersection of
 the declared requirements of the three hard toolchain dependencies, and it
 matches the sentence already in the README.
 
-**What is actually verified:** only Node 22.23.3. Node 20.19.x and Node 22.12.x
-are within the declared range but were **not run** for this change. Treat the
-range as the widest defensible claim and the verified point as a single version.
+**What is actually verified:** the edges of the declared range, locally and (as
+of the `node-matrix` job) in CI. Locally this repository ran the unit gate —
+`pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` — to exit 0 on
+20.19.0, 20.20.2, 22.12.0, 22.23.3, and 24.22.1, each with 98 passing tests. CI
+runs the same three commands as three legs (`20.x`, `22.x`, `24.x` in
+`.github/workflows/ci.yml`), which resolve to the newest release on each line
+rather than to the floor. Node 21, 23, and 25 are outside the range by
+declaration and were never run.
 
-Note that `engines` is advisory unless a consumer's package manager enforces it;
-pnpm does by default, npm warns.
+Note that `engines` is advisory unless a consumer's package manager enforces it.
+npm warns. pnpm 12.9.1 does **not** enforce it by default either: installing a
+dependency whose `engines.node` is `>=99.0.0` succeeded with exit 0 and no
+warning, and the same install failed with `ERR_PNPM_UNSUPPORTED_ENGINE` only when
+repeated with `--engine-strict`. So a consumer on Node 20.0 can install this
+package, and the range above is a claim, not a gate — which is why `node-matrix`
+exists.
 
 ## 2. Solid
 
@@ -55,6 +65,12 @@ one.
 **What is actually verified:** one Solid version, `1.9.15`, in every check in
 this repository. `1.9.0`–`1.9.14` are excluded deliberately; a consumer on an
 older Solid must upgrade. No Solid 2.x exists to test.
+
+The declared range is wider than the version run: `^1.9.15` admits `1.9.16` and
+`1.9.17`, both published, and this repository has run neither. `1.9.15` is what
+`devDependencies` pins and what `pnpm-lock.yaml` resolves, so no check here can
+reach them. `ROADMAP.md` 1.0's "Define supported Lynx and Solid version ranges
+and verify them in CI" records that gap as the reason it stays open.
 
 ## 3. Lynx web runtime (`@lynx-js/web-core`)
 
@@ -169,9 +185,9 @@ app to install.
 
 | Component | Supported now | Evidence | Width |
 | --- | --- | --- | --- |
-| Node.js | `^20.19.0 \|\| >=22.12.0`; verified on 22.23.3 | toolchain `engines`, README | range, one version run |
+| Node.js | `^20.19.0 \|\| >=22.12.0`; verified on 20.19.0, 20.20.2, 22.12.0, 22.23.3, 24.22.1 | toolchain `engines`, README, CI `node-matrix`, local runs | range, both floors and three line tops run |
 | pnpm | `12.9.1`, pinned by `packageManager: "pnpm@12.9.1"` in `package.json` | `package.json`, CI `pnpm/action-setup` | single version |
-| Solid | `^1.9.15`; verified on 1.9.15 | `babel-preset-solid` peer, lockfile | narrow, one version run |
+| Solid | `^1.9.15`; verified on 1.9.15 only (`1.9.16`, `1.9.17` admitted, unrun) | `babel-preset-solid` peer, lockfile | narrow, one version run |
 | `@lynx-js/web-core` | 0.26.2 only | lockfile, browser suite | single version |
 | `@lynx-js/lynx-core` | 0.1.4 only | lockfile | single version |
 | Lynx Explorer / engine | 4.1.0 / 3.5 only | `docs/building.md`, device run | single version, one hand run |
@@ -181,11 +197,20 @@ app to install.
 
 ## 8. What this document does not claim
 
-- **No version matrix in CI.** `.github/workflows/ci.yml` runs one Node version
-  (`node-version: 22`) on `ubuntu-latest`, with one Solid, one `@lynx-js/web-core`,
-  and one Lynx toolchain — the versions pinned in `package.json`. It does not
-  test Node 20.19.x, any Solid other than 1.9.15, or any other `0.x` web-core. CI
-  therefore repeats the local gate; it does not widen the supported set.
+- **One axis of a matrix in CI, not a matrix of the supported set.** The
+  `node-matrix` job in `.github/workflows/ci.yml` runs the unit gate on `20.x`,
+  `22.x`, and `24.x`, so Node 20 (lower line) and Node 24 (admitted by the
+  open-ended `>=22.12.0`) are exercised instead of only Node 22. It covers **the
+  Node axis only**. It does not test any Solid other than 1.9.15, any
+  `@lynx-js/web-core` other than 0.26.2, any Lynx toolchain other than the pinned
+  set in `package.json`, or any OS other than `ubuntu-latest`. A green
+  `node-matrix` narrows the Node claim; it does not widen the supported set on
+  any other axis.
+- **No Solid-runtime matrix.** This repository resolves exactly one Solid through
+  `babel-preset-solid`, and its peer range is `^1.9.15`, so a second Solid would
+  need a dependency swap in the job rather than a matrix axis — that is a change
+  nobody here has run, so it is not claimed. Concretely, `solid-js` 1.9.16 and
+  1.9.17 are inside the declared peer range and have never been run (§2).
 - **No native runtime in CI.** The `native-build` job compiles the bundle and
   uploads it as an artifact. No device or emulator is attached, so nothing native
   is executed by CI (`.github/workflows/ci.yml`, the comment above
@@ -200,12 +225,35 @@ app to install.
   [parity-checklist.md](parity-checklist.md) therefore marks the native column
   reported, not reproduced, and a native pass may be cited only once a stored
   capture verifies (`scripts/verify-native-parity.mjs`, exit 0).
+- **No cross-OS claim.** Every matrix leg and every other job runs on
+  `ubuntu-latest`. macOS and Windows are untested, so nothing here says the
+  package installs or runs there.
 - **No @lynx-js/types version.** The package is not installed, so no version of
   the official typings is supported or claimed. See
   [contract.md](contract.md) §12.
-- **Node 20.19.x and Node 22.12.x were not run**, only 22.23.3. They are inside
-  the declared range because the toolchain's own `engines` fields admit them,
-  and for no other reason.
+- **The `20.x` / `22.x` / `24.x` matrix entries are line *tops*, and the floors
+  were proven by hand instead.** `actions/setup-node` resolves `20.x` to the
+  newest 20 and `22.x` to the newest 22, not to `20.19.0` or `22.12.0`, so CI does
+  not itself prove the declared floors. Those floors were run locally before this
+  change: the unit gate exited 0 on both 20.19.0 and 22.12.0. Node 21, 23, and
+  25 sit outside `^20.19.0 || >=22.12.0` by declaration and were never run.
+
+### Running the Node matrix locally
+
+The job is three commands on each Node line. There is no version file in this
+repository and no committed Node manager config — `mise` happens to be what the
+worktrees use, but nothing in the tree requires it — so pick whichever Node
+manager you already have, switch the line, and repeat:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test
+```
+
+Run it once on a 20 >= 20.19.0, once on a 22 >= 22.12.0, and once on any 24. Each
+run rebuilds `dist/` (both `typecheck` and `test` start with `pnpm build`), so a
+stale `dist/` cannot make a leg look green.
 
 ## 9. Changing a supported version
 
@@ -223,10 +271,12 @@ Because most entries above are exact versions, bumping one is a deliberate act:
    range because a vendor notes compatibility; widen it when a check here ran
    green.
 
-CI (`.github/workflows/ci.yml`) repeats steps 1-2 on `node-version: 22` plus both
-browser suites and the native build, so a green CI run is the same evidence as a
-green local run on Node 22 — not evidence for any other Node version. Step 3's
-native hand run is never covered by CI.
+CI (`.github/workflows/ci.yml`) repeats steps 1-2 on Node 22 plus both
+browser suites and the native build, and the `node-matrix` job repeats the unit
+gate on the `20.x`, `22.x`, and `24.x` Node lines. A green CI run is therefore
+evidence for three Node lines on `ubuntu-latest` — not for the exact `20.19.0` /
+`22.12.0` floors, not for any other OS, and not for any other version axis. Step
+3's native hand run is never covered by CI.
 
 The consumer fixture gate matters most in step 2: `pnpm typecheck:consumer`
 compiles `test/consumer/tsconfig.json` and `test/consumer/tsconfig.dev.json`

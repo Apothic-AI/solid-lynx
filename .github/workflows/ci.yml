@@ -9,6 +9,10 @@
 # native runtime behaviour — loading the bundle, rendering, tapping, the
 # [solid-lynx parity] report — is still verified by hand as described in
 # docs/building.md.
+#
+# Version coverage is `node-matrix` below: the declared `engines.node` range is
+# exercised at the top of each Node line it admits. There is no Solid-runtime
+# matrix, deliberately — see the comment above `node-matrix`.
 
 name: CI
 
@@ -63,6 +67,59 @@ jobs:
 
       - name: Package contents
         run: pnpm pack --dry-run
+
+  # Exercises the declared `engines.node` range (`^20.19.0 || >=22.12.0`,
+  # package.json) instead of only the single Node 22 the other jobs use.
+  #
+  # Why these three entries:
+  #   - `20.x` is the lower declared line; it resolves to the newest 20, which is
+  #     >= 20.19.0 and so inside the range.
+  #   - `22.x` is the upper declared line; it resolves to the newest 22, which is
+  #     >= 22.12.0 and so inside the range.
+  #   - `24.x` is inside the range because `>=22.12.0` is open-ended, and nothing
+  #     in this graph forbids it: no manifest in the installed tree declares an
+  #     upper bound on `engines.node`, and the pinned pnpm 12.9.1 declares `>=18`.
+  # The `N.x` specifiers resolve to the newest release on each line, so this
+  # proves line tops (20.20.2, 22.23.x, 24.x at the time of writing) and does not
+  # prove the `20.19.0` / `22.12.0` floors. Node 21/23/25, future majors, and
+  # non-Linux hosts are not covered.
+  #
+  # There is no Solid-runtime matrix here, and none is wanted: this repository
+  # resolves exactly one Solid through `babel-preset-solid` and the peer range is
+  # `^1.9.15`, so testing a second Solid would need a dependency swap in the job
+  # rather than a matrix axis. `@lynx-js/web-core` is the same — one supported
+  # version (0.26.2), not a matrix dimension.
+  #
+  # Deliberately not `needs: unit`: a red leg here should read as the matrix
+  # failing, not as the unit gate failing.
+  node-matrix:
+    name: node-matrix (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      # Let every leg finish so one broken Node version does not hide the others.
+      fail-fast: false
+      matrix:
+        node: ["20.x", "22.x", "24.x"]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from package.json "packageManager".
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
 
   browser:
     name: browser
