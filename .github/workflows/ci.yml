@@ -10,6 +10,13 @@
 # [solid-lynx parity] report — is still verified by hand as described in
 # docs/building.md.
 #
+# What it does enforce about native work is evidence: `native-evidence` runs
+# scripts/require-native-evidence.mjs over a pull request's diff, and a change
+# to native-facing code without either a committed, verifier-passing capture
+# under docs/evidence/native/ or an explicit recorded decision is red. The
+# device run the capture comes from is still manual; the requirement that one
+# exists is not.
+#
 # Version coverage is two axes. `node-matrix` exercises the declared
 # `engines.node` range at the top of each Node line it admits. `solid-matrix`
 # exercises the declared `peerDependencies.solid-js` range at its top, by
@@ -337,3 +344,71 @@ jobs:
           path: examples/lynx-for-native/dist
           if-no-files-found: error
           retention-days: 7
+
+  # The native evidence requirement, as a check rather than a convention.
+  #
+  # `scripts/require-native-evidence.mjs` reads the pull request's diff and
+  # answers one question: did this change touch native-facing behaviour, and if
+  # so is there a committed record that satisfies the requirement? A capture
+  # under `docs/evidence/native/<id>/` with a `manifest.json` is re-verified here
+  # by `scripts/verify-native-parity.mjs` against the stored bytes; a
+  # `decision.json` is an explicit recorded decision that this change needs no
+  # device run. A native-facing change with neither is a red job.
+  #
+  # What this job still cannot do: attach a device. `native-build` compiles the
+  # bundle and executes nothing, and this job reads files. So the device run
+  # itself stays manual (`docs/release.md` §3) — what is enforced is that a
+  # native-facing change cannot land without either a stored, verifier-passing
+  # capture or an explicit recorded decision.
+  #
+  # The range is the PR base sha..HEAD, so the gate covers exactly what the pull
+  # request changes. On `push` and `workflow_dispatch` there is no PR base, and
+  # the job says so and passes instead of inventing a base: a gate that silently
+  # evaluated `HEAD..HEAD` would report "nothing to require" for every push and
+  # look green for the wrong reason.
+  #
+  # `pnpm build` runs first because the verifier reads its checklist from
+  # `dist/parity.js` and exits 2 without it; without the build, every capture
+  # would come back "could not evaluate" instead of a verdict.
+  native-evidence:
+    name: native-evidence
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge base and the PR base sha both need real history, and the
+          # verifier's `commit` check walks from the base to HEAD.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The verifier imports `parityOperationIds` from the built package.
+      - name: Build
+        run: pnpm build
+
+      # A pull request: evaluate exactly the diff it proposes.
+      - name: Require native evidence for this pull request
+        if: github.event_name == 'pull_request'
+        run: |
+          node scripts/require-native-evidence.mjs \
+            --range "${{ github.event.pull_request.base.sha }}..HEAD"
+
+      # No PR base: there is nothing to compare against, so say that out loud
+      # rather than passing a range that cannot mean anything.
+      - name: No pull request base — nothing to require
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "Not a pull request (${{ github.event_name }}), so there is no base to"
+          echo "diff against and no range this gate can evaluate. Skipping: the"
+          echo "requirement is checked on pull_request, where a base sha exists."
+          echo "This is a no-op pass, not a native result."
