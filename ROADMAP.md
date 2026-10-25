@@ -229,10 +229,11 @@ Set a stable public contract after web validation, native validation, and toolin
     open-ended `>=22.12.0` admits, chosen because no manifest in the graph caps
     `engines.node`. Locally the same gate exits 0 on 20.19.0, 20.20.2, 22.12.0,
     22.23.3, 24.22.1, and 26.1.0. Those runs recorded 98 tests each, which is
-    what this repository had at the time; the suite is 121 today. The 121 figure
-    was re-measured on Node 22.23.3 / pnpm 12.9.1 for this revision; the other
-    five Node lines were not re-run, so their 121 is an expectation, not a
-    result.
+    what this repository had at the time; the suite is 213 today. The 121 figure
+    quoted for the Node lines was re-measured on Node 22.23.3 / pnpm 12.9.1 at
+    an earlier commit in this release, before the sweep and probe suites landed;
+    the other five Node lines were not re-run, so their 121 is an expectation,
+    not a result, and the 213 above is measured on 22.23.3 only.
   - **Solid half: done — the range widens the evidence rather than shrinking the
     claim.** The range stays `^1.9.15` (`package.json:59`) and the `solid-matrix`
     job in `.github/workflows/ci.yml` gives it a run. What decides it:
@@ -244,7 +245,9 @@ Set a stable public contract after web validation, native validation, and toolin
       would be red is worse than a narrowed range. On Node 22.23.3 / pnpm
       12.9.1, with the committed pins installed and `solid-js` 1.9.16 + 1.9.17
       overlaid over `babel-preset-solid` 1.9.15/1.9.16: `pnpm typecheck` exit 0,
-      `pnpm test` exit 0 with 121 tests, and `pnpm web:build` exit 0 on **both**.
+      `pnpm test` exit 0 with 121 tests (the suite has since grown to 213 at
+      the same Node and pnpm, but that count was not re-run per Solid leg), and
+      `pnpm web:build` exit 0 on **both**.
       Nothing failed, so the range did not need narrowing. The browser suites
       also ran green on 1.9.17 (17 + 9 passed) but are not in the job.
     - `babel-preset-solid` has to move with it: 1.9.15 declares peer `^1.9.15`

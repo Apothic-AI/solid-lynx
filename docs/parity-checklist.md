@@ -107,10 +107,13 @@ now makes a missing record fail a pull request that touches native-facing code;
 neither manufactures the run that is missing, and this document does not pretend
 otherwise. The honest status of every native cell below is `reported`.
 
-`docs/evidence/native/` therefore holds only its README and a capture-less
-`TEMPLATE/`. The first native-facing change after this mechanism lands will be
-red until someone attaches the A03 and runs the card — which is the mechanism
-working, not a bug.
+`docs/evidence/native/` therefore holds its README, a capture-less `TEMPLATE/`,
+and one directory of pending records
+(`2026-10-25-1.0.0-pending/pending.json`), which state that the runs are
+blocked on an unattached A03 rather than that they happened. The gate exits 3
+for that range — pending, not a pass. A native-facing change that carries no
+record at all is still red (exit 1) until someone attaches the A03 and runs the
+card, or records why they cannot — which is the mechanism working, not a bug.
 
 ## Status values
 

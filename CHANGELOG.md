@@ -101,20 +101,25 @@ change itself: a capture under `docs/evidence/native/<date-or-id>/` with a
 `manifest.json`, which the script re-verifies by running the existing verifier
 against the stored bytes and requires to exit 0; or a `decision.json` recording
 explicitly that this change needs no device run. Exit 0 is satisfied, 1 is
-missing or mismatched evidence, 2 is could not evaluate. (A third form,
-`pending.json`, arrives in the entry below — at this commit the contract is still
-two.)
+missing or mismatched evidence, 2 is could not evaluate. That was the whole
+contract when this landed. A third form, `pending.json`, was added afterwards
+and is the entry below.
 
 It is wired in as the `native-evidence` CI job over
-`pull_request.base.sha..HEAD`, and on `push` / `workflow_dispatch` it prints that
-there is no PR base and passes rather than evaluating a range that would mean
-nothing. `docs/evidence/native/README.md` documents the record contract and
-`docs/evidence/native/TEMPLATE/manifest.json` is a capture-less template the
-script rejects as evidence by name. 33 host-free tests build their own git
-repositories in `mkdtemp`, so the suite needs no device, no network, and not this
-repository's git state. (It is 50 at this commit, after the probe-capture entry
-above added eight cases for the per-card verifier and the pending-record entry
-below added nine.)
+`pull_request.base.sha..HEAD` (commit `427aeb7`), and on `push` /
+`workflow_dispatch` it prints that there is no PR base and passes rather than
+evaluating a range that would mean nothing. `docs/evidence/native/README.md`
+documents the record contract and `docs/evidence/native/TEMPLATE/manifest.json`
+is a capture-less template the script rejects as evidence by name.
+
+The suite is host-free: it builds its own git repositories in `mkdtemp`, so it
+needs no device, no network, and not this repository's git state. It had 29
+cases when it landed (`88141f0`), 33 after the workflow-structure judgement
+(`0044bcc`) and a decision that has to account for the whole change
+(`e383722`), 41 after the probe-capture entry above added eight for the
+per-card verifier (`c5cd5a1`), and 50 after the pending entry below added nine.
+The count is quoted at each commit it changed because it is the kind of number
+that goes stale silently.
 
 What this does not do: run a device. `device.getState` in a manifest is a string
 a human typed; no runner can confirm hardware existed. The requirement that a
@@ -194,19 +199,23 @@ measurement instrumentation that the contract requires.
 ### The published package carries the documentation it links to
 
 `package.json` `files` was `["dist", "README.md", "LICENSE"]`, so the tarball's
-README linked to the contract, the compatibility ranges, the migration guide,
-the capability matrix, the changelog and the roadmap nine times across thirteen
-links, and every one of those targets was absent from the package. The links
-resolved from a repository checkout and were dead for anyone who installed from
-npm.
+README carried thirteen links to seven files that were not in the package
+(`docs/contract.md`, `docs/compatibility.md`, `docs/migration.md`,
+`docs/capabilities.md` three times, `docs/session-handoff.md`, `CHANGELOG.md`,
+and `ROADMAP.md`). Every one resolved from a repository checkout and was dead
+for anyone who installed from npm. Commit `e68eb0a`.
 
 `files` is now
-`["dist", "docs", "CHANGELOG.md", "README.md", "ROADMAP.md", "LICENSE"]`, which
-grows the tarball from 33 entries / 37,168 B packed / 128,510 B unpacked to 43
-entries / 112,941 B packed / 355,712 B unpacked — 75 KiB more over the wire, for
-a README whose links all work. `docs/` ships whole rather than as the four consumer-facing
-documents, because the shipped docs cross-link `building.md` and
-`parity-checklist.md`; an explicit four-file list left fifteen second-hop links
+`["dist", "docs", "CHANGELOG.md", "README.md", "ROADMAP.md", "LICENSE"]`.
+Measured from the real tarballs at that commit: 33 entries / 37,168 B packed /
+128,510 B unpacked before, 43 entries / 113,098 B packed / 356,074 B unpacked
+after — about 74 KiB more over the wire, for a README whose links all work.
+The package has grown since: at the tip of this release it is 46 entries, the
+extra three being the evidence contract in `docs/evidence/native/`, which
+landed afterwards. Those bytes are this repository's documentation, not this
+change's. `docs/` ships whole rather than as the four
+consumer-facing documents, because the shipped docs cross-link `building.md` and
+`parity-checklist.md`; an explicit four-file list leaves fifteen second-hop links
 dangling. Three links in `docs/` pointed at repository-only probe scripts under
 `examples/`; they are plain code spans now, and the `version` constant cited in
 `docs/contract.md` was corrected from `0.1.0` to `1.0.0`.
@@ -215,7 +224,14 @@ dangling. Three links in `docs/` pointed at repository-only probe scripts under
 `pnpm pack --dry-run --json` for the real file list and fails when a relative
 link in a shipped markdown file resolves to a file that is not shipped, escapes
 the package root, or names a heading that does not exist. Run against the old
-`files[]`, it reports all nine dead README targets by file and line.
+`files[]`, it reports all thirteen dead README links by file and line.
+
+One consequence worth stating, because it is a real cost and not a detail: the
+package now ships `docs/evidence/native/`, including the pending records, so
+`docs/release.md` and the release process itself are inside the tarball. That is
+deliberate — a reader who installs the package can see what was and was not
+measured — but it does mean the packaged docs discuss this repository's device
+state rather than only the library.
 
 ### The public contract is frozen
 
@@ -247,23 +263,37 @@ explicit table of what deterministic cleanup proves and what it does not.
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` (commit `a7d225c`) runs on `pull_request`, on `push`
-to `master`, and on `workflow_dispatch`, with five jobs:
+`.github/workflows/ci.yml` (started by commit `a7d225c`) runs on
+`pull_request`, on `push` to `master`, and on `workflow_dispatch`, with six
+jobs. Jobs were added as the release matured rather than all at once; the commit
+that added each is named in its row.
 
-| Job | Steps |
-| --- | --- |
-| `unit` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm typecheck:consumer`, `pnpm test`, `pnpm build`, `pnpm pack --dry-run` |
-| `node-matrix` | The unit gate on `20.x`, `22.x`, `24.x` |
-| `solid-matrix` | The unit gate plus `pnpm web:build` with `solid-js` 1.9.16 and 1.9.17 overlaid on the pins, on `needs: unit` |
-| `browser` | Chromium install, then the Lynx-for-Web suite (`PLAYWRIGHT_PORT=4186 pnpm web:test`) and the pattern suite (`PLAYWRIGHT_PORT=4200`, `test/browser/patterns.playwright.config.ts`) |
-| `native-build` | `pnpm native:build`, uploading `examples/lynx-for-native/dist` |
+| Job | Added by | Steps |
+| --- | --- | --- |
+| `unit` | `a7d225c` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm typecheck:consumer`, `pnpm test`, `pnpm build`, `pnpm pack --dry-run` |
+| `node-matrix` | `dd907cd` | Install, type check, and unit tests on `20.x`, `22.x`, `24.x` — the top of each Node line `engines.node` admits |
+| `solid-matrix` | `56b402c` | Install, overlay `solid-js` 1.9.16 / 1.9.17 with the matching `babel-preset-solid`, `pnpm typecheck`, `pnpm test`, `pnpm web:build`, then assert the gate really ran on the overlay. `needs: unit` |
+| `browser` | `a7d225c` | Chromium install, then the Lynx-for-Web suite (`PLAYWRIGHT_PORT=4186 pnpm web:test`) and the pattern suite (`PLAYWRIGHT_PORT=4200`, `test/browser/patterns.playwright.config.ts`) |
+| `native-build` | `a7d225c` | `pnpm native:build`, uploading `examples/lynx-for-native/dist` |
+| `native-evidence` | `427aeb7` | `pnpm build`, then `node scripts/require-native-evidence.mjs --range <pr base sha>..HEAD` |
+
+`browser`, `native-build`, `native-evidence`, and `solid-matrix` all have
+`needs: unit`, so the unit gate runs first and a red one stops the rest.
+`node-matrix` deliberately has no `needs:`, so a failing leg there reads as the
+matrix rather than as the unit gate.
 
 `native-build` compiles the bundle and attaches no device or emulator, and the
 workflow's own header comment says so: native runtime behaviour is still verified
-by hand. `solid-matrix` is what puts a run behind the `^1.9.15` peer range — it
-was green locally on both legs before it was added, but has not yet run on GitHub
-Actions. How the overlay works, and the two `pnpm add` routes that were tried and
-failed, are in [compatibility.md](docs/compatibility.md) §2.
+by hand. `native-evidence` reads files rather than executing anything, so it can
+prove a record exists and re-verifies, never that hardware existed.
+
+Both version matrices are what put a run behind a declared range rather than
+trusting it: `node-matrix` behind `engines.node`, `solid-matrix` behind the
+`^1.9.15` peer range. Neither has run on GitHub Actions yet — this worktree
+cannot dispatch a workflow — so the recorded evidence for both is a local replay
+of the same commands, which [compatibility.md](docs/compatibility.md) §1–§2 and
+§8 record in full, including the two `pnpm add` routes that were tried and
+failed.
 
 ### Indexed list row model
 
@@ -303,7 +333,7 @@ the bundle; it does not load one.
 Two measurement cards ship with host-free recorder tests, so the recording logic
 is covered without a device:
 
-- `examples/lynx-for-native/src/stylesheet-probe.ts` (commit `544e36e`) logs one
+- `examples/lynx-for-native/src/stylesheet-probe.ts` (commit `2bcac14`) logs one
   `[solid-lynx ss]` line per stage and calls only operations that cannot mutate
   the card: `__LoadStyleSheet`, `__AdoptStyleSheet`, `__ReplaceStyleSheets`.
 - `examples/lynx-for-native/src/list-probe.ts` (commit `d8562dd`, built as
@@ -313,24 +343,159 @@ is covered without a device:
   and whether the host ever called `enqueueComponent`.
 
 Both are built by `pnpm native:build`; neither has been run on a device, so they
-**measure nothing yet**.
+**measure nothing yet**. That statement is not softened by anything else in this
+release: the cards are instrumentation, and instrumentation that has never run
+produces no result.
+
+Running either one by hand means one command, not a per-card script.
+`examples/lynx-for-native/scripts/run-native-probe.sh` (commit `faca97c`) takes
+the card as its argument — `smoke`, `stylesheet`, or `list`, or the bundle stem
+`main`, `stylesheet-probe`, `list-probe` — and does the whole sequence: pin the
+A03 serial, `pnpm native:build`, serve the bundle on loopback, `adb reverse`, the
+`lynx://open` deep link, `logcat -d -s lynx_console`, `screencap`, a grep for
+that card's console prefix, and cleanup. An unknown card is a usage error
+(exit 2) and never touches a device; `--dry-run` prints the whole sequence and
+changes nothing. `run-stylesheet-probe.sh` remains as a thin wrapper that execs
+the general script with `stylesheet`.
+
+That runner is a reviewable command sequence, not a result. Its `--dry-run`
+exits 0 for all three cards and proves the sequence is coherent without
+hardware; it does not produce a stage line, and no stage line has ever been
+produced on a device.
+
+### A listener is released through the PAPI pair that filed it
+
+`src/lynx-host.ts` attach and release used to pick their PAPI pair
+independently, with different preference orders: attach preferred
+`__AddEventListener` and fell back to `__AddEvent`, while detach checked
+`__RemoveEventListener` first. A host exposing `__AddEventListener` but not
+`__RemoveEventListener` therefore bound every listener through the listener API
+and then released it through `__AddEvent`, leaving the original registration in
+place. Every `removeEventListener` on such a host was a no-op, which reads as a
+leak rather than as an error.
+
+The registration now records which pair filed it and release uses that pair. When
+no complete pair exists on the host, attach throws instead of filing a listener
+that nothing could ever release — a host that cannot release a listener is now a
+loud failure at registration time rather than a silent leak at teardown. Fixed
+in `380284f`, with failing-first coverage for both halves in
+`test/renderer.test.ts`; `docs/contract.md` §9 quotes the lines.
+
+This is the renderer's own bookkeeping, verified against the fake PAPI. What a
+native host does with the same two pairs is **unmeasured**, and stays listed
+under "Known limitations".
+
+### The cleanup claim is limited to what a test can prove
+
+`ROADMAP.md`'s 1.0 box was titled "Confirm deterministic root, listener, and
+stylesheet cleanup", and the third noun named a resource this renderer never
+acquires. Commit `764e860` retitled it and said so: the box now confirms cleanup
+of the root, listeners, refs, and list callbacks — the resources the renderer
+does acquire — and moves stylesheet cleanup to an explicit statement that it is
+out of the claim because nothing here loads a stylesheet.
+
+That is a claim a reader can check, unlike a permanently open box. Two new tests
+back it. `8b01d05` added "disposes the same root twice without touching the page
+again" (idempotent disposal) and "keeps the recorded id across disposal so a
+remounted element is styled too"; `764e860` added a `root disposal leaves nothing
+behind` block whose test reads the fake PAPI's post-dispose tree rather than a
+call log, so it asserts the host is left holding no page children, no live
+registration, no ref, and no list row. That block is deliberately last in the
+file because `docs/contract.md` and `docs/migration.md` cite the others by line
+number.
+
+`docs/contract.md` §9 is the contract and lists the mechanism and test for each
+row; it also states what is **not** proven, including that a disposal issues two
+flushes rather than one and that native disposal is unmeasured. `ROADMAP.md`'
+retitle and `docs/capabilities.md` "Remaining blockers" carry the same position.
+
+### A captured parity run can be verified instead of read by eye
+
+The native smoke card's one `[solid-lynx parity] {...}` line used to be evidence
+only by convention: `docs/parity-checklist.md` asked a reader to compare the
+capture against the expected rows themselves, so a partial or edited report was
+indistinguishable from a clean one to anyone who did not do that comparison.
+
+`scripts/verify-native-parity.mjs` (commit `f8d2c67`) turns it into a process. It
+extracts every `[solid-lynx parity]` line from a file, parses the JSON, compares
+the operations against `parityOperationIds` from the built `dist/parity.js`, and
+rejects any row that is not `pass` or `unsupported` with a recorded reason. It
+also checks each report's own `summary` counters against its rows, so a capture
+whose summary was edited or truncated is a finding rather than a pass.
+
+Exit codes follow the discipline the rest of this repository uses: **0**
+verified, **1** findings, **2** could not evaluate — where 2 covers an
+unreadable file, a capture with no parity line, JSON that does not parse, and a
+missing `dist/` (the message says to run `pnpm build`). A 2 is never a pass.
+
+`test/native-parity-verify.test.ts` (19 tests, `af237ca`) drives every exit code
+through a real process against `test/fixtures/native-parity/`, whose README
+states that the fixtures are synthetic and are not device evidence. That
+distinction matters: the verifier makes the next run recordable, it does not
+manufacture a run, and nothing derived from a fixture may be written into
+`docs/parity-checklist.md` as a native result.
+
+The verifier's sibling for the stylesheet and list cards, and the resulting
+change to the evidence contract, are in the Unreleased entry
+"A probe capture can be verified by process, on both cards" at the top of this
+file — those landed after the 1.0.0 version bump.
+
+### The release process and the pull request checklist
+
+Two documents that a contributor follows rather than a consumer:
+
+- `docs/release.md` (commit `5c98160`) writes the release down as a procedure:
+  the pre-flight command list that mirrors CI step for step, the version bump in
+  both `package.json` and `src/index.ts`, what CI cannot check (native, §3), the
+  build-and-pack step, publishing, rollback, and an explicit section on what that
+document could not itself run. Its §1 exists so a release does not re-derive
+  which commands CI actually runs.
+- `.github/pull_request_template.md` (commit `e73168f`) puts the same checks in
+  front of every pull request as boxes to tick, including the native-evidence
+  question with its three honest answers and the hand-work steps on the A03. The
+  template says in as many words that a green `native-evidence` job means the
+  evidence is complete and re-verifiable, **not** that native behaviour was
+  measured on that PR.
+
+Neither document is a gate by itself — the workflow is. They exist so the gate's
+answer is predictable before it is run, rather than after it is red.
 
 ### Verified at this commit
 
-Observed in this repository on Node 22.23.3 with pnpm 12.9.1:
+Measured in this worktree at `fee7833` on Node 22.23.3 with pnpm 12.9.1. These
+are snapshots of one commit, not promises about later ones: re-run the commands
+and read the counts out of your own output.
 
 - `pnpm typecheck`, `pnpm typecheck:consumer`, `pnpm test`, `pnpm build`, and
   `pnpm pack --dry-run` all exit 0.
-- `pnpm test` reports **154 unit tests in 8 files** (`test/renderer.test.ts` 62,
-  `test/require-native-evidence.test.ts` 33,
-  `test/native-parity-verify.test.ts` 19, `test/list-probe-report.test.ts` 14,
-  `test/parity.test.ts` 9, `test/stylesheet-probe-report.test.ts` 7,
-  `test/rspeedy.test.ts` 6, `test/packaging.test.ts` 4), after
-  `pnpm build` and before `pnpm typecheck:consumer`.
-- The native runtime evidence is unchanged from 0.x: one hand run on Lynx
-  Explorer 4.1.0 / engine 3.5 on an SM-A037U, where the card loads, renders,
-  increments through `bindtap`, and passes all twenty shared Element PAPI
-  operations (`docs/parity-checklist.md`). No native runtime executes in CI.
+- `pnpm test` reports **213 unit tests in 9 files**, after `pnpm build` and
+  before `pnpm typecheck:consumer`: `test/renderer.test.ts` 63,
+  `test/require-native-evidence.test.ts` 50,
+  `test/native-probe-verify.test.ts` 41, `test/native-parity-verify.test.ts` 19,
+  `test/list-probe-report.test.ts` 14, `test/parity.test.ts` 9,
+  `test/stylesheet-probe-report.test.ts` 7, `test/rspeedy.test.ts` 6, and
+  `test/packaging.test.ts` 4. Every one of those files is non-trivial about
+  something: the renderer against the in-memory fake Element PAPI, the two
+  capture verifiers, the stored-evidence requirement, the probe recorders, the
+  Rspeedy plugin, and the tarball's own link graph.
+- Not unit tests, but run here on the same commit: the Lynx-for-Web suite
+  (`PLAYWRIGHT_PORT=4291 pnpm web:test`) passes 17, and the pattern suite
+  (`test/browser/patterns.playwright.config.ts`, port 4292) passes 9. They are
+  the Chromium half of the gate, and the only part of it that needs a browser.
+- `pnpm pack` produces 46 entries, 136,867 B packed and 427,422 B unpacked
+  (`solid-lynx-1.0.0.tgz`). Those bytes are the ones `fee7833` packs; this
+  changelog entry is itself inside the package, so the figure moves with any
+  documentation edit after it.
+
+The native runtime evidence is unchanged from 0.x: one hand run on Lynx
+Explorer 4.1.0 / engine 3.5 on an SM-A037U on 2026-10-09, which **reported** the
+card loading, rendering, incrementing through `bindtap`, and all twenty shared
+Element PAPI operations passing. That capture was never copied out of `/tmp`, so
+[docs/parity-checklist.md](docs/parity-checklist.md) records the native column as
+**reported, not reproduced**. No native runtime executes in CI, and no native
+card has been run since. A future run becomes citable only once its capture is
+stored under `docs/evidence/native/` and the verifier for its card exits 0 on
+the stored bytes.
 
 ### Known limitations
 
@@ -438,8 +603,10 @@ semantics rather than substituting the DOM.
   fixing two defects: native PrimJS element handles report `typeof "unknown"`, so
   creators are now validated with `isLynxNode()`, and `__GetPageElement()`
   returns `null` until `__CreatePage()` is called, so the example now creates the
-  page. With those fixed, all twenty shared Element PAPI operations passed on an
-  SM-A037U (`docs/parity-checklist.md`).
+  page. The run those fixes produced was on 2026-10-09, three days after this
+  commit: on an SM-A037U it **reported** all twenty shared Element PAPI
+  operations passing (`docs/parity-checklist.md`). That capture was not kept, so
+  the native column is `reported`, not `pass` — see "Known limitations".
 - `e797873` (2026-10-08) added `docs/session-handoff.md`.
 
 The native-only 0.3 item — dual-thread execution, worklets, and first-screen
@@ -454,8 +621,10 @@ main-thread-only build's empty `/app-service.js`.
   assuming them, plus `docs/capabilities.md`.
 - `0d1a715` added owner-scoped refs and root-scoped CSS ids (see 1.0.0 above).
 - `bf0293d` reconciled the capability status in the docs and roadmap.
-- `2bcac14` (2026-10-24) added the indexed list row model and the stylesheet and
-  list probe cards with their host-free recorder tests.
+- `2bcac14` (2026-10-24) added the indexed list row model and the stylesheet
+  probe card with its host-free recorder test; `544e36e` and `faca97c` added
+  the runner for it, and `d8562dd` added the list probe card and
+  `test/list-probe-report.test.ts`.
 
 Two 0.4 items remain open: integrating stylesheet loading/lifecycle, and native
 validation of the list adapter. Their position is unchanged by this release.
