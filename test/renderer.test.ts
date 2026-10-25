@@ -1106,6 +1106,48 @@ describe("solid-lynx", () => {
     expect(calls).toEqual(["add:bindEvent:tap", "remove:bindEvent:tap"]);
   });
 
+  it("disposes the same root twice without touching the page again", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({
+      page: fake.page,
+      papi: fake.papi,
+      parentComponentId: 1,
+      transformEventNames: true,
+    });
+
+    root.render(() => {
+      const view = root.renderer.createElement("view");
+      root.renderer.setProp(view, "bindtap", () => undefined);
+      return view;
+    });
+    const view = fake.page.children[0]!;
+    const flushesAfterRemoval = () => fake.flushes;
+
+    root.dispose();
+    expect(fake.page.children).toHaveLength(0);
+    expect(fake.registrations(view)).toEqual([]);
+
+    // `render` hands back the root's disposer, so calling it twice is an
+    // ordinary thing an effect cleanup or a component teardown does. The second
+    // call has no renderer left to dispose and no owned node left to remove, so
+    // it must not reach the host at all: a second `__RemoveElement` for a node
+    // that is already gone throws on a real host.
+    const flushesBefore = flushesAfterRemoval();
+    const removalsBefore = fake.listenerCalls.filter(call => call.op === "remove").length;
+    expect(() => root.dispose()).not.toThrow();
+
+    expect(fake.page.children).toHaveLength(0);
+    expect(fake.listenerCalls.filter(call => call.op === "remove")).toHaveLength(removalsBefore);
+    // Disposal flush is still owned by the root and stays deterministic.
+    expect(flushesAfterRemoval()).toBeGreaterThanOrEqual(flushesBefore);
+
+    // And the root is still usable afterwards, exactly as after one disposal.
+    root.render(() => root.renderer.createElement("view"));
+    expect(fake.page.children).toHaveLength(1);
+    root.dispose();
+    expect(fake.page.children).toHaveLength(0);
+  });
+
   it("keeps roots that share a page independent through render and disposal", () => {
     const fake = createFakePapi();
     const first = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 11 });
@@ -1531,6 +1573,36 @@ describe("root-scoped CSS ids", () => {
 
     expect(() => root.setCSSId(1)).toThrow(/__SetCSSId/);
     expect(fake.cssIdCalls).toEqual([]);
+  });
+
+  it("keeps the recorded id across disposal so a remounted element is styled too", () => {
+    const fake = createFakePapi();
+    const root = createLynxRoot({ page: fake.page, papi: fake.papi, parentComponentId: 1 });
+
+    root.setCSSId(6, "detail");
+    root.render(() => root.renderer.createElement("view"));
+    expect(fake.cssIdCalls).toHaveLength(1);
+
+    // Disposal removes the elements the id was applied to. It does not un-assign
+    // the id: there is no Element PAPI for that, and the stylesheet is unchanged
+    // (§8), so the only observable obligation is that disposal makes no
+    // `__SetCSSId` call of its own.
+    const callsBeforeDispose = fake.cssIdCalls.length;
+    root.dispose();
+    expect(fake.page.children).toHaveLength(0);
+    expect(fake.cssIdCalls).toHaveLength(callsBeforeDispose);
+
+    // A disposed root may be rendered into again, and the id it was assigned is
+    // still the root's: the fresh element belongs to the same stylesheet, so it
+    // has to arrive styled rather than render unstyled until the next call.
+    root.render(() => root.renderer.createElement("view"));
+    const remounted = fake.page.children[0]!;
+    expect(fake.cssIdCalls).toHaveLength(callsBeforeDispose + 1);
+    expect(fake.cssIdCalls.at(-1)).toMatchObject({ cssId: 6, entryName: "detail" });
+    expect(fake.cssIdCalls.at(-1)!.elements).toEqual([remounted]);
+    expect(remounted.cssId).toBe(6);
+
+    root.dispose();
   });
 
   it("keeps a root's CSS id off the elements of another root on the same page", () => {
