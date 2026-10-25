@@ -122,8 +122,27 @@ Checked on every pull request by the `native-evidence` job
 **Not checked, and cannot be:** that a device was attached. `device.getState`
 is a string someone typed from their own terminal. CI has no Android device and
 no emulator; the `native-build` job compiles the bundle and executes nothing.
-The device run itself remains manual work, and a reviewer is still the only
-thing that can confirm the serial in a manifest matches hardware that existed.
+
+The concrete forgery, stated plainly because a check that overstates itself is
+worse than no check: take the fixture at
+`test/fixtures/native-parity/good-capture.log`, copy it into a new evidence
+directory, write a manifest naming the current commit and `"getState": "device"`,
+and this check is satisfied — exit 0 — with no device anywhere. It was tried
+against this exact script and it passed. What such a record cannot survive is
+the next person asking which card run produced it, because the capture is
+byte-identical to a fixture that ships in this repository and its
+`[solid-lynx parity]` line says nothing about when or where it was taken.
+
+So the requirement is real and the evidence is re-verifiable, but **the claim
+that a human ran a device is still a reviewer's question**, not this script's
+answer. Two habits keep that honest, and both are cheap:
+
+- A stored capture should look like a run: real `logcat` framing around the
+  parity line, the card's own console output, the run's stamp, not a fixture's
+  bare shape.
+- `docs/parity-checklist.md` records the run against a date, a device serial, and
+  an Explorer version. A capture with no such entry behind it is a file, not a
+  measurement.
 
 Nothing here is a substitute for the run. It is what makes an absent run fail a
 CHECK instead of a convention.

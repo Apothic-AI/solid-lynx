@@ -286,10 +286,15 @@ Set a stable public contract after web validation, native validation, and toolin
     CI, and this change does not make one run. `native-build` still only
     compiles the bundles. `device.getState` in a manifest is a string a human
     typed after `adb -s R9WT911JVVH get-state`; nothing here can confirm a device
-    existed. So the honest statement is: **the existence and re-verifiability of
-    a run is required; performing the run is still a human step.** A reviewer is
-    still the only thing that can confirm the serial in a manifest matches
-    hardware someone actually held.
+    existed. The forgery is a concrete one and is recorded in
+    `docs/evidence/native/README.md` rather than left implied: copying
+    `test/fixtures/native-parity/good-capture.log` into an evidence directory and
+    writing a manifest satisfies the check without hardware — it was tried
+    against this script and it passed. So the honest statement is: **the
+    existence and re-verifiability of a run is required and checked; performing
+    the run, and confirming that the record describes one, is still a human
+    step.** A reviewer remains the only thing that can confirm the serial in a
+    manifest matches hardware someone actually held.
   - **No capture is stored yet.** `docs/evidence/native/` ships its README and a
     `TEMPLATE/` with no capture, because no device run has happened in this
     worktree. `docs/parity-checklist.md` therefore still records the native
