@@ -125,7 +125,9 @@ The APK was verified against the release digest, is `arm64-v8a`, and is installe
 on the A03. Do not reinstall it unless needed. Explorer opens the bundle through
 its `lynx://open?url=...` deep link; there is no file picker.
 
-Re-run the smoke with an A03-only loopback server and reverse tunnel:
+Re-run the smoke with an A03-only loopback server and reverse tunnel. This is
+what `examples/lynx-for-native/scripts/run-native-probe.sh smoke` does in one
+step, with the cleanup below in an `EXIT` trap:
 
 ```bash
 pnpm native:build
@@ -143,6 +145,24 @@ cached bundle. Capture the one-line `[solid-lynx parity]` report and relevant
 `lynx_console` logcat output. Afterward, stop only the server started for the
 test and run `adb -s R9WT911JVVH reverse --remove tcp:8099`. Do not change users,
 settings, or install ArtemisAccessibilityHelper for this test.
+
+The committed runner takes the card as an argument and does all of the above —
+build, serve, reverse, deep link with a fresh `?v=` stamp, `logcat -d -s
+lynx_console` plus a screenshot into `/tmp/solid-lynx-logs`, and the cleanup —
+for any of the three native cards:
+
+```bash
+examples/lynx-for-native/scripts/run-native-probe.sh smoke        # [solid-lynx parity]
+examples/lynx-for-native/scripts/run-native-probe.sh stylesheet   # [solid-lynx ss]
+examples/lynx-for-native/scripts/run-native-probe.sh list         # [solid-lynx lp]
+```
+
+Add `--dry-run` to print the command sequence without touching a device. The
+bundle stems (`main`, `stylesheet-probe`, `list-probe`) are accepted as aliases,
+and `scripts/run-stylesheet-probe.sh` remains as a wrapper for the `stylesheet`
+card. Only `--dry-run` has been executed here; no card has been run on a device
+through this runner, so the manual recipe above is still the record of what the
+A03 smoke did.
 
 The environment is named `lynx`, which is Rspeedy's default; an app that ships
 both targets declares `environments: { lynx: {}, web: {} }` instead.

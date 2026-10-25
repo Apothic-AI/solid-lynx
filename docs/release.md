@@ -142,27 +142,42 @@ section are non-negotiable: every ADB command is pinned with
 `adb -s R9WT911JVVH`, and the tablet `19779010` is in use by another agent and
 must not be targeted.
 
-**Review the stylesheet probe without hardware.** Its runner is committed and
-prints every command a real run executes, in order, touching no device:
+**Review any of the three cards without hardware.** One runner is committed at
+[`examples/lynx-for-native/scripts/run-native-probe.sh`](../examples/lynx-for-native/scripts/run-native-probe.sh)
+and takes the card as its argument:
 
 ```bash
-examples/lynx-for-native/scripts/run-stylesheet-probe.sh --dry-run
+examples/lynx-for-native/scripts/run-native-probe.sh smoke --dry-run
+examples/lynx-for-native/scripts/run-native-probe.sh stylesheet --dry-run
+examples/lynx-for-native/scripts/run-native-probe.sh list --dry-run
 ```
 
-Ran here: exit 0. It prints the `get-state`, `pnpm native:build`, the loopback
-`python3 -m http.server 8099`, `adb reverse tcp:8099`, the
-`lynx://open?url=.../stylesheet-probe.lynx.bundle?v=<stamp>` deep link, the
-`logcat -d -s lynx_console` and `screencap` captures into
-`/tmp/solid-lynx-logs`, and the cleanup. Drop `--dry-run` to run it for real; it
-exits 3 with a message and changes nothing if the A03 is not attached.
+| Card | Bundle | Console prefix |
+| --- | --- | --- |
+| `smoke` | `main.lynx.bundle` | `[solid-lynx parity]` |
+| `stylesheet` | `stylesheet-probe.lynx.bundle` | `[solid-lynx ss]` |
+| `list` | `list-probe.lynx.bundle` | `[solid-lynx lp]` |
 
-The same script is **only** for the stylesheet probe. There is no runner for the
-list probe — `git ls-files | grep probe` finds one `.sh`, this one — so the list
-probe is built, served and opened the way `docs/building.md` describes for the
-smoke card, with `list-probe.lynx.bundle` as the URL. A dry run of the
-stylesheet runner is evidence about that card only. No device run of either
-probe is recorded anywhere in this tree; `docs/capabilities.md` says so for the
-stylesheet probe in as many words.
+The bundle stem is accepted too (`main`, `stylesheet-probe`, `list-probe`), and
+the old entry point `examples/lynx-for-native/scripts/run-stylesheet-probe.sh`
+remains as a thin wrapper that execs the general script with `stylesheet`. An
+unknown card is a usage error and exits 2 without touching a device.
+
+All four dry runs (three cards plus the wrapper) ran here: exit 0. Each prints
+the `get-state`, `pnpm native:build`, the loopback
+`python3 -m http.server 8099`, `adb reverse tcp:8099`, the
+`lynx://open?url=.../<card>.lynx.bundle?v=<stamp>` deep link, the
+`logcat -d -s lynx_console` and `screencap` captures into
+`/tmp/solid-lynx-logs`, the `grep` for the card's prefix, and the cleanup. Drop
+`--dry-run` to run it for real; it exits 3 with a message and changes nothing if
+the A03 is not attached.
+
+A real run that captures no line for the chosen prefix exits 5 and points at the
+log and the screenshot instead of reporting a result, so an empty capture cannot
+be read as a measurement. **However, no dry run is a device result.** No device
+run of any of the three cards is recorded anywhere in this tree, and
+`docs/capabilities.md` says so for the stylesheet and list probes in as many
+words.
 
 **Whether the device is attached right now:**
 
@@ -283,13 +298,14 @@ per-capability version of the same statement.
 | --- | --- | --- |
 | A03 smoke card on a device | **not run** | `adb -s R9WT911JVVH get-state` → `device 'R9WT911JVVH' not found`, exit 1. No hardware attached in this worktree. |
 | Stylesheet probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0), which reviews the sequence and touches nothing. |
-| List probe on a device | **not run** | Same device, and there is no runner script for it — it is loaded by hand. |
+| List probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0). The list card has had a runner since `run-native-probe.sh` took a card argument — it is no longer loaded by hand — but a reviewed command sequence is not a device result. |
 | `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; CI runs it on a bare runner. |
 | `pnpm publish` (real) | **not run**, deliberately | §5. The name belongs to another maintainer and this repository has no credential or release workflow. Only `--dry-run` was executed, and it uploaded nothing. |
 
 Everything else in this document — the install, the five gate commands
 (`typecheck`, `typecheck:consumer`, `test`, `build`, `pack --dry-run`), both
-browser suites, `pnpm web:build`, `pnpm native:build`, the stylesheet runner's
-`--dry-run`, the three version commands, the version-agreement one-liner,
+browser suites, `pnpm web:build`, `pnpm native:build`, the native runner's four
+`--dry-run` invocations (smoke, stylesheet, list, and the wrapper), the three
+version commands, the version-agreement one-liner,
 `npm view solid-lynx`, and `pnpm publish --dry-run` — was executed at this
 commit and exited 0.

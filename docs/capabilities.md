@@ -151,8 +151,8 @@ A measurement card for that validation exists and has not been run on a device
 yet. `examples/lynx-for-native/src/list-probe.ts` builds through
 `pnpm native:build` as `dist/list-probe.lynx.bundle`; it shares its shape with the
 stylesheet probe (`[solid-lynx lp]` stages, one JSON line each, recorder helpers
-in `list-probe-report.ts` covered by `test/list-probe-report.test.ts`) so a single
-runner can drive both cards later. It is a measurement, not support: it calls
+in `list-probe-report.ts` covered by `test/list-probe-report.test.ts`) so one
+runner drives all three cards. It is a measurement, not support: it calls
 `root.createList()` with three toy items and logs one line per stage —
 `inventory` (what the host exposes, with `typeof`, `fn.length`, `fn.name`, and
 `String(fn)`, no calls), `create`, `materialize`, `reorder`, `shrunk`, `summary`,
@@ -361,21 +361,34 @@ signatures and lifecycle remain unmeasured.
 
 #### Running it
 
-The runner is committed at
-[`examples/lynx-for-native/scripts/run-stylesheet-probe.sh`](../examples/lynx-for-native/scripts/run-stylesheet-probe.sh):
+One runner drives all three native cards,
+[`examples/lynx-for-native/scripts/run-native-probe.sh`](../examples/lynx-for-native/scripts/run-native-probe.sh),
+and the card is its argument:
 
 ```bash
-examples/lynx-for-native/scripts/run-stylesheet-probe.sh --dry-run
+examples/lynx-for-native/scripts/run-native-probe.sh stylesheet --dry-run
 ```
+
+| Card | Argument (aliases) | Bundle | Console prefix |
+| --- | --- | --- | --- |
+| parity smoke | `smoke` (`main`) | `main.lynx.bundle` | `[solid-lynx parity]` |
+| this probe | `stylesheet` (`stylesheet-probe`) | `stylesheet-probe.lynx.bundle` | `[solid-lynx ss]` |
+| list probe | `list` (`list-probe`) | `list-probe.lynx.bundle` | `[solid-lynx lp]` |
+
+The former entry point,
+[`examples/lynx-for-native/scripts/run-stylesheet-probe.sh`](../examples/lynx-for-native/scripts/run-stylesheet-probe.sh),
+is kept as a thin wrapper that execs the general script with `stylesheet`, so
+earlier instructions still work. An unknown card is a usage error and exits 2.
 
 `--dry-run` prints every command in the order a real run executes it and touches
 no device, so the sequence can be reviewed without hardware. Drop the flag to do
 the run: the script builds with `pnpm native:build`, serves
-`examples/lynx-for-native/dist` on `127.0.0.1:8099`, adds
+examples/lynx-for-native/dist on `127.0.0.1:8099`, adds
 `adb -s R9WT911JVVH reverse tcp:8099`, opens
-`lynx://open?url=http://127.0.0.1:8099/stylesheet-probe.lynx.bundle?v=<run
-stamp>`, captures `logcat -d -s lynx_console` and a screenshot into
-`/tmp/solid-lynx-logs`, and prints the `[solid-lynx ss]` lines.
+`lynx://open?url=http://127.0.0.1:8099/<card>.lynx.bundle?v=<run stamp>`,
+captures `logcat -d -s lynx_console` and a screenshot into
+`/tmp/solid-lynx-logs`, and prints the lines carrying the chosen card's prefix.
+For this probe that means the `[solid-lynx ss]` lines.
 
 It is pinned to the A03 serial `R9WT911JVVH`: it never enumerates devices, it
 refuses to run if `DEVICE_SERIAL`, `ADB_SERIAL`, or `ANDROID_SERIAL` is set to
@@ -385,9 +398,15 @@ started (from the pid file it wrote) and removes only its own `tcp:8099`
 reverse, then prints `adb reverse --list`. `LOOPBACK_PORT` and `LOG_DIR` override
 the port and output directory.
 
-A run that captures no `[solid-lynx ss]` line says so and points at the log and
-screenshot rather than reporting a result; the script does not parse the stages,
-so reading the capture is still the measurement.
+A run that captures no line for the chosen prefix exits 5 and points at the log
+and screenshot rather than reporting a result; the script does not parse the
+stages, so reading the capture is still the measurement.
+
+**No card has been run on a device through this script.** Only `--dry-run` has
+been executed, for all three cards and for the wrapper (exit 0 each). A reviewed
+command sequence is not a measurement, so everything above about the three
+stylesheet operations — and everything about native list behaviour — remains
+unmeasured.
 
 ## Remaining blockers
 
