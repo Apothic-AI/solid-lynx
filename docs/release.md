@@ -1,0 +1,295 @@
+# Cutting a release
+
+How a release of `solid-lynx` is cut, in the order it happens, with the command
+that proves each step. Every command below was run in this repository at commit
+`002b786` on Node `v22.23.3` / pnpm `12.9.1`, unless the step says **not run**
+next to it. Where a step is not automated, that is stated rather than implied.
+
+**Where this package actually is.** There are no git tags, no `publishConfig` in
+`package.json`, and `.github/workflows/` contains only `ci.yml` — there is no
+release workflow. The name `solid-lynx` on npm already belongs to a different
+package (`npm view solid-lynx license maintainers` reports `MIT` and
+`pranshuchittora`; `npm view solid-lynx time.created` reports `2025-03-10`).
+This repository has therefore
+**never published**, and the publish half of this document is a description of
+what a publish would do, not a procedure anyone has completed. Read §5 before
+you read anything into the word "release".
+
+## 1. Pre-flight: the gate CI repeats
+
+`.github/workflows/ci.yml` has three jobs: `unit`, `browser`, `native-build`.
+`browser` and `native-build` both `needs: unit`, so `unit` gates the rest.
+Every step below runs the same command a developer runs locally; none needs a
+secret. Green means exit status 0 on that exact command.
+
+| CI job | Step in `ci.yml` | Command | Green means | Result here |
+| --- | --- | --- | --- | --- |
+| `unit` | Install | `pnpm install --frozen-lockfile` | lockfile and `package.json` agree; no resolution step | exit 0 |
+| `unit` | Type check | `pnpm typecheck` | `tsc -p tsconfig.build.json`, then `tsc --noEmit`, then both consumer fixtures | exit 0 |
+| `unit` | Type check consumer fixtures | `pnpm typecheck:consumer` | `test/consumer/tsconfig.json` and `test/consumer/tsconfig.dev.json` compile against the built `dist/` | exit 0 |
+| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **94 tests in 5 files** |
+| `unit` | Build | `pnpm build` | `dist/` is written | exit 0 |
+| `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 33 entries |
+| `browser` | Install Chromium | `pnpm exec playwright install --with-deps chromium` | Chromium present for Playwright | **not run** — the browser was already installed in this worktree; CI runs it because the runner starts bare |
+| `browser` | Lynx-for-Web suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | builds the web bundle, serves it, drives it in Chromium | exit 0, **17 passed** (54.2s) |
+| `browser` | Pattern suite | `PLAYWRIGHT_PORT=4200 pnpm exec playwright test --config test/browser/patterns.playwright.config.ts` | the separate `examples/lynx-patterns` suite passes | exit 0, **9 passed** (41.5s) |
+| `native-build` | Build the native bundle | `pnpm native:build` | `examples/lynx-for-native/dist/` holds the three bundles | exit 0, `main`, `stylesheet-probe`, `list-probe` |
+
+Two things about the scripts, so you do not run work twice. `pnpm typecheck` is
+`pnpm build && tsc --noEmit && pnpm typecheck:consumer`, and `pnpm test` is
+`pnpm build && vitest run && pnpm typecheck:consumer` (`package.json`). So the
+shortest local repeat of the `unit` job is:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test
+pnpm pack --dry-run
+```
+
+Both browser suites start their own server on the port given by
+`PLAYWRIGHT_PORT`; neither may share a port with a `pnpm web:serve` you left
+running. Read test counts out of the run, not out of any document — some docs in
+this tree still quote older totals.
+
+Run `docs/building.md`'s table against your own output: it lists which of these
+steps this repository verifies, and the last row of it (running the bundle on a
+device) is the one §3 is about.
+
+## 2. The version bump
+
+Two files are authoritative — `package.json` and `src/index.ts` — and two repeat
+the version in prose that must not contradict them:
+
+| File | What it holds | Current value |
+| --- | --- | --- |
+| `package.json` | `"version"` (line 3) | `0.1.0` |
+| `src/index.ts` | `export const version = "0.1.0"` (line 72) | `0.1.0` |
+| `CHANGELOG.md` | the entry for the version being cut | **does not exist in this tree** — see below |
+| `README.md` | the `> **Status:**` line (line 7) names the release | `0.1.0` |
+
+`docs/contract.md` (line 3, and line 57 where it quotes the constant) and
+`docs/migration.md` (line 3) also name `0.1.0`. Those two are the contract-freeze
+documents: a changed number there is a contract change, not a release chore. A
+version bump either updates them in the same commit or records why the frozen
+documents still describe the older release. Do not let `docs/release.md` be read
+as permission to edit them.
+
+`docs/contract.md` cites `version` as `src/index.ts:70`; the constant is at line
+72 at this commit. The line reference is stale, the string is not. Grep for the
+constant rather than trusting the line number.
+
+**There is no `CHANGELOG.md` on this branch.** `git ls-files CHANGELOG.md`
+prints nothing, so the first release that wants one creates it, and a changelog
+that exists elsewhere is not evidence about this branch. If the file exists, add
+an entry at the top whose heading names the version; if it does not, creating it
+is part of the release commit. Either way:
+
+- `CHANGELOG.md` is **not** in the published tarball. `package.json` `files` is
+  `["dist", "README.md", "LICENSE"]`, so a changelog is repository documentation
+  only. Verified in the `pnpm pack --dry-run` listing in §4.
+
+Prove the version agrees before committing. Three commands, each run here with
+exit 0:
+
+```bash
+node -p "require('./package.json').version"           # 0.1.0
+grep -n 'export const version' src/index.ts           # 72:export const version = "0.1.0";
+node -e "import('./dist/index.js').then(m => console.log(m.version))"   # 0.1.0, after pnpm build
+```
+
+The third reads the built output, so it catches a `src/index.ts` edit that was
+never rebuilt. To fail loudly instead of eyeballing three values:
+
+```bash
+node -e 'const fs=require("node:fs");const pkg=JSON.parse(fs.readFileSync("package.json","utf8"));const m=fs.readFileSync("src/index.ts","utf8").match(/export const version = "([^"]+)"/);if(!m||m[1]!==pkg.version)throw new Error(`package.json ${pkg.version} vs src/index.ts ${m?m[1]:"missing"}`);console.log("agree:",pkg.version)'
+```
+
+Nothing in the test suite asserts the version: `docs/contract.md` §16 lists
+`version` as exported with no automated test. That is why this is a checklist
+item and not a green check.
+
+Bump sequence:
+
+1. Edit `package.json` and `src/index.ts` in the same commit, so no commit in
+   history ships a package whose export disagrees with its manifest.
+2. Add or update the `CHANGELOG.md` entry; adjust the `README.md` status line.
+3. Re-run §1. A version bump alone should change nothing green; if
+   `pnpm typecheck:consumer` goes red, the JSX or event type surface moved and
+   that is a contract change, not a release chore (`docs/compatibility.md` §9
+   says the same thing about dependency bumps).
+
+## 3. What CI cannot check
+
+`native-build` compiles the native bundles and uploads them as an artifact. No
+device or emulator is attached to a runner, so **no native behaviour is executed
+in CI** (`.github/workflows/ci.yml`, the comment above the `native-build` job,
+and [compatibility.md](compatibility.md#8-what-this-document-does-not-claim) §8).
+Three things are therefore hand work:
+
+1. **The A03 smoke card** — `examples/lynx-for-native/src/main-thread.tsx`,
+   built to `dist/main.lynx.bundle`. It renders a counter and logs one
+   `[solid-lynx parity] {...}` line carrying all twenty Element PAPI operations.
+2. **The stylesheet probe** — `examples/lynx-for-native/src/stylesheet-probe.ts`,
+   built to `dist/stylesheet-probe.lynx.bundle`, logging one `[solid-lynx ss]`
+   line per stage.
+3. **The list probe** — `examples/lynx-for-native/src/list-probe.ts`, built to
+   `dist/list-probe.lynx.bundle`, logging one `[solid-lynx lp]` line per stage.
+
+Device setup, the pinned serial, the Explorer deep link, and the exact re-run
+commands are in `docs/building.md`, "Verified A03 setup". Two rules from that
+section are non-negotiable: every ADB command is pinned with
+`adb -s R9WT911JVVH`, and the tablet `19779010` is in use by another agent and
+must not be targeted.
+
+**Review the stylesheet probe without hardware.** Its runner is committed and
+prints every command a real run executes, in order, touching no device:
+
+```bash
+examples/lynx-for-native/scripts/run-stylesheet-probe.sh --dry-run
+```
+
+Ran here: exit 0. It prints the `get-state`, `pnpm native:build`, the loopback
+`python3 -m http.server 8099`, `adb reverse tcp:8099`, the
+`lynx://open?url=.../stylesheet-probe.lynx.bundle?v=<stamp>` deep link, the
+`logcat -d -s lynx_console` and `screencap` captures into
+`/tmp/solid-lynx-logs`, and the cleanup. Drop `--dry-run` to run it for real; it
+exits 3 with a message and changes nothing if the A03 is not attached.
+
+The same script is **only** for the stylesheet probe. There is no runner for the
+list probe — `git ls-files | grep probe` finds one `.sh`, this one — so the list
+probe is built, served and opened the way `docs/building.md` describes for the
+smoke card, with `list-probe.lynx.bundle` as the URL. A dry run of the
+stylesheet runner is evidence about that card only. No device run of either
+probe is recorded anywhere in this tree; `docs/capabilities.md` says so for the
+stylesheet probe in as many words.
+
+**Whether the device is attached right now:**
+
+```bash
+adb -s R9WT911JVVH get-state
+```
+
+**Not run for this release**, and not passable here: at this commit the command
+prints `error: device 'R9WT911JVVH' not found` and exits 1. No device run is
+recorded in this release.
+
+**The rule that decides whether a release is done.** A release that changes
+native-facing behaviour — the host adapter, event names or dispatch, CSS ids,
+list callbacks, anything that alters the emitted native bundle — needs the
+device run recorded in `docs/capabilities.md` before the release is called done.
+Not before the commit; before the release is declared. Where that record is
+absent, the release says so rather than inheriting the previous run's result.
+
+That is the current state, and it is not a formality: `docs/capabilities.md`
+records the stylesheet probe as **"This has not been run yet"**, its
+"Remaining blockers" section says the capability probe has not run on a device,
+and `docs/contract.md` §16 lists the stylesheet and list probes as built and
+unit-tested but **unmeasured on native**. A release note may repeat what
+`docs/parity-checklist.md` records from the A03 smoke (twenty shared operations,
+rendering, one `bindtap`); it may not upgrade anything else from "unmeasured".
+
+## 4. Build and pack
+
+```bash
+pnpm build          # tsc -p tsconfig.build.json -> dist/     exit 0
+pnpm pack --dry-run # list the tarball without writing it     exit 0, 33 entries
+```
+
+`pnpm pack --dry-run` ran here and listed **33 entries**: 30 files under
+`dist/` (`*.js` and `*.d.ts` for every `src/` module), plus `LICENSE`,
+`package.json`, `README.md`. It ends with `Tarball Details` /
+`solid-lynx-0.1.0.tgz` and writes no file (`git status` was clean afterwards).
+
+What ends up in the tarball is decided by `files` in `package.json`:
+`["dist", "README.md", "LICENSE"]`. `package.json` and the `LICENSE` also ship
+because npm always includes them. There is no `prepack` or `prepare` script, so
+`pnpm pack` does **not** rebuild `dist/` — run `pnpm build` first, or the tarball
+carries whatever was last built.
+
+What does **not** ship, and this surprises people reading the repo:
+
+- `src/`, `test/`, `examples/` — none of it.
+- `docs/` — including `docs/contract.md`, so a consumer reading the published
+  package gets `README.md` and the type declarations, not the contract.
+- `CHANGELOG.md`, even once it exists.
+- `tsconfig.json`, `tsconfig.build.json`, `vitest.config.ts`,
+  `playwright.config.ts`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.github/`.
+
+Consequence worth checking on every release: the `exports` map points at
+`dist/*.js` and `dist/*.d.ts` for five entry points. A new entry point or a moved
+file that is not under `dist/` is invisible in the tarball, and
+`pnpm pack --dry-run` is the cheapest place to notice.
+
+## 5. Publishing
+
+**Nothing in this repository publishes, and this procedure is unproven.** No git
+tag exists (`git tag --list` is empty), `package.json` has no `publishConfig`,
+and `.github/workflows/` contains only `ci.yml`. There is no `NPM_TOKEN` or
+registry credential wired into any workflow here.
+
+What the command would do, if it were ever run deliberately:
+
+- `pnpm publish` packs the same 33 entries §4 lists and uploads them to
+  `https://registry.npmjs.org/` as `solid-lynx@<package.json version>`. A dry
+  run was executed here to confirm the target and that nothing was uploaded:
+  `pnpm publish --dry-run --no-git-checks` printed
+  `📦 solid-lynx@0.1.0 → https://registry.npmjs.org/` and
+  `[WARN] Skip publishing solid-lynx@0.1.0 (dry run)`, exit 0, no tarball left
+  behind. **That is not a publish** and must not be cited as one.
+- A real publish would need publish rights on the `solid-lynx` name, which
+  currently belongs to another maintainer (`npm view solid-lynx version license
+  maintainers` → `1.0.0`, `MIT`, `pranshuchittora`, exit 0). A publish from this
+  repository would be expected to be rejected by the registry; that rejection was
+  **not** attempted and is not verified here.
+
+**Do not publish on the strength of this document.** No step in it has been
+executed against a registry, the name is taken, and there is no tag or workflow
+to make a publish repeatable. If publishing is ever wanted, the name, the
+credential, and the automation are decisions for the repository owner first, and
+this section gets rewritten from a run that actually happened.
+
+## 6. Rollback and known limitations
+
+Rollback is short because nothing has been released. There is no published
+version to unpublish or deprecate, no tag to move, and no registry state to
+restore. A version bump in this repository is rolled back by reverting the commit
+that changed `package.json`, `src/index.ts`, the changelog, and the README status
+line — they move together or not at all. `dist/` is gitignored and rebuildable
+(`pnpm build`), so it is never the thing to restore.
+
+If that changes — if a tag exists, or a publish happens — the rollback stops
+being a `git revert` and becomes a registry operation against a version that
+consumers may already have installed. That document does not exist yet.
+
+**What a release may not claim.**
+[compatibility.md §8](compatibility.md#8-what-this-document-does-not-claim),
+"What this document does not claim", is the list a release note has to stay
+inside: one Node version in CI (`node-version: 22`, not the declared
+`^20.19.0 || >=22.12.0` range), no native runtime in CI, no second native runtime
+and no device other than the A03, no cross-host stylesheet or list claims, and no
+`@lynx-js/types` version. `docs/contract.md` §16 is the companion list for
+exports with no test, including `version` itself and every native runtime claim
+beyond the recorded smoke.
+
+`ROADMAP.md`'s 1.0 milestone has open boxes — among them "Require native and web
+compatibility checks for changes to shared behavior" — so a release note should
+not read those as satisfied. `docs/capabilities.md` "Remaining blockers" is the
+per-capability version of the same statement.
+
+## 7. What this document could not run
+
+| Step | Status | Why |
+| --- | --- | --- |
+| A03 smoke card on a device | **not run** | `adb -s R9WT911JVVH get-state` → `device 'R9WT911JVVH' not found`, exit 1. No hardware attached in this worktree. |
+| Stylesheet probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0), which reviews the sequence and touches nothing. |
+| List probe on a device | **not run** | Same device, and there is no runner script for it — it is loaded by hand. |
+| `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; CI runs it on a bare runner. |
+| `pnpm publish` (real) | **not run**, deliberately | §5. The name belongs to another maintainer and this repository has no credential or release workflow. Only `--dry-run` was executed, and it uploaded nothing. |
+
+Everything else in this document — the install, the five gate commands
+(`typecheck`, `typecheck:consumer`, `test`, `build`, `pack --dry-run`), both
+browser suites, `pnpm web:build`, `pnpm native:build`, the stylesheet runner's
+`--dry-run`, the three version commands, the version-agreement one-liner,
+`npm view solid-lynx`, and `pnpm publish --dry-run` — was executed at this
+commit and exited 0.
