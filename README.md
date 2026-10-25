@@ -366,6 +366,9 @@ Solid control-flow components such as `For`, `Show`, `Switch`, `Index`, `Suspens
 See [ROADMAP.md](ROADMAP.md) for planned milestones and completion goals.
 For current native-device evidence, remaining platform gaps, and fresh-session
 continuation instructions, see [docs/session-handoff.md](docs/session-handoff.md).
+Upgrading from an earlier `0.x` build? [docs/migration.md](docs/migration.md) lists
+what to change against the frozen contract, including refs, CSS ids, event props,
+JSX types, the list API, and what deterministic cleanup does and does not prove.
 
 ## Development
 
