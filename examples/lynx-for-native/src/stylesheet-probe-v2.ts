@@ -34,8 +34,8 @@
  *   instead of being papered over.
  */
 
-import { createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
-import type { LynxNode, LynxRoot } from "solid-lynx";
+import { createLynxRoot, ensureLynxEnvironmentBasics } from "@apothic-ai/solid-lynx";
+import type { LynxNode, LynxRoot } from "@apothic-ai/solid-lynx";
 import { describeValue, safeCall } from "./stylesheet-probe-report.js";
 import {
   LOAD_STAGE_BYTES,
