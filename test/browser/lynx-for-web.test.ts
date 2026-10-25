@@ -101,6 +101,124 @@ async function tapAndReadLog(view: Locator, id: string, expected: string[]): Pro
   await expect.poll(() => eventLog(view)).toEqual(expected);
 }
 
+/**
+ * What a realm recorded for itself, written by `installRealmErrorSink`.
+ *
+ * `url` is read on the realm's own side as well: `diagnostics()` labels each
+ * record with the `about:srcdoc` frame it came from, which would not say which
+ * realm produced it. The realm's `location` does.
+ */
+interface RealmErrors {
+  url: string;
+  exceptions: string[];
+  consoleErrors: string[];
+}
+
+/** The global `installRealmErrorSink` writes, and the loader reads back. */
+const REALM_ERRORS_KEY = "__SOLID_LYNX_REALM_ERRORS__";
+
+/**
+ * Runs inside every realm of the page, including the Lynx one, before that
+ * realm's own scripts.
+ *
+ * `@lynx-js/web-core` runs the card's main-thread code in an iframe it creates
+ * inside `lynx-view`'s shadow root, so that realm is where this package executes
+ * at all. Playwright exposes no `pageerror` or `console` event on a `Frame`, and
+ * `page.on("pageerror")` / `page.on("console")` listen to the top-level page,
+ * so without this the record of an exception thrown while a card boots would be
+ * the parent document's record: empty, while the realm had failed.
+ *
+ * The realm serialises each record to a primitive as it arrives, so a read of it
+ * later cannot re-run a getter, cannot be blocked by a structured clone of a
+ * DOM-error object returned by `console.error("failed", error)`, and does not
+ * depend on the realm's own objects still being alive.
+ */
+function installRealmErrorSink(recordKey: string): void {
+  const target = globalThis as unknown as Record<string, unknown>;
+  const record: RealmErrors = { url: location.href, exceptions: [], consoleErrors: [] };
+  target[recordKey] = record;
+
+  const describe = (value: unknown): string => {
+    if (value instanceof Error) return `${value.name}: ${value.message}`;
+    if (typeof value === "string") return value;
+    try {
+      return String(value);
+    } catch {
+      return "<unprintable>";
+    }
+  };
+
+  (globalThis as unknown as Window).addEventListener("error", event => {
+    const { error, message, filename, lineno, colno } = event as ErrorEvent;
+    const where = filename ? ` (${filename}:${lineno}:${colno})` : "";
+    record.exceptions.push(`${describe(error ?? message)}${where}`);
+  });
+  (globalThis as unknown as Window).addEventListener("unhandledrejection", event => {
+    record.exceptions.push(`unhandled rejection: ${describe(event.reason)}`);
+  });
+
+  // Wrapped rather than captured on the side, because the realm's own framework
+  // reads the original through `globalThis.console`; replacing it would change
+  // what the fixture does. Only the sink sees the extra call.
+  for (const method of ["error", "warn"] as const) {
+    const original = console[method];
+    console[method] = (...args: unknown[]) => {
+      record.consoleErrors.push(`${method}: ${args.map(describe).join(" ")}`);
+      return original.apply(console, args);
+    };
+  }
+}
+
+/** The global `recordWorkerTraffic` writes, and the loader reads back. */
+const WORKER_TRAFFIC_KEY = "__SOLID_LYNX_WORKER_TRAFFIC__";
+
+/**
+ * Records the message sequence of every worker the page constructs.
+ *
+ * web-core decodes the card bundle in a worker and waits for its `done` before
+ * evaluating the card in the realm. A stall either side of that handshake is
+ * indistinguishable from a slow one unless the sequence is kept: `done` received
+ * and nothing after it is a main-thread step, `done` never received is the
+ * worker's. Wrapping `Worker` here keeps the report off the test's own
+ * scaffolding, which only ever sees what a worker chooses to log.
+ */
+function recordWorkerTraffic(recordKey: string): void {
+  const target = globalThis as unknown as Record<string, unknown>;
+  const traffic: { url: string; sent: string[]; received: string[] }[] = [];
+  target[recordKey] = traffic;
+
+  const describe = (value: unknown) => {
+    if (value === null || typeof value !== "object" || !("type" in value)) return typeof value;
+    const message = value as { type: unknown; label?: unknown };
+    // `label` separates the bundle's sections (config, style info, code,
+    // templates, manifest) by number, and named sections stringify to "NaN".
+    // Which of them arrived is what says how far the decode got.
+    return message.label === undefined
+      ? String(message.type)
+      : `${String(message.type)}:${String(message.label)}`;
+  };
+
+  const RealWorker = globalThis.Worker;
+  if (typeof RealWorker !== "function") return;
+  // A subclass keeps every `Worker` behaviour (including `postMessage`
+  // transfer lists and module workers) and only observes.
+  globalThis.Worker = class extends RealWorker {
+    constructor(url: string | URL, options?: WorkerOptions) {
+      super(url, options);
+      const entry = { url: String(url), sent: [] as string[], received: [] as string[] };
+      traffic.push(entry);
+      const post = this.postMessage.bind(this);
+      this.postMessage = (message: unknown, options?: StructuredSerializeOptions | Transferable[]) => {
+        entry.sent.push(describe(message));
+        return options === undefined ? post(message) : post(message, options as StructuredSerializeOptions);
+      };
+      this.addEventListener("message", event => {
+        entry.received.push(describe((event as MessageEvent).data));
+      });
+    }
+  };
+}
+
 async function loadFixture(page: Page): Promise<{
   bundleResponse: Response;
   consoleErrors: string[];
@@ -112,15 +230,22 @@ async function loadFixture(page: Page): Promise<{
   const pageErrors: string[] = [];
   const consoleErrors: string[] = [];
   const failedRequests: string[] = [];
+  const workerErrors: string[] = [];
+  const workersSeen: string[] = [];
   page.on("response", response => responses.push(response));
   page.on("pageerror", error => pageErrors.push(error.message));
   page.on("console", message => {
     if (message.type() === "error") consoleErrors.push(message.text());
   });
   page.on("worker", worker => {
+    // web-core decodes and evaluates the card's bundle in this worker, so it is
+    // the next thing that can stop a view between the stylesheet `link` and the
+    // card's own code, and it fails without touching the page's error lists.
+    workersSeen.push(worker.url());
     worker.on("console", message => {
       if (message.type() === "error") {
         consoleErrors.push(`Worker ${worker.url()}: ${message.text()}`);
+        workerErrors.push(`Worker ${worker.url()}: ${message.text()}`);
       }
     });
   });
@@ -129,6 +254,16 @@ async function loadFixture(page: Page): Promise<{
       `${request.method()} ${request.url()}: ${request.failure()?.errorText ?? "unknown failure"}`,
     );
   });
+
+  // The iframe the realm runs in is created after this navigation, and a
+  // `srcdoc` frame gets a fresh document of its own, so the sink has to be
+  // installed as an init script rather than injected into the page or into the
+  // frame on `frameattached` (where it would race the realm's own scripts).
+  await page.addInitScript(installRealmErrorSink, REALM_ERRORS_KEY);
+  // web-core hands the card bundle to a worker and awaits a reply. A worker that
+  // never answers looks exactly like a slow one from outside, so the reply
+  // sequence is recorded as it arrives and reported when a view stalls.
+  await page.addInitScript(recordWorkerTraffic, WORKER_TRAFFIC_KEY);
 
   await page.goto("/");
 
@@ -152,11 +287,87 @@ async function loadFixture(page: Page): Promise<{
   const expectedBundleUrl = new URL(resolvedBundleUrl);
   expect(expectedBundleUrl.pathname).toMatch(/\.web\.bundle$/);
 
-  const diagnostics = () => [
-    `Page errors:\n${pageErrors.length > 0 ? pageErrors.join("\n") : "(none)"}`,
-    `Console errors:\n${consoleErrors.length > 0 ? consoleErrors.join("\n") : "(none)"}`,
-    `Failed requests:\n${failedRequests.length > 0 ? failedRequests.join("\n") : "(none)"}`,
-  ].join("\n\n");
+  const list = (entries: string[]) => (entries.length > 0 ? entries.join("\n") : "(none)");
+
+  /**
+   * What each frame of the page recorded for itself.
+   *
+   * A frame with no record is one the sink never ran in, and that is reported
+   * as such instead of as a frame that raised nothing. Chrome exposes a
+   * `srcdoc` child frame to `page.frames()` the moment it is created, which is
+   * before the realm's document exists, so an empty record and a missing record
+   * are different findings here.
+   */
+  const realmRecords = async () => Promise.all(page.frames().map(async frame => {
+    const label = frame === page.mainFrame() ? "top-level document" : `frame ${frame.url()}`;
+    try {
+      const record = await frame.evaluate(
+        key => (globalThis as unknown as Record<string, unknown>)[key] as
+          | RealmErrors
+          | undefined,
+        REALM_ERRORS_KEY,
+      );
+      return { label, record: record ?? null, reachable: true, failure: null };
+    } catch (error) {
+      // A detached frame throws here. That is a finding about the frame, not
+      // about the page's error lists, so it is reported rather than dropped.
+      return { label, record: null, reachable: false, failure: (error as Error).message };
+    }
+  }));
+
+  const diagnostics = async () => {
+    const realms = await realmRecords();
+    return [
+      [
+        "Page errors (top-level document only - the Lynx realm is reported separately below):",
+        list(pageErrors),
+      ].join("\n"),
+      ["Console errors (top-level document only):", list(consoleErrors)].join("\n"),
+      ["Failed requests:", list(failedRequests)].join("\n"),
+      [
+        "Card bundle workers (web-core decodes and evaluates the bundle here):",
+        ...(page.workers().length === 0 && workersSeen.length === 0
+          ? ["  (no worker was ever constructed; the bundle was never handed to one)"]
+          : [
+            ...workersSeen.map(url => `  constructed: ${url}`),
+            ...page.workers().map(worker => `  live: ${worker.url()}`),
+            ...(workerErrors.length > 0
+              ? workerErrors.map(entry => `  error: ${entry}`)
+              : ["  (no console.error from a worker)"]),
+            ...(await page.evaluate(key => {
+              const traffic = (globalThis as unknown as Record<string, unknown>)[key] as
+                | { url: string; sent: string[]; received: string[] }[]
+                | undefined;
+              return (traffic ?? []).map(entry =>
+                `  messages ${entry.url.split("/").at(-1)}:`
+                + ` sent [${entry.sent.join(", ") || "none"}]`
+                + ` received [${entry.received.join(", ") || "none"}]`,
+              );
+            }, WORKER_TRAFFIC_KEY)),
+          ]),
+      ].join("\n"),
+      [
+        "Lynx iframe realm:",
+        ...realms.map(({ label, record, reachable, failure }) => {
+          if (!reachable) return `  ${label}: unreachable - ${failure}`;
+          if (!record) return `  ${label}: no error sink installed (this frame is not covered)`;
+          const exceptions = record.exceptions.length > 0
+            ? record.exceptions.map(entry => `      ${entry}`).join("\n")
+            : "      (no exception or unhandled rejection thrown in this realm)";
+          const logged = record.consoleErrors.length > 0
+            ? record.consoleErrors.map(entry => `      ${entry}`).join("\n")
+            : "      (no console.error or console.warn called in this realm)";
+          return [
+            `  ${label} (realm location ${record.url}):`,
+            "    exceptions:",
+            exceptions,
+            "    console:",
+            logged,
+          ].join("\n");
+        }),
+      ].join("\n"),
+    ].join("\n\n");
+  };
   const findBundleResponse = () => responses.find(response => {
     const url = new URL(response.url());
     return url.origin === expectedBundleUrl.origin && url.pathname === expectedBundleUrl.pathname;
@@ -171,43 +382,162 @@ async function loadFixture(page: Page): Promise<{
       .toBeTruthy();
   } catch (error) {
     throw new Error(
-      `Timed out waiting for the Lynx web bundle response at ${resolvedBundleUrl}.\n\n${diagnostics()}`,
+      `Timed out waiting for the Lynx web bundle response at ${resolvedBundleUrl}.\n\n${await diagnostics()}`,
       { cause: error },
     );
   }
 
   const bundleResponse = findBundleResponse();
-  expect(bundleResponse, `expected a response for ${resolvedBundleUrl}\n\n${diagnostics()}`)
+  const bundleDiagnostics = await diagnostics();
+  expect(bundleResponse, `expected a response for ${resolvedBundleUrl}\n\n${bundleDiagnostics}`)
     .toBeDefined();
-  expect(bundleResponse!.ok(), `bundle request failed: ${resolvedBundleUrl}\n\n${diagnostics()}`)
+  expect(bundleResponse!.ok(), `bundle request failed: ${resolvedBundleUrl}\n\n${bundleDiagnostics}`)
     .toBe(true);
-  expect(await bundleResponse!.finished(), `bundle transfer failed: ${resolvedBundleUrl}\n\n${diagnostics()}`)
+  expect(await bundleResponse!.finished(), `bundle transfer failed: ${resolvedBundleUrl}\n\n${bundleDiagnostics}`)
     .toBeNull();
 
+  /**
+   * What `<lynx-view>` looks like right now, on both sides of the boundary
+   * between the page and the realm.
+   *
+   * `phase` names how far web-core got, in the order it does those steps:
+   * async import of `LynxViewInstance` -> stylesheet `<link>` in the shadow root
+   * -> a hidden iframe with an `about:srcdoc` document -> the card's
+   * main-thread bundle evaluated in that iframe's realm -> the Lynx tree.
+   * The first phase that has not happened is what the view was waiting on, and
+   * reading it off a stuck view is the difference between "slow" and "stopped".
+   */
   const viewState = () => view.evaluate(element => {
     const shadowRoot = element.shadowRoot;
-    const iframe = shadowRoot?.querySelector("iframe");
+    const iframe = shadowRoot?.querySelector("iframe") as HTMLIFrameElement | null | undefined;
     const frameWindow = iframe?.contentWindow as
       | (Window & { __SOLID_LYNX_PROBE__?: unknown })
       | null
       | undefined;
+    const exists = Boolean(frameWindow?.document);
+    /*
+     * Reading this `undefined` is the whole point: a realm the page cannot
+     * reach is a different fault from a realm that ran and threw. It is read
+     * inside a try so the answer is reported instead of aborting the snapshot.
+     */
+    let realmReachable = false;
+    let realmFailure: string | null = null;
+    try {
+      realmReachable = Boolean(frameWindow?.document?.documentElement);
+    } catch (error) {
+      realmFailure = (error as Error).message;
+    }
+    const probeInstalled = Boolean(frameWindow?.__SOLID_LYNX_PROBE__);
+    /*
+     * web-core inserts the card's main-thread script into the realm's own
+     * document (`createIFrameRealm.loadScript`) and awaits its `load` event with
+     * no timeout. Nothing is raised when that load does not finish, so this is
+     * the stage that can stall with an empty error list on every channel: the
+     * script is in the realm, and the realm never runs it.
+     *
+     * The realm also carries web-core's own inline bootstrap script (the one
+     * that posts `lynx:mtsready`), which has no `src`. So an entry with no `src`
+     * is not the card: `cardScript` is true only for a script that has one.
+     */
+    const realmScripts = (() => {
+      try {
+        return Array.from(frameWindow?.document?.head?.querySelectorAll("script") ?? [])
+          .map(script => ({
+            src: script.src,
+            inline: !script.src,
+            readyState: (script as HTMLScriptElement & { readyState?: string }).readyState ?? null,
+          }));
+      } catch {
+        return [];
+      }
+    })();
+    const cardScriptInserted = realmScripts.some(script => !script.inline);
+    const renderedCount = shadowRoot?.querySelector("#count")?.textContent ?? null;
+    const rectOf = (node: Element) => {
+      const rect = node.getBoundingClientRect();
+      return { width: Math.round(rect.width), height: Math.round(rect.height) };
+    };
     return {
-      renderedCount: shadowRoot?.querySelector("#count")?.textContent ?? null,
+      phase: !shadowRoot
+        ? "no shadow root"
+        : shadowRoot.querySelectorAll("iframe").length === 0
+          ? "no realm iframe: web-core's LynxViewInstance module has not been imported yet"
+          : !exists
+            ? "realm iframe created, its document not loaded yet"
+            : !shadowRoot.querySelector("link")
+              ? "realm iframe created, LynxViewInstance not constructed yet (no stylesheet link)"
+              : !probeInstalled
+                ? cardScriptInserted
+                  ? "the card's main-thread script is in the realm and has not finished loading"
+                  : "LynxViewInstance constructed; the card's main-thread script is not in the realm yet"
+                : renderedCount === null
+                  ? "card bundle evaluated, no Lynx content in the shadow root yet"
+                  : `rendered: ${renderedCount}`,
+      renderedCount,
       shadowChildren: Array.from(shadowRoot?.children ?? []).map(child => child.tagName.toLowerCase()),
       iframeCount: shadowRoot?.querySelectorAll("iframe").length ?? 0,
-      probeInstalled: Boolean(frameWindow?.__SOLID_LYNX_PROBE__),
+      // The realm iframe is `display: none` on purpose; the size that matters is
+      // `lynx-view`'s own box. Zero width or height is a real candidate cause:
+      // it is what the element reports while the card has not been laid out.
+      viewDisplay: getComputedStyle(element).display,
+      viewBox: rectOf(element),
+      // False here says the page never reached the layout step, whatever the
+      // realm did, so the two findings cannot be confused for one another.
+      viewIsVisible: element.checkVisibility(),
+      realmUrl: iframe ? frameWindow?.location?.href ?? "<no document>" : null,
+      realmReachable,
+      realmFailure,
+      realmScripts,
+      cardScriptInserted,
+      // web-core appends a render-blocking stylesheet `link` to the shadow root
+      // in `LynxViewInstance`'s constructor, before the card's bundle runs, so a
+      // `link` that is present marks that the constructor ran and the next step
+      // is the decode worker's. `rules` is how many of its rules loaded: a link
+      // whose `sheet` is missing or empty is a stylesheet that never arrived,
+      // which is a different fault from a loaded one whose card never ran.
+      link: (() => {
+        const link = shadowRoot?.querySelector("link");
+        if (!link) return null;
+        let rules: number | null = null;
+        try {
+          rules = link.sheet?.cssRules.length ?? null;
+        } catch {
+          rules = null;
+        }
+        return { href: link.getAttribute("href"), blocking: link.getAttribute("blocking"), rules };
+      })(),
+      probeInstalled,
     };
   });
+
+  /**
+   * `lynx-view`'s box while the loader waits, oldest first.
+   *
+   * A size that is stable and zero says the page never laid the view out; a
+   * size that changes says it was still booting when the wait gave up.
+   */
+  const viewBoxes: string[] = [];
   const renderState = async () => {
     if (pageErrors.length > 0 || consoleErrors.length > 0 || failedRequests.length > 0) {
       return "error";
     }
-    return (await viewState()).renderedCount === "Counter: 0" ? "ready" : "waiting";
+    const state = await viewState();
+    const entry = `${state.viewBox.width}x${state.viewBox.height}`;
+    if (viewBoxes.at(-1) !== entry) viewBoxes.push(entry);
+    return state.renderedCount === "Counter: 0" ? "ready" : "waiting";
   };
   // The first page load of a run pays for Vite's cold dependency optimization
   // and the Lynx wasm start-up, and the view can come up with its main-thread
   // realm still empty. Reload once and wait again before calling that a failure,
   // so a slow cold start is not reported as a rendering regression.
+  //
+  // This covers both realms, and a failure says which one it was in. The page
+  // listeners above see the top-level document only; the reloaded document's
+  // Lynx realm is covered by the `installRealmErrorSink` init script, which runs
+  // in that frame as well, so "top-level document only: (none)" in the report
+  // is backed by a separate, non-empty realm section. `viewState()` then names
+  // the boot phase the view stopped in and `viewBoxOverWait` says whether
+  // `lynx-view` had a box to lay out while the wait ran.
   let contentRendered = false;
   for (let attempt = 1; attempt <= 2 && !contentRendered; attempt += 1) {
     if (attempt > 1) await page.reload();
@@ -223,16 +553,17 @@ async function loadFixture(page: Page): Promise<{
       if (attempt === 2) {
         const state = await viewState();
         throw new Error(
-          `Timed out waiting for rendered Lynx content after ${resolvedBundleUrl} responded.\n\n${diagnostics()}\n\nView state:\n${JSON.stringify(state, null, 2)}`,
+          `Timed out waiting for rendered Lynx content after ${resolvedBundleUrl} responded.\n\n${await diagnostics()}\n\nView state:\n${JSON.stringify({ ...state, viewBoxOverWait: viewBoxes }, null, 2)}`,
           { cause: error },
         );
       }
     }
   }
 
-  expect(pageErrors, diagnostics()).toEqual([]);
-  expect(consoleErrors, diagnostics()).toEqual([]);
-  expect(failedRequests, diagnostics()).toEqual([]);
+  const finalDiagnostics = await diagnostics();
+  expect(pageErrors, finalDiagnostics).toEqual([]);
+  expect(consoleErrors, finalDiagnostics).toEqual([]);
+  expect(failedRequests, finalDiagnostics).toEqual([]);
 
   const contentIsInsideView = await view.evaluate(element => {
     const shadowRoot = element.shadowRoot;

@@ -12,6 +12,12 @@
  * `<lynx-view>` runs its own bundle inside its own realm, so tests reach the
  * probe for a view through that view's main-thread iframe and every view keeps
  * an independent trace.
+ *
+ * A missing probe is a distinct finding and is reported as one. The loader's
+ * side of this, `installRealmErrorSink`, records what the realm throws and logs
+ * in the same realm, so an empty `exceptions` list next to `probeInstalled:
+ * false` reads as "the realm ran and raised nothing" instead of being taken for
+ * evidence that nothing ran at all.
  */
 
 type PapiFunction = (...args: any[]) => any;

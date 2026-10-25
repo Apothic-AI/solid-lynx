@@ -426,6 +426,16 @@ pnpm web:test
 
 To open the fixture manually, run `pnpm web:serve` and visit <http://127.0.0.1:4173>. The example includes `#count`, the `bindtap` button `#increment`, the `onClick` button `#alias-increment`, reactive `#status`, `#dataset-readout` (updated from `event.currentTarget.dataset.count` when `#status` is tapped), and `#dispose`. The serial Chromium suite passed all three checks: bundle loading and mount inside `<lynx-view>`, both event props with reactive class/style and dataset updates, and unmounting through `#dispose`.
 
+When a view does not render, the suite reports both realms rather than only the
+page. `@lynx-js/web-core` runs the card in an iframe inside `lynx-view`'s shadow
+root, and Playwright exposes no `pageerror` or `console` event on a `Frame`, so
+the loader installs an error sink in every realm as an init script. A failure
+carries that realm's exceptions and console output with its own `location`, the
+boot phase the view stopped in, `lynx-view`'s box size over the wait, whether the
+realm is reachable, the shadow stylesheet `link`'s loaded rule count, and the
+card worker's message sequence. "(none)" against the top-level document says
+nothing about the realm; read the realm section for that.
+
 ## License
 
 Copyright 2026 Apothic AI.

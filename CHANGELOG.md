@@ -19,6 +19,52 @@ this project ships Apache-2.0 and is not that package.
 
 ## Unreleased
 
+### The browser suite reports both realms, and names the stage a view stopped in
+
+Two runs of the same commit failed different tests — `keeps a second root
+isolated and remounts a disposed root` and `unmounts the Solid app when #dispose
+is clicked` — with byte-identical reports: `Page errors: (none)`, `Console
+errors: (none)`, `Failed requests: (none)`, `renderedCount: null`, `shadowChildren:
+["iframe", "link"]`, `probeInstalled: false`. That report read as "nothing
+failed", and it could not have said otherwise. `@lynx-js/web-core` runs the card
+in an iframe inside `lynx-view`'s shadow root, and `page.on("pageerror")` /
+`page.on("console")` listen to the top-level page only, so an exception in the
+realm was unobservable by construction.
+
+The fixture is healthy and the tests are not at fault: the same stall is
+reproducible in the fixture with no test involved, at 7 of 250 boots (three
+runs of 40, 60 and 150, each in exactly the CI state) against the dev server,
+and it then appeared in the browser suite itself, failing `replaces and removes
+bindings and detaches them with their subtree` with the same report CI produced.
+One attempt then stalls for the whole 30s wait. Instrumenting web-core's
+handshake located it: the decode worker replies `ready, section×5, done` — the
+bundle decoded — and the card's main-thread script is never inserted into the
+realm, which is web-core's in-flight lazy import of `LynxViewInstance` (the one
+that appends the stylesheet `link`) and inserts nothing afterwards. Nothing
+raises, so no channel can report it.
+
+`loadFixture` now records what a stalled view looks like instead of only what
+the page saw:
+
+- an init script installs an `error` / `unhandledrejection` / `console` sink in
+  every realm, so `exceptions` and `console` are reported per frame with the
+  realm's own `location`, and a frame with no sink says so rather than being
+  folded into "(none)";
+- `viewState()` names the boot phase (`no shadow root` → `no realm iframe` →
+  `realm iframe created` → `LynxViewInstance constructed` → card script in the
+  realm → rendered), the realm's reachability, `lynx-view`'s computed box and
+  visibility, the shadow stylesheet `link`'s loaded rule count, and every script
+  in the realm's `head`;
+- `viewBoxOverWait` keeps the sequence of `lynx-view` box sizes observed while
+  the wait ran, so a zero box that never changed is distinguishable from one
+  still being laid out;
+- worker construction and message sequence are recorded, which is what separates
+  a worker that never answered from a main-thread step that never ran.
+
+No timeout, retry, or assertion was relaxed, and the wait still fails on a view
+that does not render. README's browser-suite section and the loader's own notes
+say what "(none)" now covers.
+
 ### Two probe-card defects the first real captures found, fixed in the cards
 
 Both were found by running the now real-format-capable verifier against captures
