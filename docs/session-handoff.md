@@ -65,12 +65,13 @@ is correct; that is not a regression, it is the file being older than you.
 ```bash
 pnpm typecheck                     # exit 0
 pnpm typecheck:consumer            # exit 0; test/consumer/tsconfig.json + tsconfig.dev.json
-pnpm test                          # exit 0; 213 tests in 9 files, after `pnpm build`
+pnpm test                          # exit 0; 221 tests in 10 files, after `pnpm build`
                                    #   and before `typecheck:consumer`:
                                    #   renderer 63, require-native-evidence 50,
                                    #   native-probe-verify 41, native-parity-verify 19,
                                    #   list-probe-report 14, parity 9,
-                                   #   stylesheet-probe-report 7, rspeedy 6, packaging 4
+                                   #   consumer-install 8, stylesheet-probe-report 7,
+                                   #   rspeedy 6, packaging 4
 pnpm build                         # exit 0
 pnpm pack --dry-run                # exit 0; 46 tarball entries (30 under dist/, 11 under docs/,
                                    #   plus LICENSE, package.json, README.md, CHANGELOG.md,

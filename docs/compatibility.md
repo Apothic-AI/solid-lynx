@@ -237,6 +237,16 @@ There is no `dependencies` block. The runtime entry imports only `solid-js`; the
 runtime dependency, which matches what `README.md` "Install" already tells an
 app to install.
 
+**Covered by a test.** `test/consumer-install.test.ts` packs this workspace with
+`pnpm pack`, unpacks the tarball into `<temp>/app/node_modules/solid-lynx`, copies
+`solid-js` beside it and nothing else, and imports every documented entry in a
+`node --input-type=module` child process whose cwd is that directory. The
+permitted entry points import with **no toolchain peer present**, and
+`solid-lynx/rspeedy` resolves through `exports` and fails only on a declared
+optional peer — so this section's split between required and optional is measured
+rather than argued. The test also fails if the packed manifest grows a
+`dependencies` block or if any optional peer stops being `optional: true`.
+
 ## 7. Supported-version summary
 
 | Component | Supported now | Evidence | Width |
@@ -304,6 +314,10 @@ app to install.
 - **No cross-OS claim.** Every matrix leg and every other job runs on
   `ubuntu-latest`. macOS and Windows are untested, so nothing here says the
   package installs or runs there.
+- **No package-manager resolution claim.** The consumer test extracts the tarball
+  itself instead of running `npm install`, precisely so it needs no registry. It
+  proves the installed layout node resolves against, not that a package manager
+  resolves this manifest's peer set the way this document says.
 - **No @lynx-js/types version.** The package is not installed, so no version of
   the official typings is supported or claimed. See
   [contract.md](contract.md) §12.

@@ -44,7 +44,7 @@ time this repository does **not** use the automatic runtime: `pluginSolidLynx()`
 registers `babel-preset-solid` with `generate: "universal"`, which emits
 `createComponent`/`insert` calls against the root entry instead (§13). The
 runtime functions exported by those two entry points (`jsx`, `jsxs`, `jsxDEV`,
-`Fragment`) are therefore typed and shipped but exercised by no test in this
+`Fragment`) are therefore typed and shipped but called by no test in this
 repository; they are **provisional**. See §16.
 
 The root entry re-exports the Solid control-flow components `For`, `Show`,
@@ -55,7 +55,10 @@ the import fails at build time (see [building.md](building.md), "Known
 limitation", and `docs/capabilities.md`, "Overlays and portals").
 
 `version` (`src/index.ts:72`) is the string `"1.0.0"`. It is exported, it is
-**provisional**, and no test asserts it.
+**provisional**, and the only assertion on it is in
+`test/consumer-install.test.ts`: the value the installed package exports must
+equal the `version` in the `package.json` inside its own tarball. A release that
+bumps one and not the other fails there.
 
 ## 2. `createLynxRoot(options?)`
 
@@ -911,11 +914,12 @@ These items are exported or described above but have **no automated test in
 this repository**. They are listed so a reader can tell a frozen promise from a
 documented intention:
 
-- The page-creating branch of `createLynxRoot` (`__CreatePage` +
+- The **successful** page-creating branch of `createLynxRoot` (`__CreatePage` +
   `__GetElementUniqueID`), `renderLynxPage`, `createLynxPage`, `getLynxPageId`,
-  and `createLynxHost` by name.
+  and `createLynxHost` by name. The failure path is covered: with no Lynx host at
+  all, `createLynxRoot()` throws the named `__CreatePage` diagnostic, asserted in
+  `test/consumer-install.test.ts` against the installed package.
 - `initializeLynxRootContext` and `ensureLynxEnvironmentBasics`.
-- `version`.
 - `renderer.parseEventProp` as a method (the pure `parseEventProp` is tested).
 - The `[handler, data]` event tuple at dispatch time (it is type-checked only).
 - The `background:` namespace at dispatch time (it is type-checked only, in
@@ -931,8 +935,10 @@ documented intention:
   `test/list-probe-report.test.ts`), but neither has been run on a device, so
   their native findings are unmeasured. No native runtime executes in CI.
 - The runtime functions of `solid-lynx/jsx-runtime` and
-  `solid-lynx/jsx-dev-runtime` (`jsx`, `jsxs`, `jsxDEV`, `Fragment`). Only their
-  types are exercised, by the two consumer fixtures.
+  `solid-lynx/jsx-dev-runtime` (`jsx`, `jsxs`, `jsxDEV`, `Fragment`). The two
+  consumer fixtures exercise their types; `test/consumer-install.test.ts` asserts
+  that each name exists as a function on the installed entry. What they *do* is
+  called by no test here.
 - `Suspense`, `SuspenseList`, `Switch`, `Match`, `Index`, and `ErrorBoundary`
   are re-exported but used by no test or example in this repository. They are
   **provisional**, not stable.
