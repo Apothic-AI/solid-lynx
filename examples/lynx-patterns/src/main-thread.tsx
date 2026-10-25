@@ -1,6 +1,6 @@
 import { For, Show, createSignal } from "solid-js";
-import { createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
-import type { LynxNode, LynxPapi, LynxRoot } from "solid-lynx";
+import { createLynxRoot, ensureLynxEnvironmentBasics } from "@apothic-ai/solid-lynx";
+import type { LynxNode, LynxPapi, LynxRoot } from "@apothic-ai/solid-lynx";
 import { installCapabilityProbe, type CapabilityReport } from "./capability-probe.js";
 
 interface LynxEngine {

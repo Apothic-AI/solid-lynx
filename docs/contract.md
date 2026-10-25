@@ -1,8 +1,8 @@
 # Public contract (frozen for 1.0)
 
-This document freezes the public contract of `solid-lynx@0.1.0` as it exists in
-this repository. Everything here is copied from the source named next to it; the
-"Covered by" column names the test that fails if the behaviour changes.
+This document freezes the public contract of `@apothic-ai/solid-lynx@1.0.0` as
+it exists in this repository. Everything here is copied from the source named next
+to it; the "Covered by" column names the test that fails if the behaviour changes.
 
 Statuses used in this document:
 
@@ -26,20 +26,31 @@ verified in this repository it is marked **unverified** rather than asserted.
 
 | Specifier | Types | Runtime | Contract |
 | --- | --- | --- | --- |
-| `solid-lynx` | `dist/index.d.ts` | `dist/index.js` | stable |
-| `solid-lynx/jsx-runtime` | `dist/jsx-runtime.d.ts` | `dist/jsx-runtime.js` | stable for its **types**; the runtime functions are **provisional** (see below) |
-| `solid-lynx/jsx-dev-runtime` | `dist/jsx-dev-runtime.d.ts` | `dist/jsx-dev-runtime.js` | stable for its **types**; the runtime functions are **provisional** (see below) |
-| `solid-lynx/parity` | `dist/parity.d.ts` | `dist/parity.js` | provisional (diagnostic tooling) |
-| `solid-lynx/rspeedy` | `dist/rspeedy.d.ts` | `dist/rspeedy.js` | stable |
+| `@apothic-ai/solid-lynx` | `dist/index.d.ts` | `dist/index.js` | stable |
+| `@apothic-ai/solid-lynx/jsx-runtime` | `dist/jsx-runtime.d.ts` | `dist/jsx-runtime.js` | stable for its **types**; the runtime functions are **provisional** (see below) |
+| `@apothic-ai/solid-lynx/jsx-dev-runtime` | `dist/jsx-dev-runtime.d.ts` | `dist/jsx-dev-runtime.js` | stable for its **types**; the runtime functions are **provisional** (see below) |
+| `@apothic-ai/solid-lynx/parity` | `dist/parity.d.ts` | `dist/parity.js` | provisional (diagnostic tooling) |
+| `@apothic-ai/solid-lynx/rspeedy` | `dist/rspeedy.d.ts` | `dist/rspeedy.js` | stable |
 
 The package is ESM only (`"type": "module"`, `package.json:18`) and declares
 `"sideEffects": false` (`package.json:19`). There is no CommonJS entry, no
 `./package.json` export, and no deep-import export for individual modules, so
-`solid-lynx/dist/root.js` is outside the contract even though it resolves.
+`@apothic-ai/solid-lynx/dist/root.js` is outside the contract even though it
+resolves.
+
+**The published name is scoped.** Every specifier above is under the npm
+organisation `@apothic-ai`: the unscoped `solid-lynx` on npm belongs to an
+unrelated MIT package (see `CHANGELOG.md`, "Package name"), so this renderer is
+published as `@apothic-ai/solid-lynx`. The subpaths are unchanged — the scope
+replaces the leading `solid-lynx` only — and `package.json` carries
+`publishConfig.access: "public"` because a scoped package defaults to
+`restricted`. The repository and these documents still call the renderer
+solid-lynx when they are naming the product rather than a module specifier.
 
 A note on the JSX entry points, because the distinction matters for a migration:
-TypeScript resolves `jsxImportSource: "solid-lynx"` through the `jsx-runtime`
-and `jsx-dev-runtime` type entries, and that type surface is contract. At build
+TypeScript resolves `jsxImportSource: "@apothic-ai/solid-lynx"` through the
+`jsx-runtime` and `jsx-dev-runtime` type entries, and that type surface is
+contract. At build
 time this repository does **not** use the automatic runtime: `pluginSolidLynx()`
 registers `babel-preset-solid` with `generate: "universal"`, which emits
 `createComponent`/`insert` calls against the root entry instead (§13). The
@@ -256,7 +267,7 @@ as **unverified**.
 
 ## 5. The JSX compile contract (compiler helpers)
 
-`solid-lynx`'s root entry exports the helper functions that
+`@apothic-ai/solid-lynx`'s root entry exports the helper functions that
 `babel-preset-solid` with `generate: "universal"` emits
 (`src/index.ts:1-14`, implementations in `src/universal.ts`). Contract:
 **stable**, because a compiled bundle does not work without them.
@@ -632,7 +643,7 @@ createList<T>(options: LynxListOptions<T>): LynxList<T>;
 
 `createLynxList(host, renderer, defaultParent, options)` is also exported from
 `src/list.ts:113` but **not** from the package root (`src/index.ts:48-49` exports
-only the types), so it is not reachable by a consumer of `solid-lynx`. Use
+only the types), so it is not reachable by a consumer of `@apothic-ai/solid-lynx`. Use
 `root.createList()`.
 
 `root.createList()` throws when the host does not implement both
@@ -798,7 +809,7 @@ Frozen:
 
 Custom tags are **provisional**: they are opt-in through declaration merging,
 demonstrated by `test/consumer/custom-elements.d.ts` for both
-`solid-lynx/jsx-runtime` and `solid-lynx/jsx-dev-runtime`.
+`@apothic-ai/solid-lynx/jsx-runtime` and `@apothic-ai/solid-lynx/jsx-dev-runtime`.
 
 The type-level rejections are part of the contract and are asserted with
 `@ts-expect-error` in `test/consumer/jsx-runtime.tsx` (unknown tags, unknown
@@ -821,13 +832,13 @@ so no behaviour is promised for the `data` argument.
 
 ## 13. The Rspeedy integration
 
-Source: `src/rspeedy.ts`, exposed as `solid-lynx/rspeedy`. Contract: **stable**.
+Source: `src/rspeedy.ts`, exposed as `@apothic-ai/solid-lynx/rspeedy`. Contract: **stable**.
 
 ```ts
 export function pluginSolidLynx(options: SolidLynxPluginOptions = {}): RsbuildPlugin[]
 
 export interface SolidLynxPluginOptions {
-  moduleName?: string;                        // default "solid-lynx"
+  moduleName?: string;                        // default "@apothic-ai/solid-lynx"
   generate?: "universal" | "dom" | "ssr" | "hydrate";  // default "universal"
   hydratable?: boolean;                       // default false
   delegateEvents?: string[];                  // default []
@@ -857,7 +868,7 @@ The plugin deliberately does **not** include the Lynx engine plugins;
 `pluginLynx()` and `pluginVanillaLynx()` stay in the app's config
 (`src/rspeedy.ts:110-124`, and the three example configs under `examples/`).
 
-## 14. Diagnostics: `solid-lynx/parity`
+## 14. Diagnostics: `@apothic-ai/solid-lynx/parity`
 
 Source: `src/parity.ts`. Contract: **provisional** — a diagnostic tool, not a
 rendering API.
@@ -934,8 +945,8 @@ documented intention:
   tests (`test/stylesheet-probe-report.test.ts`,
   `test/list-probe-report.test.ts`), but neither has been run on a device, so
   their native findings are unmeasured. No native runtime executes in CI.
-- The runtime functions of `solid-lynx/jsx-runtime` and
-  `solid-lynx/jsx-dev-runtime` (`jsx`, `jsxs`, `jsxDEV`, `Fragment`). The two
+- The runtime functions of `@apothic-ai/solid-lynx/jsx-runtime` and
+  `@apothic-ai/solid-lynx/jsx-dev-runtime` (`jsx`, `jsxs`, `jsxDEV`, `Fragment`). The two
   consumer fixtures exercise their types; `test/consumer-install.test.ts` asserts
   that each name exists as a function on the installed entry. What they *do* is
   called by no test here.

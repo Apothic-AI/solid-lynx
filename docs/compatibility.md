@@ -229,9 +229,9 @@ After this change, `package.json`:
 Only `solid-js` is a non-optional peer, because only the runtime entry needs it:
 `dist/index.js` and `dist/universal.js` import `solid-js` and
 `solid-js/universal`. The other three are needed only by the
-`solid-lynx/rspeedy` entry (`src/rspeedy.ts:1-2` imports `@rsbuild/core` and
-`@rsbuild/plugin-babel`; `babel-preset-solid` is referenced by name in the preset
-it emits), so a consumer that only renders — for example a test double built on
+`@apothic-ai/solid-lynx/rspeedy` entry (`src/rspeedy.ts:1-2` imports
+`@rsbuild/core` and `@rsbuild/plugin-babel`; `babel-preset-solid` is referenced by
+name in the preset it emits), so a consumer that only renders — for example a test double built on
 `createLynxRenderer` — does not need them. Declaring them as peers with
 `optional: true` records the requirement without forcing an install.
 
@@ -241,14 +241,18 @@ runtime dependency, which matches what `README.md` "Install" already tells an
 app to install.
 
 **Covered by a test.** `test/consumer-install.test.ts` packs this workspace with
-`pnpm pack`, unpacks the tarball into `<temp>/app/node_modules/solid-lynx`, copies
-`solid-js` beside it and nothing else, and imports every documented entry in a
-`node --input-type=module` child process whose cwd is that directory. The
-permitted entry points import with **no toolchain peer present**, and
-`solid-lynx/rspeedy` resolves through `exports` and fails only on a declared
-optional peer — so this section's split between required and optional is measured
-rather than argued. The test also fails if the packed manifest grows a
-`dependencies` block or if any optional peer stops being `optional: true`.
+`pnpm pack`, unpacks the tarball into
+`<temp>/app/node_modules/@apothic-ai/solid-lynx` (the scope as its own directory
+level, as a registry install lays it out), copies `solid-js` beside it and nothing
+else, and imports every documented entry in a `node --input-type=module` child
+process whose cwd is that directory. The permitted entry points import with **no
+toolchain peer present**, and `@apothic-ai/solid-lynx/rspeedy` resolves through
+`exports` and fails only on a declared optional peer — so this section's split
+between required and optional is measured rather than argued. The test also fails
+if the packed manifest grows a `dependencies` block, if any optional peer stops
+being `optional: true`, if the manifest's `name` or its
+`publishConfig.access: "public"` changes, or if the bare unscoped `solid-lynx`
+specifier starts resolving again.
 
 ## 7. Supported-version summary
 

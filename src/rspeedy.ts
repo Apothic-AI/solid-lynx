@@ -11,7 +11,10 @@ import { pluginBabel, type PluginBabelOptions } from "@rsbuild/plugin-babel";
  * why the settings live in one place instead of in each app's config.
  */
 export interface SolidLynxPluginOptions {
-  /** Package that owns the universal JSX runtime. Defaults to `solid-lynx`. */
+  /**
+   * Package that owns the universal JSX runtime. Defaults to
+   * `@apothic-ai/solid-lynx`, the name this package is published under.
+   */
   moduleName?: string;
   /**
    * Component generation mode. Lynx renders through the universal renderer, so
@@ -49,7 +52,7 @@ export function solidLynxBabelPreset(options: SolidLynxPluginOptions = {}): {
   options: Record<string, unknown>;
 } {
   const {
-    moduleName = "solid-lynx",
+    moduleName = "@apothic-ai/solid-lynx",
     generate = "universal",
     hydratable = false,
     delegateEvents = [],

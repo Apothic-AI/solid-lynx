@@ -13,9 +13,11 @@ harness; the commands are prose and shell.
   frozen in [contract.md](contract.md). Check `git status --short --branch` and
   recent commits before editing, because `master` moves under a worktree while
   other tranches land.
-- Nothing is tagged or published: no git tag exists, `package.json` has no
-  `publishConfig`, and no workflow publishes ([release.md](release.md) §5). The
-  npm name is occupied by an unrelated package — see "Remaining Work".
+- Nothing is tagged or published: no git tag exists and no workflow publishes
+  ([release.md](release.md) §5). The manifest's `name` is
+  `@apothic-ai/solid-lynx` with `publishConfig.access: "public"`; the unscoped npm
+  name is occupied by an unrelated package, which is why the scope exists — see
+  "Remaining Work".
 - No changes from this work have been pushed. `git rev-list --count
   origin/master..master` is the number of commits sitting on `master` that no
   remote has, which is also how far ahead of `origin/master` a worktree branch
@@ -65,17 +67,17 @@ is correct; that is not a regression, it is the file being older than you.
 ```bash
 pnpm typecheck                     # exit 0
 pnpm typecheck:consumer            # exit 0; test/consumer/tsconfig.json + tsconfig.dev.json
-pnpm test                          # exit 0; 225 tests in 11 files, after `pnpm build`
+pnpm test                          # exit 0; 228 tests in 11 files, after `pnpm build`
                                    #   and before `typecheck:consumer`:
                                    #   renderer 63, require-native-evidence 50,
                                    #   native-probe-verify 41, native-parity-verify 19,
                                    #   list-probe-report 14, parity 9,
-                                   #   consumer-install 8, stylesheet-probe-report 7,
-                                   #   rspeedy 6, packaging 4, documented-counts 4
+                                   #   consumer-install 9, stylesheet-probe-report 7,
+                                   #   rspeedy 6, packaging 6, documented-counts 4
 pnpm build                         # exit 0
 pnpm pack --dry-run                # exit 0; 46 tarball entries (30 under dist/, 11 under docs/,
                                    #   plus LICENSE, package.json, README.md, CHANGELOG.md,
-                                   #   ROADMAP.md) as solid-lynx-1.0.0.tgz
+                                   #   ROADMAP.md) as apothic-ai-solid-lynx-1.0.0.tgz
 pnpm native:build                  # exit 0; dist/main.lynx.bundle,
                                    #   dist/stylesheet-probe.lynx.bundle,
                                    #   dist/list-probe.lynx.bundle (+ probe.css beside them)
@@ -329,18 +331,28 @@ That is the correct answer, not a failure of the paperwork: nothing was measured
   an empty capture cannot be read as a measurement. A dry run is still not a
   device result.
 
-### The package-name blocker
+### The package-name blocker: resolved by scoping
 
-The npm name `solid-lynx` is occupied by an unrelated package. Measured at this
-commit with `npm view solid-lynx version license maintainers`: version `1.0.0`,
-license **MIT**, maintainer `pranshuchittora`. This project ships Apache-2.0 and
-is not that package, so **do not publish under that name**. Tracked as work unit
-**`ub_frxxn5`** (an owner decision, not a code change; the identifier comes from
-the operator's queue and is not recorded anywhere in this repository).
+The unscoped npm name `solid-lynx` is occupied by an unrelated package. Measured
+with `npm view solid-lynx version license maintainers`: version `1.0.0`, license
+**MIT**, maintainer `pranshuchittora`. This project ships Apache-2.0 and is not
+that package, so publishing under that name was never available.
 
-There are no git tags, no `publishConfig`, and no release workflow, so nothing
-here has ever been published ([release.md](release.md) §5). Do not treat a
-version bump as a release.
+The operator resolved it by publishing under the npm organisation `@apothic-ai`,
+so `package.json` `name` is **`@apothic-ai/solid-lynx`** with
+`publishConfig.access: "public"` (a scoped package defaults to `restricted`). The
+rename is confined to module specifiers and registry identity: the
+`jsxImportSource`s, the `moduleName` default in `src/rspeedy.ts`, the example
+imports, the consumer fixture augmentations, and the contract's entry-point table.
+The repository, the docs prose, and the worktree and branch names still say
+solid-lynx when they name the product. `test/packaging.test.ts` and
+`test/consumer-install.test.ts` assert the scoped name, the public access, the
+tarball filename, and that the bare unscoped specifier no longer resolves — so a
+revert fails a test instead of silently changing the published identity.
+
+There are still no git tags and no release workflow, and nothing here has ever
+been published ([release.md](release.md) §5). Do not treat a version bump as a
+release.
 
 ### Native parity evidence is reported, not reproduced
 
@@ -379,12 +391,12 @@ landed, and where to read it:
 
 - **Contract frozen.** [contract.md](contract.md) records every public signature
   with a status (stable, provisional, unsupported) and the test that covers it;
-  §16 lists the exported surface with no automated test. One version string in
-  that document is still stale: line 3 says `solid-lynx@0.1.0`. The `version`
-  paragraph is correct — it cites `"1.0.0"` at `src/index.ts:72`, which is what
-  the constant says — as are `package.json` and README's status line. Line 3 is
-  documentation drift, harmless but wrong; the constant is authoritative and no
-  test asserts it (contract §16), so a version bump has to be checked by hand.
+  §16 lists the exported surface with no automated test. Line 3 now names
+  `@apothic-ai/solid-lynx@1.0.0`; it said `solid-lynx@0.1.0` for a release, which
+  was documentation drift. The `version` paragraph is correct — it cites `"1.0.0"`
+  at `src/index.ts:72`, which is what the constant says — as are `package.json`
+  and README's status line. The constant is authoritative and no test asserts it
+  (contract §16), so a version bump still has to be checked by hand.
 - **Compatibility pinned.** [compatibility.md](compatibility.md) fixes the exact
   `solid-js`, `@lynx-js/web-core`, `@lynx-js/rspeedy`, `@lynx-js/lynx-core`, and
   Rsbuild plugin versions the contract was verified against, and §8 states what

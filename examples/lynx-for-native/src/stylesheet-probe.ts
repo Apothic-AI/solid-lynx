@@ -23,8 +23,8 @@
  *   take the earlier evidence with it.
  */
 
-import { createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
-import type { LynxNode, LynxRoot } from "solid-lynx";
+import { createLynxRoot, ensureLynxEnvironmentBasics } from "@apothic-ai/solid-lynx";
+import type { LynxNode, LynxRoot } from "@apothic-ai/solid-lynx";
 import {
   STYLESHEET_PAPI_NAMES,
   describeFunction,

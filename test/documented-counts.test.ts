@@ -5,7 +5,7 @@
  * The failure this file exists for has now happened four times in one release:
  * a test file was added or removed and hard-coded numbers in README, CHANGELOG,
  * ROADMAP and `docs/` were left behind. The observed sequence was
- * 54 -> 73/80 -> 98 -> 117 -> 154 -> 204 -> 213 -> 221 -> 225, and each pass was a
+ * 54 -> 73/80 -> 98 -> 117 -> 154 -> 204 -> 213 -> 221 -> 225 -> 228, and each pass was a
  * manual hunt: some files were found, at least one was missed, and the
  * correction left the document set contradicting itself about its own count. A
  * reader who catches the set disagreeing about a number that is trivially
@@ -53,7 +53,7 @@
  * `test/documented-counts.test.ts` and its own cases, which is exactly the
  * number a reader gets from `pnpm test`. That is proven, not assumed — the test
  * below selects the entries belonging to this very file by comparing resolved
- * paths and requires a non-zero number of them back. Measured 225 tests in 11
+ * paths and requires a non-zero number of them back. Measured 228 tests in 11
  * files with this file present, stable across repeated collections.
  *
  * ## The ignore rule, and why it cannot hide a stale current claim
@@ -85,7 +85,7 @@
  *     this rule against the tree, not hypotheticals.
  *   - **Blocks are read as blocks.** A markdown table or bullet list is not one
  *     sentence: before that was fixed, a neighbouring row's "at that commit"
- *     exempted the current `225 tests in 11 files` row. `claimRows` therefore
+ *     exempted the current `228 tests in 11 files` row. `claimRows` therefore
  *     breaks blocks at every table row, list item, heading and blank line, and
  *     joins only *soft-wrapped continuation lines* -- so a wrapped sentence is
  *     read whole, and an adjacent row is never consulted. Same bug class, same
@@ -101,8 +101,8 @@
  *     failing it would be the test being wrong.
  *   - `exit 0, 121 tests in 7 files at the time of that run`: skipped. The
  *     historical count stays, with its framing, rather than being deleted.
- *   - `225 unit tests in 11 files`, `the suite is 225 now`, `has since grown to
- *     225`: checked.
+ *   - `228 unit tests in 11 files`, `the suite is 228 now`, `has since grown to
+ *     228`: checked.
  *
  * What the rule cannot do, stated plainly: a *current* count that shares a
  * sentence with a commit id would be skipped, and a human would have to catch
@@ -261,7 +261,7 @@ const HISTORICAL_MARKERS = [
  * exemption. Word-bounded, so "known" does not read as "now".
  *
  * `grown to` and `has since` are here on purpose. "The suite has since grown to
- * 225" is present perfect: it says what the suite is *now*, as a consequence of
+ * 228" is present perfect: it says what the suite is *now*, as a consequence of
  * past growth, and a reader takes the number as current. Treating it as
  * historical would exempt exactly the sentence that goes stale next. Only
  * flat-past framing embeds an exemption.
@@ -374,7 +374,7 @@ const BLOCK_STARTER = /^\s*(?:[|#*>]|[-+]\s|\d+[.)]\s)/;
  * belongs to.
  *
  * Fenced code blocks are **scanned**, not skipped: `docs/session-handoff.md`
- * keeps its verified command list in a fence and "225 tests in 11 files" lives
+ * keeps its verified command list in a fence and "228 tests in 11 files" lives
  * on one of those lines. A count in a fence is still a claim a reader checks.
  * Fence markers themselves are dropped, and fenced lines are never read as
  * markdown structure — a `# comment` inside a fence is code, not a heading —

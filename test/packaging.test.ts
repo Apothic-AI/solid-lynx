@@ -68,6 +68,24 @@ interface LinkTarget {
   raw: string;
 }
 
+/**
+ * The published identity, in the one file that reads the packed tarball's own
+ * manifest rather than the repository's.
+ *
+ * `name` and `publishConfig` are packaging facts, not prose: the scope decides
+ * which npm organisation owns the package, and a scoped package defaults to
+ * `restricted`, so `publishConfig.access: "public"` is the only thing that makes
+ * an install reachable from outside that organisation. Both are asserted from
+ * the tarball's package.json, so a repository manifest that disagreed with what
+ * shipped would fail here.
+ */
+const PACKAGE_NAME = "@apothic-ai/solid-lynx";
+const PACKAGE_SCOPE = "@apothic-ai";
+const PACKAGE_BASENAME = "solid-lynx";
+
+/** What the pre-scope name was, so a revert fails with the decision named. */
+const LEGACY_UNSCOPED_NAME = "solid-lynx";
+
 let pack: PackResult;
 let shippedFiles: Set<string>;
 
@@ -174,7 +192,7 @@ beforeAll(() => {
 
 describe("the published package", () => {
   it("has a usable tarball file list", () => {
-    expect(pack.name).toBe("solid-lynx");
+    expect(pack.name).toBe(PACKAGE_NAME);
     expect(pack.files.length).toBeGreaterThan(0);
     // Sanity: the entries are package-relative paths, not absolute ones, and
     // the two files npm always adds are present.
@@ -184,6 +202,46 @@ describe("the published package", () => {
       expect(entry.startsWith("/")).toBe(false);
       expect(entry.startsWith("../")).toBe(false);
     }
+  });
+
+  it("publishes under the scoped name with public access", () => {
+    // `package.json` always ships (npm adds it even when `files[]` omits it), so
+    // the manifest read here is the one a registry receives. Its own copy inside
+    // the unpacked tarball is asserted in `test/consumer-install.test.ts`, where
+    // there is an installed tree to read it from; this is the cheaper half that
+    // fails first, in the same run as the file list.
+    expect(shippedFiles.has("package.json")).toBe(true);
+
+    const manifest = JSON.parse(
+      readFileSync(join(packageRoot, "package.json"), "utf8"),
+    ) as { name: string; version: string; publishConfig?: { access?: string } };
+
+    expect(manifest.name).toBe(PACKAGE_NAME);
+    // `pnpm pack` reports the name it read from that same manifest, so the two
+    // cannot disagree without this failing.
+    expect(pack.name).toBe(manifest.name);
+    expect(pack.version).toBe(manifest.version);
+
+    // A revert of the name is a different package on npm, not a rename.
+    expect(manifest.name).not.toBe(LEGACY_UNSCOPED_NAME);
+    expect(manifest.name).toBe(`${PACKAGE_SCOPE}/${PACKAGE_BASENAME}`);
+
+    // Scoped packages default to `restricted`; without this every install
+    // outside the organisation gets a 404 and the tarball is unusable.
+    expect(
+      manifest.publishConfig?.access,
+      "a scoped package defaults to restricted; publishConfig.access must say public",
+    ).toBe("public");
+  });
+
+  it("names its tarball after the scoped package", () => {
+    // pnpm drops the `@` and keeps the rest: `@apothic-ai/solid-lynx` packs to
+    // `apothic-ai-solid-lynx-<version>.tgz`. Read from what pnpm wrote, not from
+    // a remembered string.
+    expect(pack.filename).toBe(
+      `${PACKAGE_SCOPE.slice(1)}-${PACKAGE_BASENAME}-${pack.version}.tgz`,
+    );
+    expect(pack.filename).not.toBe(`${LEGACY_UNSCOPED_NAME}-${pack.version}.tgz`);
   });
 
   it("ships every document the README links to", () => {

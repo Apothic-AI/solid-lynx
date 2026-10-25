@@ -267,8 +267,9 @@ component: Solid's portal moves DOM into another DOM parent, and a Lynx element
 tree has no such second parent.
 
 Today: an `<overlay>` element is created as an ordinary child with no overlay
-behaviour. Importing `Portal` from `solid-lynx` fails at build time because the
-package does not export it, which fails loudly rather than degrading silently.
+behaviour. Importing `Portal` from `@apothic-ai/solid-lynx` fails at build time
+because the package does not export it, which fails loudly rather than degrading
+silently.
 
 Supporting it would need a Lynx overlay contract (what element hosts overlay
 content and how it is presented), a decision on whether a portal is expressible in

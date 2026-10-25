@@ -16,7 +16,7 @@ produce this document.
 You are affected if any of these is true:
 
 - You built JSX with `pluginBabel` and a `babel-preset-solid` entry of your own,
-  rather than `pluginSolidLynx()` from `solid-lynx/rspeedy`.
+  rather than `pluginSolidLynx()` from `@apothic-ai/solid-lynx/rspeedy`.
 - You pass a `ref` that is not a function (an object literal, `{ current: … }`,
   a DOM-style ref object).
 - You assign CSS ids by looping and calling `__SetCSSId` yourself, or you expect
@@ -25,11 +25,11 @@ You are affected if any of these is true:
   `transformEventNames: false`.
 - You write `<list>` in JSX at all (§6.2: it is now a build-time error), or you
   expect the list PAPI adapter to recycle cells (it does not).
-- You import `Portal` or `Dynamic` from `solid-lynx`.
+- You import `Portal` or `Dynamic` from the renderer package.
 - You dispose a root and then expect a second `root.render()` of the *same*
   tree object to be refused — or expect it to be allowed without disposing the
   previous one.
-- You read `@lynx-js/types`-shaped attributes off `solid-lynx` JSX props.
+- You read `@lynx-js/types`-shaped attributes off the renderer's JSX props.
 
 ## 2. Build configuration
 
@@ -44,7 +44,7 @@ plugin, which pins the transform to what the renderer requires
 import { defineConfig } from "@lynx-js/rspeedy";
 import { pluginLynx } from "@lynx-js/rsbuild-plugin";
 import { pluginVanillaLynx } from "@lynx-js/vanilla-rsbuild-plugin";
-import { pluginSolidLynx } from "solid-lynx/rspeedy";
+import { pluginSolidLynx } from "@apothic-ai/solid-lynx/rspeedy";
 
 export default defineConfig({
   source: { entry: { main: "./src/main-thread.tsx" } },
@@ -64,9 +64,11 @@ Two settings are contract, not preference:
 - `generate: "universal"`. Without it the compiler emits DOM helpers and the
   bundle builds but renders nothing. This is why the setting lives in the plugin
   (`src/rspeedy.ts:16-21`).
-- `moduleName: "solid-lynx"`. If you renamed the package or vendored it, pass
-  `moduleName` so the compiled imports resolve. The default is `"solid-lynx"`
-  (`src/rspeedy.ts:15`, `:52`).
+- `moduleName: "@apothic-ai/solid-lynx"`. If you renamed the package or vendored
+  it, pass `moduleName` so the compiled imports resolve. The default is
+  `"@apothic-ai/solid-lynx"`, the name the package is published under — the
+  unscoped `solid-lynx` is a different, unrelated package on npm, so a build that
+  names it emits imports nothing resolves (`src/rspeedy.ts:15`, `:52`).
 
 `pluginSolidLynx()` deliberately does **not** add `pluginLynx()` or
 `pluginVanillaLynx()` — see `src/rspeedy.ts:110-124`. Keep them in your config.
@@ -108,7 +110,7 @@ const target = { current: undefined as LynxNode | undefined };
 
 ```tsx
 // Use the package's ref object: it is callable *and* readable.
-import { createLynxRef, type LynxNode } from "solid-lynx";
+import { createLynxRef, type LynxNode } from "@apothic-ai/solid-lynx";
 
 const target = createLynxRef<LynxNode>();
 <view ref={target} />;
@@ -380,16 +382,16 @@ in your own `.d.ts`, against **both** runtime entries, using
 `LynxCustomElementAttributes`:
 
 ```ts
-import type { LynxCustomElementAttributes } from "solid-lynx";
+import type { LynxCustomElementAttributes } from "@apothic-ai/solid-lynx";
 
 type MeterAttributes = LynxCustomElementAttributes<{ value: number }>;
 
-declare module "solid-lynx/jsx-runtime" {
+declare module "@apothic-ai/solid-lynx/jsx-runtime" {
   namespace JSX {
     interface IntrinsicElements { "x-meter": MeterAttributes }
   }
 }
-declare module "solid-lynx/jsx-dev-runtime" {
+declare module "@apothic-ai/solid-lynx/jsx-dev-runtime" {
   namespace JSX {
     interface IntrinsicElements { "x-meter": MeterAttributes }
   }
@@ -535,7 +537,8 @@ type-surface regressions; the rest prove runtime parity.
 6. Dispose the root, then confirm: page is empty of that root's nodes, no
    listeners remain, refs are clear, lists it created are disposed, and a second
    `render()` works (§8, §9).
-7. Add a `solid-lynx/parity` run to a debug build if you need to compare hosts
+7. Add an `@apothic-ai/solid-lynx/parity` run to a debug build if you need to
+   compare hosts
    ([building.md](building.md), "Running the parity harness"); it reports
    `pass`/`fail`/`unsupported` per operation and removes its own sandbox.
 

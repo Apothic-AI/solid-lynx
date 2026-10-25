@@ -160,11 +160,11 @@ export const CARD_VERIFIERS = Object.freeze({
  *
  *   - The native bundle's own entries are `examples/lynx-for-native/lynx.config.ts`
  *     → `src/main-thread.tsx`, `src/stylesheet-probe.ts`, `src/list-probe.ts`.
- *     Each imports `solid-lynx` (→ `src/index.ts`) and the smoke card also
- *     imports `solid-lynx/parity` (→ `src/parity.ts`).
- *   - `pluginSolidLynx` sets `moduleName: "solid-lynx"` with
+ *     Each imports `@apothic-ai/solid-lynx` (→ `src/index.ts`) and the smoke card
+ *     also imports `@apothic-ai/solid-lynx/parity` (→ `src/parity.ts`).
+ *   - `pluginSolidLynx` sets `moduleName: "@apothic-ai/solid-lynx"` with
  *     `generate: "universal"`, so the Solid JSX transform emits calls into
- *     `solid-lynx/jsx-runtime` (→ `src/jsx-runtime.ts`, and
+ *     `@apothic-ai/solid-lynx/jsx-runtime` (→ `src/jsx-runtime.ts`, and
  *     `src/jsx-dev-runtime.ts` for dev builds). Those import
  *     `src/universal.ts`, which is the renderer half the bundle runs on.
  *   - Following that import graph (runtime imports, not `import type`) reaches

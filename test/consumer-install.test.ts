@@ -9,7 +9,7 @@
  * proves the right files are *named* in `files[]`, not that a package installed
  * from them *works*. `docs/compatibility.md` §6 argues at length that only
  * `solid-js` is a required peer and that the three toolchain peers are optional
- * because only `solid-lynx/rspeedy` needs them — and nothing exercised that
+ * because only the `rspeedy` subpath needs them — and nothing exercised that
  * argument either. Both were verified by hand once (pack, install, import,
  * `createLynxRoot()` with no host). A hand check is not a regression: the day
  * `exports` loses a subpath, or `files[]` drops `docs`, or the root entry grows
@@ -20,7 +20,9 @@
  *  1. `pnpm pack` runs for real (no `--dry-run`, no hand-built tar), into a
  *     temp directory. The tarball is the workspace's own output and its file
  *     list is still decided by `files[]`.
- *  2. The tarball is extracted to `<temp>/app/node_modules/solid-lynx`. There is
+ *  2. The tarball is extracted to `<temp>/app/node_modules/@apothic-ai/solid-lynx`,
+ *     the scope as its own directory level, exactly as a registry install lays
+ *     it out. There is
  *     deliberately no `npm install`: the package manager would want the
  *     registry, and "install" here means laying out the tree node itself
  *     resolves against. `solid-js` — the one required peer — is *copied* out of
@@ -34,8 +36,8 @@
  *     because node resolves a bare specifier from the *importing module's* URL.
  *     An `-e` script's URL is `<cwd>/[eval1]`, so its imports start at the temp
  *     app; a probe file living in this repository would instead resolve from
- *     the repository and prove nothing. The test process never imports
- *     `solid-lynx` itself.
+ *     the repository and prove nothing. The test process never imports the
+ *     package itself.
  *  4. Every assertion is read from the child's report of what node actually
  *     resolved, so a failure names the real resolution. The probe never throws:
  *     a broken subpath is recorded against that subpath, so one failure does not
@@ -67,7 +69,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, basename, join, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -81,21 +83,47 @@ const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  */
 const EXPECTED_PARITY_OPERATION_COUNT = 20;
 
+/**
+ * The published name, as three facts the rest of this file reads rather than
+ * repeats.
+ *
+ * The package is published under the npm organisation `@apothic-ai` because the
+ * unscoped name on npm belongs to an unrelated MIT package. That
+ * makes the scope load-bearing in a way prose cannot hold: it is a directory
+ * level in `node_modules`, the prefix of every module specifier below, the
+ * component `pnpm pack` puts in the tarball's filename, and a `publishConfig`
+ * decision (a scoped package defaults to restricted access).
+ */
+const PACKAGE_NAME = "@apothic-ai/solid-lynx";
+const PACKAGE_SCOPE = "@apothic-ai";
+const PACKAGE_BASENAME = "solid-lynx";
+
+/**
+ * The pre-scope name, kept only so a revert can be named.
+ *
+ * Nothing resolves it any more: package self-reference resolves by the
+ * manifest's `name`, so a bare `solid-lynx` specifier in this repository now
+ * throws `ERR_MODULE_NOT_FOUND` rather than quietly importing the package. That
+ * is asserted below, and it is what makes the scope load-bearing rather than a
+ * cosmetic label.
+ */
+const LEGACY_UNSCOPED_NAME = "solid-lynx";
+
 /** The entry points §1 of `docs/contract.md` documents as reachable. */
 const REQUIRED_ENTRY_POINTS = [
-  "solid-lynx",
-  "solid-lynx/parity",
-  "solid-lynx/jsx-runtime",
-  "solid-lynx/jsx-dev-runtime",
+  PACKAGE_NAME,
+  `${PACKAGE_NAME}/parity`,
+  `${PACKAGE_NAME}/jsx-runtime`,
+  `${PACKAGE_NAME}/jsx-dev-runtime`,
 ] as const;
 
 /**
- * `solid-lynx/rspeedy` is the fifth documented entry, and the one whose module
+ * `@apothic-ai/solid-lynx/rspeedy` is the fifth documented entry, and the one whose module
  * graph imports the optional toolchain peers on purpose. It is checked
  * separately: the specifier must resolve through `exports`, and importing it may
  * fail only on a declared optional peer — never on the package's own files.
  */
-const TOOLCHAIN_ENTRY_POINT = "solid-lynx/rspeedy";
+const TOOLCHAIN_ENTRY_POINT = `${PACKAGE_NAME}/rspeedy`;
 
 /** The peers `package.json` declares with `optional: true`. */
 const OPTIONAL_PEERS = ["@rsbuild/core", "@rsbuild/plugin-babel", "babel-preset-solid"];
@@ -130,6 +158,11 @@ interface ConsumerReport {
   lynxGlobals: Record<string, string>;
   entries: Record<string, EntryReport>;
   solidJs: { url: string | null; error: string | null };
+  /**
+   * The pre-scope specifier, probed only to prove it does *not* resolve.
+   * A leftover `solid-lynx` specifier is not an alias under the scoped name.
+   */
+  legacy: { url: string | null; error: string | null };
   packageRootUrl: string | null;
   root: { version: unknown; versionType: string; createLynxRoot: string } | null;
   parity: { isArray: boolean; length: number; allStrings: boolean; unique: boolean } | null;
@@ -158,7 +191,7 @@ const REPORT_MARKER = "SOLID_LYNX_CONSUMER_REPORT ";
 /**
  * The probe that runs inside the temp app. It is one `-e` program rather than a
  * file in this repository because node resolves bare specifiers relative to the
- * importing module: a file under `test/` would resolve `solid-lynx` from the
+ * importing module: a file under `test/` would resolve `@apothic-ai/solid-lynx` from the
  * repository, which is exactly what this test must not measure.
  *
  * It imports nothing belonging to the package under test by path. Every
@@ -175,6 +208,7 @@ const report = {
   lynxGlobals: {},
   entries: {},
   solidJs: { url: null, error: null },
+  legacy: { url: null, error: null },
   packageRootUrl: null,
   root: null,
   parity: null,
@@ -232,17 +266,25 @@ for (const specifier of ${JSON.stringify([...REQUIRED_ENTRY_POINTS, TOOLCHAIN_EN
   report.solidJs = { url, error };
 }
 
+// The pre-scope name. It is not an alias: the package resolves by the manifest's
+// name field, so this must throw. Recorded rather than thrown so the parent can
+// name the revert in a failure message instead of reporting a broken probe.
+{
+  const { url, error } = await attempt(${JSON.stringify(LEGACY_UNSCOPED_NAME)});
+  report.legacy = { url, error };
+}
+
 // The installed package root: derived from the URL node resolved for the root
 // entry, so the docs below are located from the install rather than from a
 // repository path. Falls back to the root the parent passed in, so the docs
 // check still reports when the root entry itself is what broke.
-const rootEntry = report.entries["solid-lynx"];
+const rootEntry = report.entries[${JSON.stringify(PACKAGE_NAME)}];
 report.packageRootUrl = rootEntry.url !== null
   ? new URL("../", rootEntry.url).href
   : (process.argv[1] === undefined ? null : pathToFileURL(process.argv[1] + "/").href);
 
 if (rootEntry.url !== null) {
-  const { namespace: root } = await attempt("solid-lynx");
+  const { namespace: root } = await attempt(${JSON.stringify(PACKAGE_NAME)});
   if (root !== null) {
     report.root = {
       version: root.version,
@@ -268,8 +310,8 @@ if (rootEntry.url !== null) {
   }
 }
 
-if (report.entries["solid-lynx/parity"].error === null) {
-  const { namespace } = await attempt("solid-lynx/parity");
+if (report.entries[${JSON.stringify(`${PACKAGE_NAME}/parity`)}].error === null) {
+  const { namespace } = await attempt(${JSON.stringify(`${PACKAGE_NAME}/parity`)});
   const ids = namespace === null ? undefined : namespace.parityOperationIds;
   if (namespace !== null) {
     report.parity = {
@@ -281,8 +323,8 @@ if (report.entries["solid-lynx/parity"].error === null) {
   }
 }
 
-if (report.entries["solid-lynx/jsx-runtime"].error === null) {
-  const { namespace } = await attempt("solid-lynx/jsx-runtime");
+if (report.entries[${JSON.stringify(`${PACKAGE_NAME}/jsx-runtime`)}].error === null) {
+  const { namespace } = await attempt(${JSON.stringify(`${PACKAGE_NAME}/jsx-runtime`)});
   if (namespace !== null) {
     report.jsx = {
       Fragment: typeof namespace.Fragment,
@@ -292,8 +334,8 @@ if (report.entries["solid-lynx/jsx-runtime"].error === null) {
   }
 }
 
-if (report.entries["solid-lynx/jsx-dev-runtime"].error === null) {
-  const { namespace } = await attempt("solid-lynx/jsx-dev-runtime");
+if (report.entries[${JSON.stringify(`${PACKAGE_NAME}/jsx-dev-runtime`)}].error === null) {
+  const { namespace } = await attempt(${JSON.stringify(`${PACKAGE_NAME}/jsx-dev-runtime`)});
   if (namespace !== null) {
     report.jsxDev = {
       Fragment: typeof namespace.Fragment,
@@ -342,6 +384,7 @@ let installedManifest: {
   name: string;
   version: string;
   type?: string;
+  publishConfig?: { access?: string; registry?: string; [key: string]: unknown };
   dependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
   peerDependenciesMeta?: Record<string, { optional?: boolean }>;
@@ -357,11 +400,15 @@ function isInsideInstalled(url: string | null): boolean {
 beforeAll(() => {
   tempRoot = mkdtempSync(join(tmpdir(), "solid-lynx-consumer-"));
   appDir = join(tempRoot, "app");
-  installedRoot = join(appDir, "node_modules", "solid-lynx");
+  // The scope is a directory level on disk, exactly as a registry install would
+  // lay it out: `node_modules/@apothic-ai/solid-lynx`. A flat
+  // `node_modules/@apothic-ai/solid-lynx` directory would resolve by path and
+  // prove nothing about the scope's own directory layer.
+  installedRoot = join(appDir, "node_modules", PACKAGE_SCOPE, PACKAGE_BASENAME);
   installedRootUrl = pathToFileURL(installedRoot).href;
   const packDir = join(tempRoot, "pack");
   mkdirSync(packDir, { recursive: true });
-  mkdirSync(join(appDir, "node_modules"), { recursive: true });
+  mkdirSync(join(appDir, "node_modules", PACKAGE_SCOPE), { recursive: true });
 
   // The real tarball, from the real `files[]`. `pnpm` for the same reason
   // `test/packaging.test.ts` uses it: it is the package manager this repository
@@ -376,6 +423,11 @@ beforeAll(() => {
   if (!pack.filename || !existsSync(pack.filename)) {
     throw new Error(`pnpm pack reported ${JSON.stringify(pack.filename)}, which does not exist`);
   }
+
+  // pnpm names a scoped tarball `<scope-without-@>-<name>-<version>.tgz`, so a
+  // scoped package publishes `apothic-ai-solid-lynx-1.0.0.tgz`. Not asserted
+  // here: an assertion belongs in a test, where a failure names the decision
+  // rather than aborting the file's setup and skipping the other eight.
 
   // A tarball carries `dist/` only if it was built first. Say so plainly
   // instead of letting the import fail as a resolution error.
@@ -399,7 +451,6 @@ beforeAll(() => {
     throw new Error(`the tarball ${pack.filename} did not unpack a package/ directory`);
   }
   renameSync(unpacked, installedRoot);
-
   // The one required peer, copied (not linked) out of this repository's
   // installed tree. Copying keeps the temp app self-contained: node cannot
   // follow a symlink back into the repository's `node_modules` and find a
@@ -414,7 +465,7 @@ beforeAll(() => {
 
   writeFileSync(
     join(appDir, "package.json"),
-    `${JSON.stringify({ name: "solid-lynx-consumer-probe", private: true, type: "module" }, null, 2)}\n`,
+    `${JSON.stringify({ name: "@apothic-ai/solid-lynx-consumer-probe", private: true, type: "module" }, null, 2)}\n`,
   );
 
   installedManifest = JSON.parse(
@@ -463,18 +514,72 @@ afterAll(() => {
 describe("a consumer that installs the packed tarball", () => {
   it("installs the workspace's own tarball into an empty app", () => {
     // The tarball is the workspace output, not something this file built.
-    expect(pack.name).toBe("solid-lynx");
+    expect(pack.name).toBe(PACKAGE_NAME);
     expect(pack.filename.endsWith(".tgz")).toBe(true);
 
+    // pnpm names a scoped tarball `<scope>-<name>-<version>.tgz`, with the `@`
+    // dropped and nothing else changed. Asserted against a read of what pnpm
+    // wrote (`pack.filename` above), not against a remembered string: this is
+    // the artefact name a release page quotes, and it is the one fact a scoped
+    // publish changes that is visible outside `package.json`.
+    expect(basename(pack.filename)).toBe(
+      `${PACKAGE_SCOPE.slice(1)}-${PACKAGE_BASENAME}-${pack.version}.tgz`,
+    );
+
     // What landed on disk is what `pnpm pack` wrote, unmodified.
-    expect(installedManifest.name).toBe(pack.name);
+    expect(installedManifest.name).toBe(PACKAGE_NAME);
     expect(installedManifest.version).toBe(pack.version);
     expect(installedManifest.type).toBe("module");
 
+    // A scoped package defaults to `restricted` on npm, which would leave a
+    // public renderer visible only to the organisation. `publishConfig.access`
+    // is the only thing that overrides it, so it is part of the manifest the
+    // tarball carries and is asserted where a consumer's install would see it.
+    expect(
+      installedManifest.publishConfig?.access,
+      "a scoped package defaults to restricted; publishConfig.access must say public",
+    ).toBe("public");
+
+    // A revert to the unscoped name is a different package, not a rename, and
+    // this is where that would be caught before a registry ever saw it.
+    expect(installedManifest.name).not.toBe(LEGACY_UNSCOPED_NAME);
+    expect(
+      installedManifest.name.startsWith(`${PACKAGE_SCOPE}/`),
+      `${installedManifest.name} is not in the ${PACKAGE_SCOPE} scope`,
+    ).toBe(true);
+
     // Nothing but the package and its one required peer is installed. That is
     // the condition §6 of docs/compatibility.md is argued under, and every
-    // import below runs in it.
-    expect(readdirSync(join(appDir, "node_modules")).sort()).toEqual(["solid-js", "solid-lynx"]);
+    // import below runs in it. The scope is its own directory level, so the
+    // package is a child of `@apothic-ai`, not a sibling of `solid-js`.
+    expect(readdirSync(join(appDir, "node_modules")).sort()).toEqual(
+      [PACKAGE_SCOPE, "solid-js"].sort(),
+    );
+    expect(readdirSync(join(appDir, "node_modules", PACKAGE_SCOPE))).toEqual([PACKAGE_BASENAME]);
+  });
+
+  it("does not resolve the old unscoped specifier, so the scope is load-bearing", () => {
+    // The one regression `package.json`'s `name` alone would hide. Package
+    // self-reference resolves by that field, so every scoped import above could
+    // keep passing while the published identity silently changed back. The probe
+    // resolves the bare pre-scope specifier in the same child process that
+    // resolved the scoped ones, and records the failure instead of throwing.
+    expect(
+      report.legacy.url,
+      `bare \`${LEGACY_UNSCOPED_NAME}\` resolved to ${report.legacy.url}; it is not an alias `
+        + `for ${PACKAGE_NAME}`,
+    ).toBeNull();
+    expect(report.legacy.error).toContain("ERR_MODULE_NOT_FOUND");
+
+    // The scoped specifiers are what the probe imported, so this test and the
+    // one above are measuring the same child: no entry there is unscoped.
+    for (const specifier of [...REQUIRED_ENTRY_POINTS, TOOLCHAIN_ENTRY_POINT]) {
+      expect(
+        specifier === PACKAGE_NAME || specifier.startsWith(`${PACKAGE_NAME}/`),
+        `${specifier} is not a ${PACKAGE_NAME} specifier`,
+      ).toBe(true);
+      expect(report.entries[specifier], `${specifier} was not probed`).toBeDefined();
+    }
   });
 
   it("resolves every documented entry point inside the installed copy", () => {
@@ -508,7 +613,7 @@ describe("a consumer that installs the packed tarball", () => {
   });
 
   it("exports the version its own manifest declares", () => {
-    expect(report.root, "solid-lynx did not import").not.toBeNull();
+    expect(report.root, `${PACKAGE_NAME} did not import`).not.toBeNull();
     expect(report.root?.versionType).toBe("string");
     expect(report.root?.version).toBe(installedManifest.version);
 
@@ -521,33 +626,31 @@ describe("a consumer that installs the packed tarball", () => {
   });
 
   it("ships the twenty parity operation ids", () => {
-    expect(report.parity, "solid-lynx/parity did not import").not.toBeNull();
+    expect(report.parity, `${PACKAGE_NAME}/parity did not import`).not.toBeNull();
     expect(report.parity?.isArray).toBe(true);
     expect(report.parity?.allStrings).toBe(true);
     expect(report.parity?.unique).toBe(true);
     expect(
       report.parity?.length,
-      `solid-lynx/parity exported ${report.parity?.length} operation id(s); `
+      `${PACKAGE_NAME}/parity exported ${report.parity?.length} operation id(s); `
         + `docs/contract.md §14 freezes ${EXPECTED_PARITY_OPERATION_COUNT}`,
     ).toBe(EXPECTED_PARITY_OPERATION_COUNT);
   });
 
   it("ships the JSX runtimes with the documented helpers", () => {
     // §1 of docs/contract.md: these two entries exist for
-    // `jsxImportSource: "solid-lynx"`; their types are contract and their
-    // runtime functions are provisional. Names only — not behaviour, and not the
-    // whole export list, so adding a helper is not a failure here.
-    expect(report.entries["solid-lynx/jsx-runtime"].error, "solid-lynx/jsx-runtime did not import")
-      .toBeNull();
-    expect(report.entries["solid-lynx/jsx-dev-runtime"].error, "solid-lynx/jsx-dev-runtime did not import")
-      .toBeNull();
+    // `jsxImportSource: "@apothic-ai/solid-lynx"`; their types are contract and
+    // their runtime functions are provisional. Names only — not behaviour, and
+    // not the whole export list, so adding a helper is not a failure here.
+    const runtime = `${PACKAGE_NAME}/jsx-runtime`;
+    const devRuntime = `${PACKAGE_NAME}/jsx-dev-runtime`;
+    expect(report.entries[runtime].error, `${runtime} did not import`).toBeNull();
+    expect(report.entries[devRuntime].error, `${devRuntime} did not import`).toBeNull();
     for (const name of ["Fragment", "jsx", "jsxs"] as const) {
-      expect(report.jsx?.[name], `solid-lynx/jsx-runtime does not export ${name}()`).toBe("function");
+      expect(report.jsx?.[name], `${runtime} does not export ${name}()`).toBe("function");
     }
     for (const name of ["Fragment", "jsxDEV"] as const) {
-      expect(report.jsxDev?.[name], `solid-lynx/jsx-dev-runtime does not export ${name}()`).toBe(
-        "function",
-      );
+      expect(report.jsxDev?.[name], `${devRuntime} does not export ${name}()`).toBe("function");
     }
   });
 
@@ -584,7 +687,7 @@ describe("a consumer that installs the packed tarball", () => {
       __AppendElement: "undefined",
     });
 
-    expect(report.root, "solid-lynx did not import").not.toBeNull();
+    expect(report.root, `${PACKAGE_NAME} did not import`).not.toBeNull();
     expect(report.root?.createLynxRoot).toBe("function");
     expect(report.noHost.threw, "createLynxRoot() with no Lynx host did not throw").toBe(true);
     expect(report.noHost.isError, "the thrown value is not an Error").toBe(true);
@@ -630,18 +733,18 @@ describe("a consumer that installs the packed tarball", () => {
     // and importing it may fail only because a declared optional peer is absent.
     expect(
       report.rspeedy.url,
-      `solid-lynx/rspeedy does not resolve through exports: ${report.rspeedy.error ?? "no url"}`,
+      `@apothic-ai/solid-lynx/rspeedy does not resolve through exports: ${report.rspeedy.error ?? "no url"}`,
     ).toMatch(/\/rspeedy\.js$/);
     expect(isInsideInstalled(report.rspeedy.url)).toBe(true);
 
     if (report.rspeedy.imported === false) {
       expect(
         report.rspeedy.code,
-        `solid-lynx/rspeedy failed for a reason other than a missing peer: ${report.rspeedy.message}`,
+        `@apothic-ai/solid-lynx/rspeedy failed for a reason other than a missing peer: ${report.rspeedy.message}`,
       ).toBe("ERR_MODULE_NOT_FOUND");
       expect(
         OPTIONAL_PEERS.some(peer => (report.rspeedy.message ?? "").includes(peer)),
-        `solid-lynx/rspeedy failed on ${report.rspeedy.message}, which names no declared optional peer`,
+        `@apothic-ai/solid-lynx/rspeedy failed on ${report.rspeedy.message}, which names no declared optional peer`,
       ).toBe(true);
     }
 

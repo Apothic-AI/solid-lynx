@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
-import { createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
-import { runElementPapiParity } from "solid-lynx/parity";
-import type { LynxNode, LynxPapi, LynxRoot } from "solid-lynx";
+import { createLynxRoot, ensureLynxEnvironmentBasics } from "@apothic-ai/solid-lynx";
+import { runElementPapiParity } from "@apothic-ai/solid-lynx/parity";
+import type { LynxNode, LynxPapi, LynxRoot } from "@apothic-ai/solid-lynx";
 
 interface LynxEngine {
   addEventListener(type: string, listener: () => void): void;

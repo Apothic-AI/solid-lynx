@@ -8,7 +8,7 @@ import {
   type LynxEventPropHandler,
   type LynxNode,
   type LynxRef,
-} from "solid-lynx";
+} from "@apothic-ai/solid-lynx";
 
 const [count, setCount] = createSignal(0);
 const onTap: LynxEventHandler = event => {

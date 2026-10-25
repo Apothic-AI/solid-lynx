@@ -10,7 +10,7 @@ import {
 } from "../src/rspeedy.js";
 
 const universalPreset = {
-  moduleName: "solid-lynx",
+  moduleName: "@apothic-ai/solid-lynx",
   generate: "universal",
   hydratable: false,
   delegateEvents: [],

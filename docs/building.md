@@ -20,14 +20,14 @@ hand on a device; the steps and the observed result are recorded below.
 
 ## The Solid Rspeedy integration
 
-`solid-lynx/rspeedy` exports `pluginSolidLynx`, which is the whole Solid-specific
-part of a Lynx build:
+`@apothic-ai/solid-lynx/rspeedy` exports `pluginSolidLynx`, which is the whole
+Solid-specific part of a Lynx build:
 
 ```ts
 import { defineConfig } from "@lynx-js/rspeedy";
 import { pluginLynx } from "@lynx-js/rsbuild-plugin";
 import { pluginVanillaLynx } from "@lynx-js/vanilla-rsbuild-plugin";
-import { pluginSolidLynx } from "solid-lynx/rspeedy";
+import { pluginSolidLynx } from "@apothic-ai/solid-lynx/rspeedy";
 
 export default defineConfig({
   source: { entry: { main: "./src/main-thread.tsx" } },
@@ -46,7 +46,7 @@ It registers `babel-preset-solid` with the settings a Lynx target needs:
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| `moduleName` | `solid-lynx` | The compiled bundle imports this package's universal JSX runtime. |
+| `moduleName` | `@apothic-ai/solid-lynx` | The compiled bundle imports this package's universal JSX runtime at its published, scoped name. |
 | `generate` | `universal` | Emits `createComponent`/`insert` against the Element PAPI instead of DOM helpers. |
 | `hydratable` | `false` | Lynx renders on the client; there is no markup to adopt. |
 | `delegateEvents` | `[]` | Lynx binds events through the PAPI, so no runtime delegation is wanted. |
@@ -64,8 +64,8 @@ pluginSolidLynx({
 });
 ```
 
-Requirements for the `solid-lynx/rspeedy` entry point, which are not needed by
-the runtime entry: `@rsbuild/core`, `@rsbuild/plugin-babel`, and
+Requirements for the `@apothic-ai/solid-lynx/rspeedy` entry point, which are not
+needed by the runtime entry: `@rsbuild/core`, `@rsbuild/plugin-babel`, and
 `babel-preset-solid`. `@lynx-js/rspeedy`, `@lynx-js/rsbuild-plugin`, and
 `@lynx-js/vanilla-rsbuild-plugin` come from the app's own Lynx toolchain.
 
@@ -243,7 +243,7 @@ The harness is exported from the package root so both examples run identical
 code:
 
 ```ts
-import { runElementPapiParity } from "solid-lynx/parity";
+import { runElementPapiParity } from "@apothic-ai/solid-lynx/parity";
 
 const report = runElementPapiParity({ label: "native", page });
 // One line: the native console bridge drops everything after the first newline.

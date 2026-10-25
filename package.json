@@ -1,8 +1,11 @@
 {
-  "name": "solid-lynx",
+  "name": "@apothic-ai/solid-lynx",
   "version": "1.0.0",
   "description": "A Solid renderer for Lynx Element PAPI",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/Apothic-AI/solid-lynx.git"

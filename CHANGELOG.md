@@ -9,11 +9,13 @@ or publish dates. The documented promises live in
 differ, the contract wins.
 
 Release status: `package.json` and the exported `version` constant in
-`src/index.ts` say `1.0.0`. This repository has no git tags and no publish
-workflow (`package.json` has no `publishConfig`, `.github/workflows/` contains
-only `ci.yml`), so nothing here was published by these commits. The npm name
-`solid-lynx` currently resolves to an unrelated package (MIT licence, a different
-maintainer, published 2025-03-10); this project ships Apache-2.0.
+`src/index.ts` say `1.0.0`, and the name the manifest declares is
+`@apothic-ai/solid-lynx`, scoped and marked `publishConfig.access: "public"` —
+see "Package name" under 1.0.0 for why. This repository has no git tags and no
+publish workflow (`.github/workflows/` contains only `ci.yml`), so nothing here
+was published by these commits. The unscoped npm name `solid-lynx` resolves to an
+unrelated package (MIT licence, a different maintainer, published 2025-03-10);
+this project ships Apache-2.0 and is not that package.
 
 ## Unreleased
 
@@ -195,6 +197,49 @@ The new record says that more loudly, not less.
 The first stable release. It freezes the public contract, pins the dependency set
 the contract was verified against, and adds the automation and the native
 measurement instrumentation that the contract requires.
+
+### Package name: `@apothic-ai/solid-lynx`, while the repository keeps saying solid-lynx
+
+The name this package is published under is **`@apothic-ai/solid-lynx`**. The
+`name` in `package.json` is that scoped name, and `publishConfig.access` is
+`"public"` — a scoped package defaults to `restricted`, so without it an install
+outside the npm organisation gets a 404 even though the tarball is correct.
+
+The scope is not a preference. `solid-lynx` on npm is an **unrelated MIT package**
+published on 2025-03-10 by a different maintainer, which `npm view solid-lynx`
+reports and which this repository has recorded as the release blocker since 0.x.
+This project is Apache-2.0 and is not that package, so publishing under the
+unscoped name was never available. Nothing about the renderer changed with the
+name: version `1.0.0`, the exported `version` constant, and every subpath are
+what they were.
+
+The rename is confined to the places where the name is a module specifier or a
+registry identity — `package.json` `name`, the `jsxImportSource` in
+`tsconfig.json` and in the consumer fixtures, the `moduleName` default in
+`src/rspeedy.ts` and the `babel-preset-solid` settings the README teaches, the
+imports in `examples/`, the `declare module` augmentations in
+`test/consumer/custom-elements.d.ts`, and the entry-point table in
+[contract.md](docs/contract.md) §1. Those are marked with the `@apothic-ai/`
+prefix, and `@apothic-ai/solid-lynx/rspeedy`, `.../parity`, `.../jsx-runtime` and
+`.../jsx-dev-runtime` resolve exactly as the unscoped subpaths did.
+
+Everything else keeps the old name deliberately. The repository, this changelog,
+the roadmap, the worktree and branch names, and the prose in the docs still call
+the renderer **solid-lynx** when they mean the product rather than a specifier;
+the README is titled solid-lynx and says so where it first tells a reader how to
+install it. The 0.x entries below keep the name they were written with — they
+describe commits that predate the scope, and rewriting them would make the
+history agree with a decision that had not been made yet.
+
+The regression is now asserted rather than remembered. `test/packaging.test.ts`
+reads the tarball's own manifest and fails if `name` is not
+`@apothic-ai/solid-lynx` or `publishConfig.access` is not `"public"`, and reads
+the tarball filename (`apothic-ai-solid-lynx-1.0.0.tgz`) rather than assuming it.
+`test/consumer-install.test.ts` installs the tarball under
+`node_modules/@apothic-ai/solid-lynx`, imports every documented entry through the
+scoped specifiers, and proves the bare `solid-lynx` specifier no longer resolves —
+so a revert of the manifest's `name` fails a test instead of silently changing
+which package on npm this repository would publish.
 
 ### The published package carries the documentation it links to
 
@@ -480,7 +525,11 @@ and read the counts out of your own output.
   `test/packaging.test.ts` 4. Every one of those files is non-trivial about
   something: the renderer against the in-memory fake Element PAPI, the two
   capture verifiers, the stored-evidence requirement, the probe recorders, the
-  Rspeedy plugin, and the tarball's own link graph.
+  Rspeedy plugin, and the tarball's own link graph. (That is nine files because
+  `test/consumer-install.test.ts` and `test/documented-counts.test.ts` landed
+  after this measurement; the suite is 228 tests in 11 files at the tip, and
+  `test/packaging.test.ts` is 6 and `test/consumer-install.test.ts` 9 once the
+  scoped-name assertions are counted.)
 - Not unit tests, but run here on the same commit: the Lynx-for-Web suite
   (`PLAYWRIGHT_PORT=4291 pnpm web:test`) passes 17, and the pattern suite
   (`test/browser/patterns.playwright.config.ts`, port 4292) passes 9. They are

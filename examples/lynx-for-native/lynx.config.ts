@@ -1,7 +1,7 @@
 import { defineConfig } from "@lynx-js/rspeedy";
 import { pluginLynx } from "@lynx-js/rsbuild-plugin";
 import { pluginVanillaLynx } from "@lynx-js/vanilla-rsbuild-plugin";
-import { pluginSolidLynx } from "solid-lynx/rspeedy";
+import { pluginSolidLynx } from "@apothic-ai/solid-lynx/rspeedy";
 
 /**
  * Native build for the parity card, the stylesheet probe, and the list probe.

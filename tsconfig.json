@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "types": ["node", "vitest/globals"],
     "jsx": "preserve",
-    "jsxImportSource": "solid-lynx",
+    "jsxImportSource": "@apothic-ai/solid-lynx",
     "noEmit": true
   },
   "include": [

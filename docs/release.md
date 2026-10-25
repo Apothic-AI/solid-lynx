@@ -1,19 +1,21 @@
 # Cutting a release
 
-How a release of `solid-lynx` is cut, in the order it happens, with the command
-that proves each step. Every command below was run in this repository at commit
+How a release of `@apothic-ai/solid-lynx` — called solid-lynx everywhere else in
+this repository — is cut, in the order it happens, with the command that proves
+each step. Every command below was run in this repository at commit
 `002b786` on Node `v22.23.3` / pnpm `12.9.1`, unless the step says **not run**
 next to it. Where a step is not automated, that is stated rather than implied.
 
-**Where this package actually is.** There are no git tags, no `publishConfig` in
-`package.json`, and `.github/workflows/` contains only `ci.yml` — there is no
-release workflow. The name `solid-lynx` on npm already belongs to a different
-package (`npm view solid-lynx license maintainers` reports `MIT` and
-`pranshuchittora`; `npm view solid-lynx time.created` reports `2025-03-10`).
-This repository has therefore
-**never published**, and the publish half of this document is a description of
-what a publish would do, not a procedure anyone has completed. Read §5 before
-you read anything into the word "release".
+**Where this package actually is.** There are no git tags and
+`.github/workflows/` contains only `ci.yml` — there is no release workflow. The
+manifest's `name` is `@apothic-ai/solid-lynx` and it carries
+`publishConfig.access: "public"`, because the unscoped name `solid-lynx` on npm
+already belongs to a different package (`npm view solid-lynx license maintainers`
+reports `MIT` and `pranshuchittora`; `npm view solid-lynx time.created` reports
+`2025-03-10`). This repository has therefore **never published**, and the publish
+half of this document is a description of what a publish would do, not a
+procedure anyone has completed. Read §5 before you read anything into the word
+"release".
 
 ## 1. Pre-flight: the gate CI would repeat
 
@@ -35,7 +37,7 @@ green row below means "this command passes here", never "CI ran it and passed".
 | `unit` | Install | `pnpm install --frozen-lockfile` | lockfile and `package.json` agree; no resolution step | exit 0 |
 | `unit` | Type check | `pnpm typecheck` | `tsc -p tsconfig.build.json`, then `tsc --noEmit`, then both consumer fixtures | exit 0 |
 | `unit` | Type check consumer fixtures | `pnpm typecheck:consumer` | `test/consumer/tsconfig.json` and `test/consumer/tsconfig.dev.json` compile against the built `dist/` | exit 0 |
-| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **225 tests in 11 files** |
+| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **228 tests in 11 files** |
 | `unit` | (inside `pnpm test`) | `test/documented-counts.test.ts` | every document that states this suite's size agrees with the measured size | exit 0; a stale count in README, CHANGELOG, ROADMAP or `docs/` is a test failure, not a review note |
 | `unit` | Build | `pnpm build` | `dist/` is written | exit 0 |
 | `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 46 entries |
@@ -392,7 +394,8 @@ pnpm pack --dry-run # list the tarball without writing it     exit 0, 46 entries
 `docs/evidence/native/`: its `README.md`, `TEMPLATE/manifest.json`, and
 `2026-10-25-1.0.0-pending/pending.json`), `CHANGELOG.md`, `ROADMAP.md`, plus
 `LICENSE`, `package.json`, `README.md`. It ends with `Tarball Details` /
-`solid-lynx-1.0.0.tgz` and writes no file (`git status` was clean afterwards).
+`apothic-ai-solid-lynx-1.0.0.tgz` and writes no file (`git status` was clean
+afterwards).
 No capture ships, because none is stored — the pending record is the record that
 none exists.
 
@@ -433,37 +436,45 @@ Consequence worth checking on every release: the `exports` map points at
 file that is not under `dist/` is invisible in the tarball, and
 `pnpm pack --dry-run` is the cheapest place to notice. `test/consumer-install.test.ts`
 is the second: it unpacks the tarball this repository's `pnpm pack` produces into
-a temp `node_modules/solid-lynx`, imports each documented entry through node's own
-resolver, and fails on a subpath that `exports` no longer answers for or on a
-target that is not in the tarball.
+a temp `node_modules/@apothic-ai/solid-lynx`, imports each documented entry
+through node's own resolver, and fails on a subpath that `exports` no longer
+answers for or on a target that is not in the tarball.
 
 ## 5. Publishing
 
 **Nothing in this repository publishes, and this procedure is unproven.** No git
-tag exists (`git tag --list` is empty), `package.json` has no `publishConfig`,
-and `.github/workflows/` contains only `ci.yml`. There is no `NPM_TOKEN` or
-registry credential wired into any workflow here.
+tag exists (`git tag --list` is empty), `.github/workflows/` contains only
+`ci.yml`, and there is no `NPM_TOKEN` or registry credential wired into any
+workflow here. `package.json` now carries `publishConfig.access: "public"` — that
+is a packaging fact about a scoped package, not a publish: a scoped package
+defaults to `restricted`, so without it even a correct tarball would be
+unreachable outside the npm organisation.
 
 What the command would do, if it were ever run deliberately:
 
 - `pnpm publish` packs the same 46 entries §4 lists and uploads them to
-  `https://registry.npmjs.org/` as `solid-lynx@<package.json version>`. A dry
-  run was executed here to confirm the target and that nothing was uploaded:
+  `https://registry.npmjs.org/` as
+  `@apothic-ai/solid-lynx@<package.json version>`, tarball
+  `apothic-ai-solid-lynx-<version>.tgz`. A dry run was executed here to confirm
+  the target and that nothing was uploaded:
   `pnpm publish --dry-run --no-git-checks` printed
   `📦 solid-lynx@0.1.0 → https://registry.npmjs.org/` and
   `[WARN] Skip publishing solid-lynx@0.1.0 (dry run)`, exit 0, no tarball left
-  behind. **That is not a publish** and must not be cited as one.
-- A real publish would need publish rights on the `solid-lynx` name, which
-  currently belongs to another maintainer (`npm view solid-lynx version license
-  maintainers` → `1.0.0`, `MIT`, `pranshuchittora`, exit 0). A publish from this
-  repository would be expected to be rejected by the registry; that rejection was
-  **not** attempted and is not verified here.
+  behind. **That is not a publish** and must not be cited as one; it was run
+  before the scope existed, so its package name is the old one and its line
+  describes what that run printed, not what a run today would print. **Not
+  re-run** after the rename.
+- A real publish would need publish rights on the `@apothic-ai` npm organisation,
+  which is the operator's decision and is recorded outside this repository. The
+  unscoped name it used to target belongs to another maintainer
+  (`npm view solid-lynx version license maintainers` → `1.0.0`, `MIT`,
+  `pranshuchittora`, exit 0), and that is why the scope exists.
 
 **Do not publish on the strength of this document.** No step in it has been
-executed against a registry, the name is taken, and there is no tag or workflow
-to make a publish repeatable. If publishing is ever wanted, the name, the
-credential, and the automation are decisions for the repository owner first, and
-this section gets rewritten from a run that actually happened.
+executed against a registry, and there is no tag or workflow to make a publish
+repeatable. If publishing is ever wanted, the credential and the automation are
+decisions for the repository owner first, and this section gets rewritten from a
+run that actually happened.
 
 ## 6. Rollback and known limitations
 
@@ -515,7 +526,7 @@ per-capability version of the same statement.
 | Any job of `.github/workflows/ci.yml`, on GitHub Actions | **not run** | No workflow has ever executed for this repository: `gh run list` returns no runs, and the workflow file is not on `origin/master` (which sits at `e40d1c5`, 52 commits behind). The file is validated by static parse and its `run:` steps are replayed locally, which is not the same thing — the leg matrices, the `needs:` edges and every `actions/*` step are unexecuted. |
 | `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; a CI runner would install it because it starts bare. |
 | The `solid-matrix` job's steps, verbatim, on both legs | **run locally**, exit 0 | The job's `run:` blocks were extracted from the parsed YAML and executed in order for `solid-js` 1.9.16 / `babel-preset-solid` 1.9.16 and `solid-js` 1.9.17 / preset 1.9.16. Every command exited 0 and the tree was clean afterwards. What is **not** run is the workflow itself on GitHub Actions — no runner could be dispatched from this worktree, so the leg matrix, the `needs: unit` edge, and the `actions/*` steps are unverified until a push runs them. |
-| `pnpm publish` (real) | **not run**, deliberately | §5. The name belongs to another maintainer and this repository has no credential or release workflow. Only `--dry-run` was executed, and it uploaded nothing. |
+| `pnpm publish` (real) | **not run**, deliberately | §5. The unscoped name belongs to another maintainer and this repository has no credential or release workflow. Only `--dry-run` was executed, before the scope existed, and it uploaded nothing. |
 
 Everything else in this document — the install, the five gate commands
 (`typecheck`, `typecheck:consumer`, `test`, `build`, `pack --dry-run`), both

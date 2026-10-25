@@ -2,11 +2,18 @@
 
 Solid rendering for [Lynx](https://lynxjs.org/).
 
+> **Installed name:** `@apothic-ai/solid-lynx`. This README, the docs, and the
+> repository call the renderer solid-lynx; the npm package is scoped because the
+> unscoped `solid-lynx` on npm belongs to an unrelated project. Every import below
+> uses the scoped specifier, and the subpaths are `@apothic-ai/solid-lynx/rspeedy`,
+> `/parity`, `/jsx-runtime`, and `/jsx-dev-runtime`. See
+> [CHANGELOG.md](CHANGELOG.md), "Package name".
+
 `solid-lynx` connects Solid's fine-grained reactive runtime to Lynx Element PAPI. Solid components, signals, effects, and control flow create and update Lynx elements without targeting the browser DOM or adding a virtual DOM layer.
 
 > **Status:** stable `1.0.0` release of the renderer and its Element PAPI bridge. The public host, root, event, JSX, ref, CSS-id, list, Rspeedy, and parity surfaces are frozen and each item is mapped to its covering test in [docs/contract.md](docs/contract.md). The supported Solid, Lynx, Rspeedy, Node, and pnpm versions, and how narrow each range is, are in [docs/compatibility.md](docs/compatibility.md); upgrading from `0.x` is covered by [docs/migration.md](docs/migration.md); per-capability support and measurement status is in [docs/capabilities.md](docs/capabilities.md).
 >
-> What is actually verified: 225 unit tests across eleven files — the renderer checks against an in-memory fake Element PAPI, the two native capture verifiers, the stored-evidence requirement, the probe recorders, the Rspeedy plugin, the packaging check below, a consumer install that packs this workspace and imports the unpacked tarball, and a guard that fails when any document disagrees with the counts here — plus the consumer fixtures compiled by `pnpm typecheck:consumer`, the Lynx-for-Web bundle and the pattern card in Chromium (17 + 9 tests), and the native smoke card, which **reported** loading, rendering and passing all twenty shared Element PAPI operations in Lynx Explorer 4.1.0 on an Android device on 2026-10-09 — that run's capture was not kept, so `docs/parity-checklist.md` records the native column as reported, not reproduced. The tarball that `pnpm pack` produces is checked twice: `test/packaging.test.ts` in the repository reads the real file list and fails if a link in this README, or in any shipped doc, points at something the package does not contain, and `test/consumer-install.test.ts` unpacks that tarball into a temp app, installs only `solid-js` beside it, and imports every documented entry through node's own ESM resolution. `.github/workflows/ci.yml` defines six jobs — `unit`, then `node-matrix`, `solid-matrix`, `browser`, `native-build` and `native-evidence` — triggered on `pull_request` and on `push` to `master`; `native-build` only compiles the bundle and attaches no device, and `native-evidence` would fail a pull request that changes native-facing code without a stored, verifier-passing capture, an explicit recorded decision, or a recorded pending run (`docs/evidence/native/README.md`). **No workflow has executed on GitHub Actions for any commit here** — `gh run list` returns no runs and the workflow is not on `origin/master` — so the numbers above are local results and the CI column is a definition, not a record.
+> What is actually verified: 228 unit tests across eleven files — the renderer checks against an in-memory fake Element PAPI, the two native capture verifiers, the stored-evidence requirement, the probe recorders, the Rspeedy plugin, the packaging check below, a consumer install that packs this workspace and imports the unpacked tarball, and a guard that fails when any document disagrees with the counts here — plus the consumer fixtures compiled by `pnpm typecheck:consumer`, the Lynx-for-Web bundle and the pattern card in Chromium (17 + 9 tests), and the native smoke card, which **reported** loading, rendering and passing all twenty shared Element PAPI operations in Lynx Explorer 4.1.0 on an Android device on 2026-10-09 — that run's capture was not kept, so `docs/parity-checklist.md` records the native column as reported, not reproduced. The tarball that `pnpm pack` produces is checked twice: `test/packaging.test.ts` in the repository reads the real file list and fails if a link in this README, or in any shipped doc, points at something the package does not contain, and `test/consumer-install.test.ts` unpacks that tarball into a temp app, installs only `solid-js` beside it, and imports every documented entry through node's own ESM resolution. `.github/workflows/ci.yml` defines six jobs — `unit`, then `node-matrix`, `solid-matrix`, `browser`, `native-build` and `native-evidence` — triggered on `pull_request` and on `push` to `master`; `native-build` only compiles the bundle and attaches no device, and `native-evidence` would fail a pull request that changes native-facing code without a stored, verifier-passing capture, an explicit recorded decision, or a recorded pending run (`docs/evidence/native/README.md`). **No workflow has executed on GitHub Actions for any commit here** — `gh run list` returns no runs and the workflow is not on `origin/master` — so the numbers above are local results and the CI column is a definition, not a record.
 >
 > What is **not** verified, and must not be assumed from this release: native stylesheet lifecycle, native list semantics and cell recycling, native `global-bind` delivery, event capture/propagation parity on native, dual-thread/worklets/first-screen, gesture PAPI, animation PAPI exposure, and portals/overlays. This renderer does not implement the ones marked unimplemented in [docs/capabilities.md](docs/capabilities.md), and the native stylesheet and list probe cards have not been run on a device, so they measure nothing yet. [CHANGELOG.md](CHANGELOG.md) records exactly what 1.0.0 contains and why.
 
@@ -53,20 +60,25 @@ The checked-in fixture boots `@lynx-js/web-core/client` and loads the generated 
 ## Install
 
 ```bash
-pnpm add solid-lynx solid-js
+pnpm add @apothic-ai/solid-lynx solid-js
 pnpm add -D @lynx-js/rspeedy @lynx-js/rsbuild-plugin \
   @lynx-js/vanilla-rsbuild-plugin @lynx-js/lynx-core \
   @rsbuild/core @rsbuild/plugin-babel babel-preset-solid
 ```
 
-Configure Solid to emit universal renderer calls targeting `solid-lynx`:
+Configure Solid to emit universal renderer calls targeting the package. The
+module name is the published, scoped one: the renderer is called solid-lynx
+throughout this repository and in the docs, but the name it is installed under is
+`@apothic-ai/solid-lynx`, because the unscoped `solid-lynx` on npm belongs to an
+unrelated package. A build that names the unscoped form emits imports nothing can
+resolve.
 
 ```js
 // babel.config.cjs
 module.exports = {
   presets: [
     ["babel-preset-solid", {
-      moduleName: "solid-lynx",
+      moduleName: "@apothic-ai/solid-lynx",
       generate: "universal",
       hydratable: false,
     }],
@@ -106,7 +118,7 @@ export default defineConfig({
         options.presets.unshift([
           "babel-preset-solid",
           {
-            moduleName: "solid-lynx",
+            moduleName: "@apothic-ai/solid-lynx",
             generate: "universal",
             hydratable: false,
           },
@@ -136,7 +148,7 @@ The convenience root uses the global Lynx Element PAPI functions. It creates a p
 
 ```tsx
 import { createSignal } from "solid-js";
-import { createLynxRoot } from "solid-lynx";
+import { createLynxRoot } from "@apothic-ai/solid-lynx";
 
 function App() {
   const [count, setCount] = createSignal(0);
@@ -210,7 +222,7 @@ Several roots can share one page, each with its own container element passed as 
 Creates a renderer from a `LynxHost` implementation. Use this when you need multiple isolated hosts, a custom runtime, or a test double.
 
 ```ts
-import { createGlobalLynxHost, createLynxRenderer } from "solid-lynx";
+import { createGlobalLynxHost, createLynxRenderer } from "@apothic-ai/solid-lynx";
 
 const host = createGlobalLynxHost({
   getParentComponentId: () => pageId,
@@ -239,7 +251,7 @@ const host = createGlobalLynxHost({
 `ref` is transformed by the Solid JSX compile step, so it is not a renderer prop. A function ref receives the Lynx PAPI node itself, and returning a function from it registers that function as the owning Solid scope's teardown:
 
 ```tsx
-import { createLynxRef } from "solid-lynx";
+import { createLynxRef } from "@apothic-ai/solid-lynx";
 
 const target = createLynxRef<LynxNode>();
 

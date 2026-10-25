@@ -1,4 +1,4 @@
-import type { LynxEventHandler } from "solid-lynx";
+import type { LynxEventHandler } from "@apothic-ai/solid-lynx";
 
 const onTap: LynxEventHandler = event => {
   const uid: number = event.currentTarget?.uid ?? event.target.uid;

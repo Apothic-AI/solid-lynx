@@ -1,8 +1,8 @@
 import { For, Show, createSignal } from "solid-js";
-import { createLynxRef, createLynxRoot, ensureLynxEnvironmentBasics } from "solid-lynx";
-import { runElementPapiParity } from "solid-lynx/parity";
-import type { LynxEvent, LynxNode, LynxPapi, LynxRoot } from "solid-lynx";
-import type { LynxRefObject } from "solid-lynx";
+import { createLynxRef, createLynxRoot, ensureLynxEnvironmentBasics } from "@apothic-ai/solid-lynx";
+import { runElementPapiParity } from "@apothic-ai/solid-lynx/parity";
+import type { LynxEvent, LynxNode, LynxPapi, LynxRoot } from "@apothic-ai/solid-lynx";
+import type { LynxRefObject } from "@apothic-ai/solid-lynx";
 import { installPapiProbe, recordRefEvent } from "./papi-probe.js";
 
 interface LynxEngine {

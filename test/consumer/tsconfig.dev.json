@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "jsx": "react-jsxdev",
-    "jsxImportSource": "solid-lynx",
+    "jsxImportSource": "@apothic-ai/solid-lynx",
     "noEmit": true,
     "types": []
   },

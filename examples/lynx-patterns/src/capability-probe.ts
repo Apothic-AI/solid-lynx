@@ -13,8 +13,8 @@
  */
 
 import { createSignal } from "solid-js";
-import { createLynxRef, createLynxRoot, use } from "solid-lynx";
-import type { LynxNode, LynxPapi } from "solid-lynx";
+import { createLynxRef, createLynxRoot, use } from "@apothic-ai/solid-lynx";
+import type { LynxNode, LynxPapi } from "@apothic-ai/solid-lynx";
 
 export type CapabilityStatus = "supported" | "host-only" | "unsupported";
 
