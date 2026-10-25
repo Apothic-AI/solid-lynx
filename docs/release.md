@@ -31,7 +31,7 @@ none needs a secret. Green means exit status 0 on that exact command.
 | `unit` | Type check consumer fixtures | `pnpm typecheck:consumer` | `test/consumer/tsconfig.json` and `test/consumer/tsconfig.dev.json` compile against the built `dist/` | exit 0 |
 | `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **213 tests in 9 files** |
 | `unit` | Build | `pnpm build` | `dist/` is written | exit 0 |
-| `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 45 entries |
+| `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 46 entries |
 | `node-matrix` | Install / Type check / Unit tests, on `20.x`, `22.x`, `24.x` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` | the unit gate passes at the top of each declared Node line | exit 0 on 20.20.2, 22.23.3, 24.22.1 locally (98 tests each at that commit — the count predates `test/packaging.test.ts`, which was added afterwards and is not re-measured here; the floors 20.19.0 and 22.12.0 also exit 0) |
 | `browser` | Install Chromium | `pnpm exec playwright install --with-deps chromium` | Chromium present for Playwright | **not run** — the browser was already installed in this worktree; CI runs it because the runner starts bare |
 | `browser` | Lynx-for-Web suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | builds the web bundle, serves it, drives it in Chromium | exit 0, **17 passed** (43.8s, on the 1.9.17 overlay — the pinned run was 54.2s) |
@@ -368,17 +368,19 @@ present-tense pass, and it may not upgrade anything else from "unmeasured".
 
 ```bash
 pnpm build          # tsc -p tsconfig.build.json -> dist/     exit 0
-pnpm pack --dry-run # list the tarball without writing it     exit 0, 45 entries
+pnpm pack --dry-run # list the tarball without writing it     exit 0, 46 entries
 ```
 
-`pnpm pack --dry-run` ran here and listed **45 entries**: 30 files under
-`dist/` (`*.js` and `*.d.ts` for every `src/` module), the ten files in
+`pnpm pack --dry-run` ran here and listed **46 entries**: 30 files under
+`dist/` (`*.js` and `*.d.ts` for every `src/` module), the eleven files in
 `docs/` (`building`, `capabilities`, `compatibility`, `contract`, `migration`,
-`parity-checklist`, `release`, `session-handoff`, and the two under
-`docs/evidence/native/`: its `README.md` and `TEMPLATE/manifest.json`),
-`CHANGELOG.md`, `ROADMAP.md`, plus `LICENSE`, `package.json`, `README.md`. It
-ends with `Tarball Details` / `solid-lynx-1.0.0.tgz` and writes no file
-(`git status` was clean afterwards). No capture ships, because none is stored.
+`parity-checklist`, `release`, `session-handoff`, and the three under
+`docs/evidence/native/`: its `README.md`, `TEMPLATE/manifest.json`, and
+`2026-10-25-1.0.0-pending/pending.json`), `CHANGELOG.md`, `ROADMAP.md`, plus
+`LICENSE`, `package.json`, `README.md`. It ends with `Tarball Details` /
+`solid-lynx-1.0.0.tgz` and writes no file (`git status` was clean afterwards).
+No capture ships, because none is stored — the pending record is the record that
+none exists.
 
 What ends up in the tarball is decided by `files` in `package.json`:
 `["dist", "docs", "CHANGELOG.md", "README.md", "ROADMAP.md", "LICENSE"]`.
@@ -426,7 +428,7 @@ registry credential wired into any workflow here.
 
 What the command would do, if it were ever run deliberately:
 
-- `pnpm publish` packs the same 45 entries §4 lists and uploads them to
+- `pnpm publish` packs the same 46 entries §4 lists and uploads them to
   `https://registry.npmjs.org/` as `solid-lynx@<package.json version>`. A dry
   run was executed here to confirm the target and that nothing was uploaded:
   `pnpm publish --dry-run --no-git-checks` printed
