@@ -150,24 +150,76 @@ other version is untested, not "probably fine".
 
 ## 4. Lynx native runtime (Lynx Explorer / Lynx engine)
 
+**Two runtimes have been measured, and they are kept separate.** They share the
+Explorer build and the APK digest, so the Element PAPI and the engine are the
+same code; they do not share silicon, a device image, or an input path.
+
+### 4.1 A03 tablet — the hand run, still not reproduced
+
 | Source | Value |
 | --- | --- |
 | `docs/building.md`, `docs/session-handoff.md` | Lynx Explorer **4.1.0** (`com.lynx.explorer`), engine **3.5** |
-| Device | SM-A037U, Android 13 (API 33), serial `R9WT911JVVH` |
+| Device | SM-A037U, Android 13 (API 33), `arm64-v8a`, serial `R9WT911JVVH` |
 | APK digest recorded | SHA-256 `6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6`, `arm64-v8a` |
-| `docs/parity-checklist.md` | all twenty shared Element PAPI operations were **reported** passing on this device on 2026-10-09; the capture is lost, so the column is reported, not reproduced |
+| `docs/parity-checklist.md` | all twenty shared Element PAPI operations were **reported** passing on this device on 2026-10-09; the capture was lost, so the A03 column is reported, not reproduced |
+| Stored evidence | **none.** No capture from this runtime exists anywhere in this tree. |
 
-**Range: none — one version, tested once, by hand.** There is no native version
-matrix and no native *runtime* CI: `.github/workflows/ci.yml` builds the native
-bundle (`pnpm native:build`) but attaches no device or emulator, and says so in
-its own comment. Explorer 4.1.0 / engine 3.5 is the only native runtime this
-project has ever loaded a bundle into. iOS has never been run. Older or newer
-Explorer builds are untested.
+### 4.2 Android emulator, API 33 `x86_64` — the measured runtime
 
-Keeping this honest matters more than it looks: most of the "unsupported"
-column in [contract.md](contract.md) and [capabilities.md](capabilities.md) is
-about native behaviour that one hand run did not measure, not about behaviour
-that was measured and failed.
+| Source | Value |
+| --- | --- |
+| AVD | **`lynx33`**, serial **`emulator-5554`**, KVM-accelerated |
+| Android | 13 / **API 33** |
+| ABI | **`x86_64`** |
+| App | Lynx Explorer **4.1.0** (`com.lynx.explorer`), engine 3.5 — the same build as §4.1 |
+| APK digest | SHA-256 `6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6` — identical to the A03 install |
+| Captures | `docs/evidence/native/2026-10-25-emulator-api33-smoke/` (20/20 parity, verifier exit 0), `...-stylesheet/` (6 stages, exit 0, including a successful load of the real `probe.css`), `...-list/` (7 stages, exit 0); `...-stylesheet-v2/` holds a capture with **no manifest**, so it is supporting bytes, not a record |
+
+All four cards — the parity smoke card and the stylesheet, stylesheet-v2 and
+list probes — ran on this one runtime, and three of them are stored as
+verifier-checked records. The manifests name the `runtime` block
+(`kind`, `avd`, `androidApi`, `abi`, `lynxExplorer`, `apkSha256`) beside the
+`device` block, so a reader does not have to infer which runtime a capture came
+from.
+
+### 4.3 What an emulator does not prove
+
+The emulator is a measured runtime, not a substitute for the tablet. It shares
+an app build and an APK digest with §4.1 and nothing else that matters for a
+device claim:
+
+- **GPU behaviour** — the render surface is an emulated GL path on host
+  hardware, so rendering cost, frame pacing, and any GPU-specific path are
+  unmeasured.
+- **Touch latency** — this run injected **no touch at all**: the parity harness
+  drives element operations and a reactive text update, and no stage of any card
+  sends a tap. So the digitizer, the real touch pipeline, and perceived latency
+  are outside it entirely, and the only tap evidence in this tree is the
+  2026-10-09 A03 prose.
+- **Memory pressure** — a development machine's RAM sits behind the emulator, so
+  low-memory behaviour, process death, and cold start under pressure are
+  unmeasured.
+- **Physical-device quirks** — vendor Android builds, thermals, `arm64-v8a`
+  execution (the A03 is `arm64-v8a`, the emulator is `x86_64`), and
+  device-specific Explorer packaging.
+
+So a statement supported by an emulator capture is a claim about the **Element
+PAPI and the engine**, and must be written as one. It is never a claim about
+"native" behaviour in general, and it must not be used to close an A03 gap.
+
+**Range: none — one version, one tablet hand run, one emulator run.** There is no
+native version matrix and no native *runtime* CI: `.github/workflows/ci.yml`
+builds the native bundle (`pnpm native:build`) but attaches no device or emulator,
+and says so in its own comment. Explorer 4.1.0 / engine 3.5 is the only native
+runtime this project has ever loaded a bundle into, on either runtime above. iOS
+has never been run. Older or newer Explorer builds are untested.
+
+Keeping this honest matters more than it looks: part of the "unsupported" column
+in [contract.md](contract.md) and [capabilities.md](capabilities.md) is about
+native behaviour that one hand run did not measure, and part of it is about
+behaviour the emulator measured only in part — the stylesheet lifecycle has no
+handle and list recycling has no observed call. Both kinds are labelled
+`unmeasured` where they appear, and neither is upgraded by the captures existing.
 
 ## 5. Rspeedy and the build plugins
 
@@ -263,7 +315,7 @@ specifier starts resolving again.
 | Solid | `^1.9.15`; verified on 1.9.15, 1.9.16, and 1.9.17 — the whole range | `babel-preset-solid` peer, lockfile, CI `solid-matrix`, local runs | range, every admitted version run |
 | `@lynx-js/web-core` | 0.26.2 only | lockfile, browser suite | single version |
 | `@lynx-js/lynx-core` | 0.1.4 only | lockfile | single version |
-| Lynx Explorer / engine | 4.1.0 / 3.5 only | `docs/building.md`, device run | single version, one hand run |
+| Lynx Explorer / engine | 4.1.0 / 3.5 only | `docs/building.md`, the A03 hand run, the emulator captures | single version; measured on two runtimes (§4.1 A03 reported, §4.2 emulator captured) |
 | `@lynx-js/rspeedy` | 0.18.0 only | lockfile, `web:build`/`native:build` | single version |
 | `@rsbuild/core` | `^2.0.0` peer; 2.2.11 verified | plugin peers, lockfile | narrow |
 | TypeScript | `^5.8.3`; 5.9.3 verified | devDependency, lockfile | narrow |
@@ -308,16 +360,25 @@ specifier starts resolving again.
   diff and re-runs `scripts/verify-native-parity.mjs` over a stored capture, so a
   green run means the evidence is complete and re-verifiable, not that native
   behaviour was executed on the runner.
-- **No second native runtime.** No iOS run, no newer or older Explorer build, no
-  device other than the A03 recorded in `docs/building.md`.
+- **No second native runtime beyond the two in §4.** No iOS run, no newer or
+  older Explorer build, and no physical device other than the A03 recorded in
+  `docs/building.md`. The Android emulator (§4.2) is a second *measured runtime*,
+  not a second tablet: it shares the Explorer build and the APK digest with the
+  A03 and shares none of its silicon, device image, or input path. §4.3 lists what
+  it therefore cannot prove.
 - **No cross-host stylesheet or list claims.** [capabilities.md](capabilities.md)
-  remains authoritative, and it marks native per-capability results as not
-  measured.
-- **No present-tense native parity claim.** The 2026-10-09 A03 run reported all
-  twenty Element PAPI operations passing, but its capture was left in `/tmp`.
-  [parity-checklist.md](parity-checklist.md) therefore marks the native column
-  reported, not reproduced, and a native pass may be cited only once a stored
-  capture verifies (`scripts/verify-native-parity.mjs`, exit 0).
+  remains authoritative. Its summary table now records two native cells as
+  measured (stylesheet load, list create/materialize/reorder/shrink) with the
+  emulator as the runtime, keeps every other native cell `not measured`, and
+  marks the stylesheet **lifecycle** and list **recycling** unmeasured in the same
+  cells that carry the measured half.
+- **No present-tense native parity claim for the A03.** The 2026-10-09 A03 run
+  reported all twenty Element PAPI operations passing, but its capture was left in
+  `/tmp`. [parity-checklist.md](parity-checklist.md) therefore keeps the A03
+  column reported, not reproduced. The twenty operations *are* measured on the
+  emulator in §4.2, with a stored capture whose verifier exits 0
+  (`scripts/verify-native-parity.mjs`), and that is the only runtime the
+  present-tense claim covers.
 - **No cross-OS claim.** Every matrix leg and every other job runs on
   `ubuntu-latest`. macOS and Windows are untested, so nothing here says the
   package installs or runs there.

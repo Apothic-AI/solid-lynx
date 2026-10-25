@@ -100,10 +100,11 @@ guessing at a missing one.
 | Field | Type | What it records |
 | --- | --- | --- |
 | `kind` | `"capture"` | Distinguishes this from `decision.json`. |
-| `card` | `"smoke"` \| `"stylesheet"` \| `"list"` | The card `run-native-probe.sh` ran. It also selects the verifier: `smoke` is read by `scripts/verify-native-parity.mjs`, `stylesheet` and `list` by `scripts/verify-native-probe.mjs`. The two capture formats are not interchangeable — a `smoke` manifest over stage lines fails to verify, and so does a probe manifest over a parity report. |
+| `card` | `"smoke"` \| `"stylesheet"` \| `"stylesheet2"` \| `"list"` | The card that produced the capture. It also selects the verifier: `smoke` is read by `scripts/verify-native-parity.mjs`, `stylesheet`, `stylesheet2` and `list` by `scripts/verify-native-probe.mjs`. The two capture formats are not interchangeable — a `smoke` manifest over stage lines fails to verify, and so does a probe manifest over a parity report. |
 | `capture` | string | The capture filename, relative to this directory. Absolute paths and `..` are refused: the capture has to travel with the manifest. |
-| `device.serial` | string | The serial the run was pinned to — `R9WT911JVVH` for the A03. |
+| `device.serial` | string | The serial the run was pinned to — `R9WT911JVVH` for the A03, `emulator-5554` for the stored 2026-10-25 runs. |
 | `device.getState` | `"device"` | What `adb -s <serial> get-state` printed. `device` is the only value that means the device was usable; `unauthorized`, `offline`, and `unknown` are not a run. |
+| `runtime` | object | **Optional, and required in practice for any run that is not the A03.** The stored emulator manifests carry `{ kind: "android-emulator", avd, androidApi, abi, lynxExplorer, apkSha256 }`. It is not checked by shape — the checker reads `device` — but it is the only thing that tells a later reader which runtime a capture came from, and *an A03 capture and an emulator capture are different claims*. |
 | `timestamp` | ISO 8601 | When the run happened. |
 | `commit` | git sha | The commit the capture was taken at. It must be inside the change's range: a capture taken before a change cannot back that change. |
 | `verifier.exitCode` | `0` | The card's verifier's exit code. `0` is the only code that may be cited as a pass; `1` is findings and `2` is "nothing was verified". |
@@ -171,7 +172,7 @@ answer about behaviour: the range exits **3**, which is not a pass.
 | Field | Type | What it records |
 | --- | --- | --- |
 | `kind` | `"pending"` | Distinguishes this from `manifest.json` and `decision.json`. |
-| `card` | `"smoke"` \| `"stylesheet"` \| `"list"` | Which card will measure it. The card that has *not* run, named so the next person knows what to attach the device for. |
+| `card` | `"smoke"` \| `"stylesheet"` \| `"stylesheet2"` \| `"list"` | Which card will measure it. The card that has *not* run, named so the next person knows what to attach the device for. |
 | `reason` | string | Why no run has happened yet, at least 40 characters. Same bar as a decision's reason: "blocked" is not a reason, and "no device" alone is not either — say what was going to be measured and what stopped it. |
 | `blocked_by` | string | The physical or external dependency, named. At least 12 characters, and the shrugs (`n/a`, `tbd`, `no device`, `hardware`, `later`, …) are rejected. The honest shape names the thing: `"A03 R9WT911JVVH not attached over adb; work unit ub_y33g9p"`. |
 | `paths` | array | Every native-facing path this record stands in for. Same completeness rule as `decision.json`, and it is checked across the whole record set rather than per directory: a record naming one file out of three — or a set of records between them leaving one out — is rejected, naming the path nobody covered. |
@@ -273,16 +274,59 @@ node scripts/require-native-evidence.mjs --range <base>..HEAD
 ```
 
 When the run finally happens, store the capture in its **own** directory with its
-`manifest.json` and leave the pending record where it is. The capture verifies
-and the range exits 0; the report says the pending record is superseded, and it
-can be deleted in a later tidy-up. Do not add the capture beside the pending
-record: a directory holding two records is rejected.
+`manifest.json`. The capture verifies, the range exits 0, and the report says the
+pending record is superseded — so the pending record can be deleted afterwards,
+which is exactly what `85ddd12` did for the 1.0.0 records in this tree. Do not add
+the capture beside the pending record: a directory holding two records is
+rejected.
 
-The worked example in this tree is
-`2026-10-25-1.0.0-pending/pending.json`: three records, one per card, that between
-them name all 22 native-facing paths of the 1.0.0 range and the A03 they are
-waiting on. It is the reason that range reports `verdict: pending` rather than
-`verdict: missing evidence`, and it is not evidence that anything ran.
+If the run happens on something other than the A03 — an emulator, another tablet —
+say so in the manifest's `runtime` block and in its `note`. A capture of the same
+Explorer build on different silicon is a measurement of the engine, not of the
+device the pending record was waiting for, and the two must not be conflated.
+
+## What is stored here now
+
+Four run directories from 2026-10-25, all of them **Android emulator** runs rather
+than A03 runs:
+
+| Directory | Card | Contents |
+| --- | --- | --- |
+| `2026-10-25-emulator-api33-smoke/` | `smoke` | `capture.log` + `manifest.json`, verifier exit 0 |
+| `2026-10-25-emulator-api33-stylesheet/` | `stylesheet` | `capture.log` + `manifest.json`, verifier exit 0 |
+| `2026-10-25-emulator-api33-list/` | `list` | `capture.log` + `manifest.json`, verifier exit 0 |
+| `2026-10-25-emulator-api33-stylesheet-v2/` | `stylesheet2` | `capture.log` only — **no manifest**, so it is supporting bytes and **not** a record |
+
+Every one of those manifests names its `runtime` (AVD `lynx33`, API 33, `x86_64`,
+Explorer 4.1.0, APK SHA-256
+`6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6`) and its
+`device.serial` `emulator-5554`, and every one carries a note saying in its own
+words that an emulator run backs nothing about GPU behaviour, touch latency,
+memory pressure, or physical-device quirks, and does not supersede A03 evidence.
+**No A03 capture exists in this directory.** The emulator shares an Explorer
+build and an APK digest with the tablet; that is the whole of what transfers.
+
+Each of the three records re-verifies on demand:
+
+```bash
+node scripts/verify-native-parity.mjs \
+  docs/evidence/native/2026-10-25-emulator-api33-smoke/capture.log      # exit 0
+node scripts/verify-native-probe.mjs \
+  docs/evidence/native/2026-10-25-emulator-api33-stylesheet/capture.log # exit 0
+node scripts/verify-native-probe.mjs \
+  docs/evidence/native/2026-10-25-emulator-api33-list/capture.log       # exit 0
+```
+
+**The one worked `pending.json` in this tree's history is gone.**
+`2026-10-25-1.0.0-pending/pending.json` held three records, one per card, that
+between them named all 22 native-facing paths of the 1.0.0 range and the A03 they
+were waiting on; commit `85ddd12` deleted it once the emulator captures existed,
+because a verifying capture supersedes a pending record and leaving it would have
+kept asserting that nothing had run. The `pending.json` form itself is unchanged
+and still exercised by the tests in `test/require-native-evidence.test.ts`, which
+build their own throwaway repositories. Nothing in this directory currently
+records a scheduled-but-unrun measurement, so a native-facing change with no
+record of its own is exit 1, not exit 3.
 
 ## What is machine-checked, and what is not
 

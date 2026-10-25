@@ -517,12 +517,18 @@ stylesheets the Lynx toolchain already compiled into the bundle. Loading,
 adopting, replacing, or removing a stylesheet at runtime is **unsupported**:
 web-core exposes no Element PAPI for it, and the native globals the device
 inventory listed (`__LoadStyleSheet`, `__AdoptStyleSheet`,
-`__ReplaceStyleSheets`) have unmeasured semantics. See
-[capabilities.md](capabilities.md), "Stylesheet loading and lifecycle".
+`__ReplaceStyleSheets`) have a measured call shape but **no measured lifecycle**
+— on the API 33 `x86_64` emulator, `__LoadStyleSheet` needs a second String
+parameter and returns `null`, `__AdoptStyleSheet` requires at least one
+parameter, and no call in any card returned a stylesheet handle, so nothing can
+be said about ownership, removal, or an applied rule. See
+[capabilities.md](capabilities.md), "Stylesheet loading and lifecycle" and "The
+five measured stylesheet facts".
 
-Native status of `__SetCSSId`: the device run recorded that the global exists,
-but `root.setCSSId()` has never been exercised on a device. Native behaviour is
-**unmeasured**, not supported.
+Native status of `__SetCSSId`: both device inventories recorded that the global
+exists, but `root.setCSSId()` has never been exercised on a device or an emulator.
+Native behaviour is **unmeasured**, not supported. The emulator captures say
+nothing about it: no card calls `setCSSId`.
 
 ## 9. Deterministic cleanup
 
@@ -559,9 +565,14 @@ test. The migration guide repeats it from a consumer's point of view
 - **Cleanup ordering between two roots.** Each root removes its own nodes in
   insertion order; no test asserts a specific interleaving when two roots
   dispose in the same task.
-- **Native disposal.** The device run exercised tap dispatch and rendering; it
-  did not assert listener-slot removal or node removal afterwards. Native
-  cleanup is **unmeasured**.
+- **Native disposal.** The A03 device run exercised tap dispatch and rendering;
+the 2026-10-25 emulator captures exercise Element PAPI construction, the parity
+harness's own root disposal (`renderer-dispose`, which asserts the nodes that
+harness root rendered were gone from its sandbox), and the list card's model
+changes. **Neither asserts listener-slot removal or node removal after the
+renderer's `dispose()`**, so native cleanup is **unmeasured**. An emulator
+capture does not close this: there is no card that takes a post-dispose reading
+of what the engine still holds, on either runtime.
 
 ## 10. The Element PAPI surface the renderer requires
 
@@ -908,8 +919,8 @@ and [ROADMAP.md](../ROADMAP.md).
 | Dual-thread execution, worklets, first-screen synchronization | Not implemented by this renderer. Both examples build with `background: false`. A background-thread card is unverified; worklets belong to Lynx's compiler and are out of scope. | `ROADMAP.md` 0.3 unchecked item and "Out of scope"; `docs/building.md` "Dual-thread execution"; `docs/parity-checklist.md` "Runtime behaviour" |
 | Native `global-bind` delivery | The renderer registers and removes the binding correctly; whether a host invokes it is unmeasured. web-core files the handler in its own slot but does not run the global pass for function callbacks. | `docs/capabilities.md`; `docs/parity-checklist.md`; `README.md` "Events and properties" |
 | Event capture/propagation parity on native | The capture, bubble, and catch passes are tested against the fake PAPI and the web host. Native is **not measured**. | `docs/parity-checklist.md` "Runtime behaviour"; `test/renderer.test.ts:887-950` |
-| Native stylesheet lifecycle | `__LoadStyleSheet`, `__AdoptStyleSheet`, `__ReplaceStyleSheets` exist in the native global inventory; their signatures and semantics were not tested. Not integrated. | `docs/capabilities.md` "Stylesheet loading and lifecycle"; `ROADMAP.md` 0.4 open item |
-| Native list behaviour and cell recycling | The renderer has a list adapter (§11) measured against web-core only. No host in this repository has been observed to recycle a cell, and no device run has created a list or called either list callback, so native list support is **unmeasured**. | `docs/capabilities.md` "List virtualization"; `docs/session-handoff.md`; `ROADMAP.md` 0.4 list entry |
+| Native stylesheet lifecycle | `__LoadStyleSheet`, `__AdoptStyleSheet`, `__ReplaceStyleSheets` exist in both device inventories. Their call shape is now measured on the API 33 emulator — load needs a second String parameter and returns `null`, adopt needs `>= 1` parameter, replace accepts `[]`/`[null]`/`[[]]` and returns `null` — but **no call returned a stylesheet handle**, so adoption, replacement, ownership and cleanup are unmeasured. Not integrated. | `docs/capabilities.md` "Stylesheet loading and lifecycle" and "The five measured stylesheet facts"; `ROADMAP.md` 0.4 open item |
+| Native list behaviour and cell recycling | The renderer has a list adapter (§11) measured against web-core. On the API 33 emulator the card measured create (handle returned, `typeof` `"unknown"`), materialize (3 children), keyed identity across a permuted model (3 rows moved, 0 released), and a shrink (2 rows released) — but **no host in this repository has been observed to recycle a cell**, and `enqueueComponent` was never called in any stage. Recycling, scrolling and cell reuse timing are **unmeasured**; there is no A03 list run at all. | `docs/capabilities.md` "List virtualization"; `docs/session-handoff.md`; `ROADMAP.md` 0.4 list entry |
 | Gesture PAPI | No gesture binding form. `gesture-*` props are written as plain attributes and never fire — the one documented silent failure. | `docs/capabilities.md` "Gestures" |
 | Animation PAPI exposure | `__ElementAnimate` exists on web-core; nothing in this renderer calls it and the package exposes no animation API. Use inline styles and CSS transitions. | `docs/capabilities.md` "Animation" |
 | Portals and overlays | No `Portal`, no `Dynamic`, no overlay contract. Importing `Portal` fails at build time. `<overlay>` is an ordinary child. | `docs/capabilities.md` "Overlays and portals"; `docs/building.md` "Known limitation" |
@@ -936,15 +947,37 @@ documented intention:
 - The `background:` namespace at dispatch time (it is type-checked only, in
   `test/consumer/jsx-dev-runtime.tsx`).
 - `replaceText` before insertion (the throw), and `host.createComment` semantics.
-- Every native runtime claim, except: the 2026-10-09 run reported the card
-  loading, rendering, a `bindtap` counter updating, and all twenty parity
-  operations passing. That run's capture was not kept, so
-  `docs/parity-checklist.md` marks the native column reported, not reproduced and
-  nothing here may be cited as a present pass. The native stylesheet probe and native list
-  probe cards are built by `pnpm native:build` and covered by host-free recorder
-  tests (`test/stylesheet-probe-report.test.ts`,
-  `test/list-probe-report.test.ts`), but neither has been run on a device, so
-  their native findings are unmeasured. No native runtime executes in CI.
+- Every native runtime claim, except what the stored captures show. Two runtimes,
+  two evidence levels, and the difference is the claim:
+  - **The 2026-10-09 A03 hand run reported** the card loading, rendering, a
+    `bindtap` counter updating, and all twenty parity operations passing. That
+    run's capture was not kept, so [parity-checklist.md](parity-checklist.md)
+    keeps it as its own `reported` historical note and nothing here may cite it
+    as a present pass.
+  - **The 2026-10-25 API 33 `x86_64` emulator run is captured and re-verifiable.**
+    It measured all twenty parity operations as `pass`
+    (`docs/evidence/native/2026-10-25-emulator-api33-smoke/`), the stylesheet
+    bindings' call-time arity and return values including a successful load of
+    the real `probe.css` (`.../2026-10-25-emulator-api33-stylesheet/`), and the
+    list card's create / materialize / keyed reorder / shrink with
+    `enqueueComponent` never called (`.../2026-10-25-emulator-api33-list/`). Each
+    of those three manifests carries a verifier exit code of 0 and the runtime it
+    was taken on. The v2 stylesheet capture is stored **without** a manifest, so
+    it is supporting bytes and not a record.
+  - **Still unmeasured after both runs:** the stylesheet lifecycle (no call
+    returned a handle), list cell recycling, scrolling, and cell reuse timing
+    (`enqueueComponent` was never called and the card never scrolls), native
+    cleanup after `dispose()` (§9), native `__SetCSSId` execution, event
+    capture/propagation on native, `global-bind` delivery, and every
+    per-capability result of the `examples/lynx-patterns` probe — that probe has
+    only run in a browser. Neither run is an A03 capture and neither is a
+    physical-device measurement of GPU, touch latency, or memory pressure.
+  - The probe cards are built by `pnpm native:build` and covered by host-free
+    recorder tests (`test/stylesheet-probe-report.test.ts`,
+    `test/stylesheet-probe-v2-report.test.ts`, `test/list-probe-report.test.ts`).
+    No native runtime executes in CI, and no card has ever been run through
+    `examples/lynx-for-native/scripts/run-native-probe.sh` — the stored captures
+    were taken by opening the bundles in Explorer directly.
 - The runtime functions of `@apothic-ai/solid-lynx/jsx-runtime` and
   `@apothic-ai/solid-lynx/jsx-dev-runtime` (`jsx`, `jsxs`, `jsxDEV`, `Fragment`). The two
   consumer fixtures exercise their types; `test/consumer-install.test.ts` asserts
@@ -954,7 +987,10 @@ documented intention:
   are re-exported but used by no test or example in this repository. They are
   **provisional**, not stable.
 - **List cell recycling and native list behaviour.** The adapter (§11) is
-  measured against `@lynx-js/web-core@0.26.2` only. No host has been seen to
-  recycle a cell, `operationId`/`enableReuseNotification` are given no meaning,
-  and no device run has created a list or called either list callback. Treat
-  native list support as **unverified**, not as a covered claim.
+  measured against `@lynx-js/web-core@0.26.2` and, since the 2026-10-25 capture,
+  against the API 33 emulator for create, materialize, keyed reorder and shrink.
+  **No host has been seen to recycle a cell**, `enqueueComponent` was never called
+  in any list stage, `operationId`/`enableReuseNotification` are given no meaning,
+  and scrolling is not exercised at all. Treat native list **recycling** as
+  **unverified**, not as a covered claim, and do not extend the measured half to
+  an A03, which has no list run.

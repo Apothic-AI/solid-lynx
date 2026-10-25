@@ -800,23 +800,94 @@ describe("require-native-evidence: the state of this repository", () => {
     expect(manifest.verifier.exitCode).toBe(0);
   });
 
-  it("ships evidence documentation, the template, and only pending records", () => {
+  it("ships evidence documentation, the template, and only re-verifiable records", () => {
     const root = path.join(REPO_ROOT, "docs/evidence/native");
     expect(existsSync(path.join(root, "README.md"))).toBe(true);
 
-    // Everything else under the root is the template or a pending record. No
-    // capture is stored in this repository and none is expected: a synthetic one
-    // filed as evidence would be exactly what this mechanism exists to prevent.
-    // The pending directories are what the release ships instead, and this
-    // assertion is what notices the day a real capture lands.
+    // This assertion used to read "only pending records", and its comment said
+    // it was there to notice the day a real capture landed. That day arrived:
+    // the 2026-10-25 emulator runs are stored here. So it now asserts the
+    // stronger thing -- not merely that entries exist, but that each one is
+    // either a re-verifiable capture+manifest pair or a record form the gate
+    // understands -- and it still fails loudly if a bare log is dropped in, or
+    // if a manifest stops matching its capture.
     const entries = readdirSync(root).sort();
-    expect(entries.filter(entry => entry !== "README.md" && entry !== "TEMPLATE"))
-      .toEqual(["2026-10-25-1.0.0-pending"]);
-    for (const entry of entries) {
-      if (entry === "README.md" || entry === "TEMPLATE") continue;
-      // A pending directory carries pending.json and nothing that looks like a
-      // measurement beside it.
-      expect(readdirSync(path.join(root, entry))).toEqual(["pending.json"]);
+    const evidence = entries.filter(entry => entry !== "README.md" && entry !== "TEMPLATE");
+    expect(evidence.length).toBeGreaterThan(0);
+    expect(evidence).toEqual([
+      "2026-10-25-emulator-api33-list",
+      "2026-10-25-emulator-api33-smoke",
+      "2026-10-25-emulator-api33-stylesheet",
+      "2026-10-25-emulator-api33-stylesheet-v2",
+    ]);
+
+    // One directory is deliberately not a record: the v2 stylesheet capture has
+    // no manifest, so the gate does not count it and neither does this test. It
+    // is named rather than merely skipped, so a record that loses its manifest
+    // cannot quietly join it.
+    const supportingBytesOnly = "2026-10-25-emulator-api33-stylesheet-v2";
+
+    const recordForms = ["pending.json", "decision.json"];
+    for (const entry of evidence) {
+      const dir = path.join(root, entry);
+      const files = readdirSync(dir).sort();
+      if (files.some(file => recordForms.includes(file))) {
+        // A pending or decision directory holds that record and nothing that
+        // looks like a measurement beside it.
+        expect(files).toEqual(files.filter(file => recordForms.includes(file)));
+        continue;
+      }
+      if (entry === supportingBytesOnly) {
+        expect(files).toEqual(["capture.log"]);
+        continue;
+      }
+      // Otherwise it is a stored run: a manifest plus the capture it names.
+      expect(files).toContain("manifest.json");
+      const manifest = JSON.parse(readFileSync(path.join(dir, "manifest.json"), "utf8"));
+      expect(manifest.kind).toBe("capture");
+      expect(files).toContain(manifest.capture);
+    }
+  });
+
+  it("stores the emulator records as A03-free, verifier-passing evidence", () => {
+    // Two properties this repository depends on, asserted against the tree
+    // rather than against a fixture: every stored record names the runtime it
+    // came from, and its verifier exits 0 on the bytes beside it. Loosening
+    // either would let a capture be cited for a device it was not taken on.
+    const root = path.join(REPO_ROOT, "docs/evidence/native");
+    const dirs = readdirSync(root)
+      .filter(entry => entry !== "README.md" && entry !== "TEMPLATE")
+      .map(entry => path.join(root, entry));
+    expect(dirs.length).toBeGreaterThan(0);
+
+    // A directory with no manifest is supporting bytes, not a record, and the
+    // gate does not count it. There is exactly one of those and it is named, so
+    // a record that loses its manifest cannot quietly become one of them.
+    const withoutManifest = dirs.filter(dir => !existsSync(path.join(dir, "manifest.json")));
+    expect(withoutManifest.map(dir => path.basename(dir)))
+      .toEqual(["2026-10-25-emulator-api33-stylesheet-v2"]);
+
+    for (const manifestPath of dirs
+      .map(dir => path.join(dir, "manifest.json"))
+      .filter(existsSync)) {
+      const dir = path.dirname(manifestPath);
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      expect(manifest.device.getState).toBe("device");
+      expect(manifest.runtime, `${manifestPath} must name its runtime`).toHaveProperty("kind");
+      // An emulator run may not be recorded as the A03, and vice versa: the
+      // serial and the runtime block have to agree about which one this was.
+      const isEmulator = manifest.runtime.kind === "android-emulator";
+      expect(manifest.device.serial.includes("emulator")).toBe(isEmulator);
+
+      const verifier = manifest.card === "smoke" ? PARITY_VERIFIER : PROBE_VERIFIER;
+      const run = spawnSync(
+        process.execPath,
+        [path.join(REPO_ROOT, verifier), path.join(dir, manifest.capture)],
+        { cwd: REPO_ROOT, encoding: "utf8" },
+      );
+      expect(run.status, `${verifier} on ${manifest.capture}`).toBe(0);
+      expect(manifest.verifier.exitCode).toBe(0);
+      expect(run.stdout).toContain(manifest.verifier.verdict);
     }
   });
 });

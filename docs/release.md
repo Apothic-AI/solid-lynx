@@ -37,10 +37,10 @@ green row below means "this command passes here", never "CI ran it and passed".
 | `unit` | Install | `pnpm install --frozen-lockfile` | lockfile and `package.json` agree; no resolution step | exit 0 |
 | `unit` | Type check | `pnpm typecheck` | `tsc -p tsconfig.build.json`, then `tsc --noEmit`, then both consumer fixtures | exit 0 |
 | `unit` | Type check consumer fixtures | `pnpm typecheck:consumer` | `test/consumer/tsconfig.json` and `test/consumer/tsconfig.dev.json` compile against the built `dist/` | exit 0 |
-| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **303 tests in 12 files** |
+| `unit` | Unit tests | `pnpm test` | Vitest: every test file passes | exit 0, **304 tests in 12 files** |
 | `unit` | (inside `pnpm test`) | `test/documented-counts.test.ts` | every document that states this suite's size agrees with the measured size | exit 0; a stale count in README, CHANGELOG, ROADMAP or `docs/` is a test failure, not a review note |
 | `unit` | Build | `pnpm build` | `dist/` is written | exit 0 |
-| `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 46 entries |
+| `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 52 entries |
 | `node-matrix` | Install / Type check / Unit tests, on `20.x`, `22.x`, `24.x` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` | the unit gate passes at the top of each declared Node line | exit 0 on 20.20.2, 22.23.3, 24.22.1 locally (98 tests each at that commit — the count predates `test/packaging.test.ts`, which was added afterwards and is not re-measured here; the floors 20.19.0 and 22.12.0 also exit 0) |
 | `browser` | Install Chromium | `pnpm exec playwright install --with-deps chromium` | Chromium present for Playwright | **not run** — the browser was already installed in this worktree; CI runs it because the runner starts bare |
 | `browser` | Lynx-for-Web suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | builds the web bundle, serves it, drives it in Chromium | exit 0, **17 passed** (43.8s, on the 1.9.17 overlay — the pinned run was 54.2s) |
@@ -163,9 +163,9 @@ native-facing code and carries none of:
   the job re-verifies by running the verifier for that manifest's `card` against
   the stored bytes and requiring exit 0, cross-checked against the manifest's own
   recorded exit code and verdict line. `scripts/verify-native-parity.mjs` reads a
-  `smoke` capture; `scripts/verify-native-probe.mjs` reads a `stylesheet` or
-  `list` capture and requires that card's stages in order, including the
-  recycling answer the list card exists to give; or
+  `smoke` capture; `scripts/verify-native-probe.mjs` reads a `stylesheet`,
+  `stylesheet2` or `list` capture and requires that card's stages in order,
+  including the recycling answer the list card exists to give; or
 - a `decision.json` in the same place, recording explicitly that this
   native-facing change needs no device run, with a reason, an author, a
   timestamp, and the paths it covers; or
@@ -197,11 +197,12 @@ than evaluating a range that would mean nothing.
 
 Three things are therefore hand work:
 
-1. **The A03 smoke card** — `examples/lynx-for-native/src/main-thread.tsx`,
+1. **The smoke card** — `examples/lynx-for-native/src/main-thread.tsx`,
    built to `dist/main.lynx.bundle`. It renders a counter and logs one
    `[solid-lynx parity] {...}` line carrying all twenty Element PAPI operations.
    That line is only evidence once `scripts/verify-native-parity.mjs` accepts the
-   capture it came from; the command is in "The native smoke step" below.
+   capture it came from; the command is in "The native smoke step" below. The
+   stored 2026-10-25 capture is from an emulator, not the A03.
 2. **The stylesheet probe** — `examples/lynx-for-native/src/stylesheet-probe.ts`,
    built to `dist/stylesheet-probe.lynx.bundle`, logging one `[solid-lynx ss]`
    line per stage. Its capture is verified by
@@ -309,33 +310,52 @@ evaluate, and 3 is **pending, not a pass**. The `native-evidence` CI job is
 written to run the same command from the PR base and to turn 3 into a warning
 annotation; neither has happened on a runner yet.
 
-**No capture is stored in this repository at this commit.** `docs/evidence/native/`
-holds its README, the capture-less `TEMPLATE/`, and one directory of pending
-records — `2026-10-25-1.0.0-pending/pending.json`. That is deliberate: a
-synthetic capture filed as evidence would be exactly the thing this mechanism
-exists to prevent, and the pending records are the honest alternative. On this
-release's range, `--range origin/master..HEAD` therefore exits **3** and prints
-`verdict: pending`, naming the 22 native-facing paths and the blocker. Anything
-other than 0 or 3 — an absent record, a record covering part of the range — is
-still exit 1, and a real native-facing PR with no record at all will be red
-until someone runs the card or records why they cannot.
+**Three captures are stored in this repository, and they are emulator runs.**
+`docs/evidence/native/` holds its README, the capture-less `TEMPLATE/`, and four
+run directories from 2026-10-25:
 
-**What a release does when the device is absent**, stated as a procedure so the
-next one does not have to re-derive it:
+| Directory | Card | Record |
+| --- | --- | --- |
+| `2026-10-25-emulator-api33-smoke/` | `smoke` | capture + manifest, verifier exit 0 |
+| `2026-10-25-emulator-api33-stylesheet/` | `stylesheet` | capture + manifest, verifier exit 0 |
+| `2026-10-25-emulator-api33-list/` | `list` | capture + manifest, verifier exit 0 |
+| `2026-10-25-emulator-api33-stylesheet-v2/` | `stylesheet2` | capture, **no manifest** — supporting bytes, not a record |
 
-1. Run the gate on the release range. Expect exit 3 if the pending records are
-   complete, and 1 if they are not — the difference is whether every
-   native-facing path is named, and the report says which one was missed.
+The manifests name the runtime (AVD `lynx33`, API 33, `x86_64`, Explorer 4.1.0,
+APK SHA-256 `6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6`)
+and the serial `emulator-5554`. The pending record set that stood here before them
+(`2026-10-25-1.0.0-pending/pending.json`) was **deleted in `85ddd12`**: a
+verified capture supersedes a pending record, and leaving it would have kept
+saying nothing had run. On the range that contains those commits,
+`node scripts/require-native-evidence.mjs --range origin/master..HEAD` exits
+**0** with `verdict: satisfied`, not 3. A range whose native change has no record
+of its own is still exit 1, so the mechanism is unchanged: it accepts a capture
+it can re-verify, and it says `missing` when there is none.
+
+**A release must still say what the emulator does not cover.** Exit 0 on the
+gate means the captures are complete for the paths they were taken for; it does
+not mean native behaviour was executed on the runner, that the A03 has any
+capture, or that the stylesheet lifecycle and list recycling are measured. Those
+three statements belong in the release notes in the same breath as the exit code.
+
+**What a release does when a run is needed and the device is absent**, stated as
+a procedure so the next one does not have to re-derive it:
+
+1. Run the gate on the release range. Expect exit 3 if a `pending.json` covers
+   every native-facing path, and 1 if the record set is absent or incomplete —
+   the difference is whether every native-facing path is named, and the report
+   says which one was missed.
 2. Do not write a `decision.json` for a change that needs a run. That record
    asserts no device run is needed; using it here would be false, and it is the
    one failure this directory cannot catch.
 3. Keep the pending record in the release commit, and repeat in the release
-   notes, in the roadmap's open items, and in `docs/capabilities.md` that the
-   cards have not run. The gate's exit code is not a substitute for those
-   sentences; it is what makes them checkable.
-4. When the device arrives, store the capture in its own directory with its
+   notes, in the roadmap's open items, and in `docs/capabilities.md` what the
+   cards have and have not measured. The gate's exit code is not a substitute for
+   those sentences; it is what makes them checkable.
+4. When the run happens, store the capture in its own directory with its
    manifest. The capture supersedes the pending record, the range goes to exit 0,
-   and nothing needs to be deleted first.
+   and the pending record can be deleted afterwards — which is what `85ddd12`
+   did, and why that deletion was a factual correction rather than a tidy-up.
 
 **Always the same rule: a green `native-evidence` job with a `pending.json` in the
 range means nothing was measured.** The annotation says so. A reader who takes
@@ -345,16 +365,18 @@ exactly why the warning is loud, why the verdict line says `pending` rather than
 `satisfied`, and why the warning block names every path instead of only counting
 them.
 
-**Whether the device is attached right now:**
+**Whether the A03 is attached right now:**
 
 ```bash
 adb -s R9WT911JVVH get-state
 ```
 
-**Not run for this release**, and not passable here: at this commit the command
-prints `error: device 'R9WT911JVVH' not found` and exits 1. No device run is
-recorded in this release, which is what `2026-10-25-1.0.0-pending/pending.json`
-records and what the gate's exit 3 states.
+**Not run for this release**, and not passable here: the command prints
+`error: device 'R9WT911JVVH' not found` and exits 1. **No A03 run is recorded for
+any card**, and the 2026-10-09 run's own capture is still lost. Every stored
+capture in this tree is an API 33 `x86_64` emulator run, which shares the
+Explorer build and the APK digest with the tablet and nothing else that a
+device claim needs — no GPU, no digitizer, no memory pressure, and no tap.
 
 **The rule that decides whether a release is done.** A release that changes
 native-facing behaviour — the host adapter, event names or dispatch, CSS ids,
@@ -371,12 +393,14 @@ An unrecorded run cannot be cited, not even as a pass nobody disputes — and on
 whose capture is gone is not recorded, however clear its original report was.
 
 That is the current state, and it is not a formality: `docs/capabilities.md`
-records the stylesheet probe as **"This has not been run yet"**, its
-"Remaining blockers" section says the capability probe has not run on a device,
-and `docs/contract.md` §16 lists the stylesheet and list probes as built and
-unit-tested but **unmeasured on native**. A release note may repeat what
-`docs/parity-checklist.md` records from the A03 smoke (that the 2026-10-09 run
-*reported* twenty shared operations, rendering, and one `bindtap`), and must say
+records the stylesheet probe as **run on the API 33 emulator, with the five facts
+it measured and the lifecycle it did not**, its "Remaining blockers" section says
+the capability probe has still only run in a browser, and `docs/contract.md` §16
+records exactly what the emulator captures cover and what is left unmeasured (no
+stylesheet handle, no list recycling, no native `dispose()` observation). A
+release note may repeat what `docs/parity-checklist.md` records from the A03 smoke
+(that the 2026-10-09 run *reported* twenty shared operations, rendering, and one
+`bindtap`), and must say
 in the same breath that the capture is gone. It may not restate those rows as a
 present-tense pass, and it may not upgrade anything else from "unmeasured".
 
@@ -384,20 +408,27 @@ present-tense pass, and it may not upgrade anything else from "unmeasured".
 
 ```bash
 pnpm build          # tsc -p tsconfig.build.json -> dist/     exit 0
-pnpm pack --dry-run # list the tarball without writing it     exit 0, 46 entries
+pnpm pack --dry-run # list the tarball without writing it     exit 0, 52 entries
 ```
 
-`pnpm pack --dry-run` ran here and listed **46 entries**: 30 files under
-`dist/` (`*.js` and `*.d.ts` for every `src/` module), the eleven files in
+`pnpm pack --dry-run` ran here and listed **52 entries**: 30 files under
+`dist/` (`*.js` and `*.d.ts` for every `src/` module), the **17** files under
 `docs/` (`building`, `capabilities`, `compatibility`, `contract`, `migration`,
-`parity-checklist`, `release`, `session-handoff`, and the three under
-`docs/evidence/native/`: its `README.md`, `TEMPLATE/manifest.json`, and
-`2026-10-25-1.0.0-pending/pending.json`), `CHANGELOG.md`, `ROADMAP.md`, plus
-`LICENSE`, `package.json`, `README.md`. It ends with `Tarball Details` /
-`apothic-ai-solid-lynx-1.0.0.tgz` and writes no file (`git status` was clean
-afterwards).
-No capture ships, because none is stored — the pending record is the record that
-none exists.
+`parity-checklist`, `release`, `session-handoff`, plus the nine under
+`docs/evidence/native/` — its `README.md`, `TEMPLATE/manifest.json`, and the
+seven files of the three emulator records and the manifest-less v2 capture),
+`CHANGELOG.md`, `ROADMAP.md`, plus `LICENSE`, `package.json`, `README.md`. It
+ends with `Tarball Details` / `apothic-ai-solid-lynx-1.0.0.tgz` and writes no
+file (`git status` was clean afterwards). That is 759,053 B unpacked and a
+209,789 B tarball, of which **234,679 B unpacked are the four emulator capture
+logs** — the evidence ships with the package, so an installed copy can be read
+against `docs/capabilities.md`.
+
+An earlier edition of this section said 46 entries and "no capture ships". Both
+were correct when the pending record was the only evidence in the tree and are
+wrong now: the pending record was deleted in `85ddd12` and four capture logs took
+its place. The count moves with `docs/`, which ships whole, so re-run the command
+on the release commit rather than copying this number.
 
 What ends up in the tarball is decided by `files` in `package.json`:
 `["dist", "docs", "CHANGELOG.md", "README.md", "ROADMAP.md", "LICENSE"]`.
@@ -410,9 +441,12 @@ Why the documentation ships at all: the README tells a reader to consult the
 contract, the compatibility ranges, the migration guide, the capability matrix,
 and the changelog, and every one of those is a relative link. If the files are
 not in the tarball those links are dead for exactly the audience that needs
-them. `docs/` is 180 KiB of markdown, and the whole tarball compresses to
-111 KiB, so the documentation costs about 75 KiB over the network, and
-the shipped docs cross-link each other — `contract.md`, `compatibility.md`,
+them. `docs/` is now 517 KiB on disk — 284 KiB of markdown plus 229 KiB of
+emulator capture logs — and the whole tarball packs to 205 KiB, because logcat
+text compresses far better than prose does. The evidence is shipped on purpose:
+a reader who installs the package can see what was measured and what was not,
+and the manifests beside the captures carry the runtime and verifier verdict. The
+shipped docs cross-link each other — `contract.md`, `compatibility.md`,
 `capabilities.md` and `migration.md` all point at `building.md` or
 `parity-checklist.md` — so the directory ships whole rather than as a hand-picked
 subset that would leave second-hop links dangling. Shipping only the four
@@ -452,7 +486,7 @@ unreachable outside the npm organisation.
 
 What the command would do, if it were ever run deliberately:
 
-- `pnpm publish` packs the same 46 entries §4 lists and uploads them to
+- `pnpm publish` packs the same 52 entries §4 lists and uploads them to
   `https://registry.npmjs.org/` as
   `@apothic-ai/solid-lynx@<package.json version>`, tarball
   `apothic-ai-solid-lynx-<version>.tgz`. A dry run was executed here to confirm

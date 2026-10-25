@@ -26,8 +26,14 @@ harness; the commands are prose and shell.
 
 Recent milestone commits (newest first, all on `master`):
 
-- `fee7833` gave a pending native run its own outcome (exit 3) and recorded this
-  release's pending evidence; `1fe3814` the three pending records themselves.
+- `71c7cb4` stored the emulator runs for all three cards; `f37311d` pinned their
+  manifests to the commit they describe; `85ddd12` deleted the pending record
+  those captures superseded. `e648653` fixed the two probe-card defects the first
+  real captures found; `b113d6b` made both verifiers read real logs, not just
+  fixtures.
+- `fee7833` gave a pending native run its own outcome (exit 3); `1fe3814` the
+  three pending records themselves, now deleted by `85ddd12` and documented as a
+  deleted state rather than a live one.
 - `c5cd5a1` the probe verifier, so a `[solid-lynx ss]`/`[solid-lynx lp]` capture
   can be checked by process; `f8d2c67` the same for the parity capture.
 - `764e860` claimed the cleanup this renderer can prove and said what it cannot;
@@ -67,21 +73,23 @@ is correct; that is not a regression, it is the file being older than you.
 ```bash
 pnpm typecheck                     # exit 0
 pnpm typecheck:consumer            # exit 0; test/consumer/tsconfig.json + tsconfig.dev.json
-pnpm test                          # exit 0; 303 tests in 12 files, after `pnpm build`
+pnpm test                          # exit 0; 304 tests in 12 files, after `pnpm build`
                                    #   and before `typecheck:consumer`:
-                                   #   renderer 63, require-native-evidence 50,
+                                   #   renderer 63, require-native-evidence 51,
                                    #   native-probe-verify 63, native-parity-verify 28,
                                    #   stylesheet-probe-v2-report 33,
                                    #   list-probe-report 19, parity 9,
                                    #   consumer-install 9, stylesheet-probe-report 13,
                                    #   rspeedy 6, packaging 6, documented-counts 4
 pnpm build                         # exit 0
-pnpm pack --dry-run                # exit 0; 46 tarball entries (30 under dist/, 11 under docs/,
+pnpm pack --dry-run                # exit 0; 52 tarball entries (30 under dist/, 17 under docs/,
                                    #   plus LICENSE, package.json, README.md, CHANGELOG.md,
                                    #   ROADMAP.md) as apothic-ai-solid-lynx-1.0.0.tgz
 pnpm native:build                  # exit 0; dist/main.lynx.bundle,
                                    #   dist/stylesheet-probe.lynx.bundle,
-                                   #   dist/list-probe.lynx.bundle (+ probe.css beside them)
+                                   #   dist/stylesheet-probe-v2.lynx.bundle,
+                                   #   dist/list-probe.lynx.bundle (+ probe.css and
+                                   #   probe-2.css beside them)
 PLAYWRIGHT_PORT=4321 pnpm web:test # exit 0; 17 browser tests
 PLAYWRIGHT_PORT=4322 pnpm exec playwright test \
   --config test/browser/patterns.playwright.config.ts
@@ -105,8 +113,8 @@ flagged is either current or explicitly framed as historical.
 ends with `pnpm typecheck:consumer` (`package.json`), so a failure in those
 steps can surface under the earlier command name. The `pnpm pack --dry-run`
 entry count moves whenever a document is added to or removed from `docs/`, since
-`files` ships the whole directory; treat 46 as this commit's number, not a
-constant.
+`files` ships the whole directory — and it moved when the emulator captures landed
+there; treat 52 as this tree's number, not a constant.
 
 **The two browser suites take minutes, and running suites concurrently makes
 the pattern suite flaky.** Cold Vite dependency optimization plus Lynx wasm
@@ -130,15 +138,32 @@ not a product bug. Re-run the suite on its own and it passes 9/9; if you see
 that message, check what else is running (`ps aux | grep -i playwright`, and
 whether another checkout holds a port) before you change any code.
 
-**The only device evidence in this tree is the 2026-10-09 A03 run**, and its
-capture is gone. It *reported* all 20 shared Element PAPI parity operations
-passing, the native card rendering, and a `bindtap` counter update;
-[parity-checklist.md](parity-checklist.md) therefore marks the native column
-`reported`, not reproduced. Nothing native has been re-run for `1.0.0`: at this
-commit `adb -s R9WT911JVVH get-state` prints
-`error: device 'R9WT911JVVH' not found` and exits 1, which is recorded in
-`docs/evidence/native/2026-10-25-1.0.0-pending/pending.json` as work unit
-`ub_y33g9p`. Do not restate that run as a present-tense pass.
+**There is one measured native runtime and one reported one, and they are not the
+same runtime.** The measured one is an Android emulator — AVD `lynx33`, Android
+13 / API 33, `x86_64`, Lynx Explorer 4.1.0, APK SHA-256
+`6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6` — whose four
+card runs are stored under `docs/evidence/native/2026-10-25-emulator-api33-*/`
+(three with manifests whose verifier exits 0; the v2 stylesheet capture has no
+manifest and is supporting bytes, not a record). It measured 20/20 parity
+passing, the stylesheet bindings' arity and return values including a successful
+load of the real `probe.css`, and the list card's create / materialize / keyed
+reorder / shrink with `enqueueComponent` never called.
+
+The reported one is the **2026-10-09 A03 hand run**, and **its own capture is
+still gone**. It *reported* all 20 shared Element PAPI parity operations passing,
+the native card rendering, and a `bindtap` counter update;
+[parity-checklist.md](parity-checklist.md) therefore keeps the A03 column
+`reported`, not reproduced, as its own historical note. **No A03 capture exists
+for any card**, the emulator captures do not turn the A03 report into a
+reproduced result, and neither runtime proves a stylesheet lifecycle (no call
+returned a handle) or list recycling (`enqueueComponent` was never called). Do
+not restate the A03 run as a present-tense pass, and do not restate an emulator
+capture as A03 behaviour, GPU behaviour, touch latency, or memory pressure.
+
+The pending record that named the A03 blocker was deleted in `85ddd12` once
+these captures existed — a verified capture supersedes a pending record. That
+deletion changed no claim: it removed a now-false "nothing has run" statement,
+not a measurement.
 
 ## How to check the claims in this repository
 
@@ -157,11 +182,29 @@ verifier happened to understand the file.
 | --- | --- | --- |
 | `smoke` | `[solid-lynx parity]` | `scripts/verify-native-parity.mjs` |
 | `stylesheet` | `[solid-lynx ss]` | `scripts/verify-native-probe.mjs` |
+| `stylesheet2` (v2) | `[solid-lynx ss2]` | `scripts/verify-native-probe.mjs` |
 | `list` | `[solid-lynx lp]` | `scripts/verify-native-probe.mjs` |
+
+The three stored records re-verify at any time, and they are the cheapest way to
+check this section still describes the tree:
+
+```bash
+node scripts/verify-native-parity.mjs \
+  docs/evidence/native/2026-10-25-emulator-api33-smoke/capture.log        # exit 0
+node scripts/verify-native-probe.mjs \
+  docs/evidence/native/2026-10-25-emulator-api33-stylesheet/capture.log   # exit 0
+node scripts/verify-native-probe.mjs \
+  docs/evidence/native/2026-10-25-emulator-api33-list/capture.log         # exit 0
+```
+
+The v2 stylesheet capture (`.../2026-10-25-emulator-api33-stylesheet-v2/`) has a
+capture and no manifest, so it is **supporting bytes, not a record**: the gate does
+not count it, and it is quoted for what it measured rather than as evidence that
+anything was verified.
 
 ```bash
 node scripts/verify-native-parity.mjs <capture.log>   # smoke card only
-node scripts/verify-native-probe.mjs <capture.log>    # stylesheet and list cards
+node scripts/verify-native-probe.mjs <capture.log>    # stylesheet, stylesheet2 and list cards
 ```
 
 The parity verifier requires every operation in `parityOperationIds` from the
@@ -263,7 +306,7 @@ neither is resolvable from a fresh session's shell.
 
 ### The two open roadmap boxes
 
-**1. `ROADMAP.md:102` — "Integrate stylesheet loading, CSS ids, and stylesheet
+**1. `ROADMAP.md:108` — "Integrate stylesheet loading, CSS ids, and stylesheet
 lifecycle where the Lynx PAPI requires it."** Open on the runtime half only. The
 CSS-id half is done (`root.setCSSId()` drives `__SetCSSId`, covered by
 `test/renderer.test.ts` and `docs/contract.md` §8). Runtime stylesheet
@@ -273,11 +316,17 @@ size:
 - *Absent on web.* `@lynx-js/web-core` 0.26.2 exposes no PAPI that adds,
   replaces, or removes a stylesheet. Integrating there would mean inventing an
   API the host does not have.
-- *Unmeasured on native.* The A03 exposes `__LoadStyleSheet`,
-  `__AdoptStyleSheet`, and `__ReplaceStyleSheets` — the inventory was observed —
-  but their signatures and lifecycle were never exercised. **Do not infer
-  support from names alone.** The probe card that would measure them is built and
-  unit-tested and has never run.
+- *Partly measured, lifecycle unmeasured, on native.* Both device inventories
+expose `__LoadStyleSheet`, `__AdoptStyleSheet`, and `__ReplaceStyleSheets`, and
+the API 33 emulator run measured what they will **accept and return**:
+`__LoadStyleSheet` needs a second, String parameter and `[url, "utf-8"]` returns
+`null`; `__AdoptStyleSheet` throws `param size should >= 1` with no arguments;
+`__ReplaceStyleSheets` returns `null` for `[]`, `[null]` and `[[]]` without
+throwing. **No call in any card returned a stylesheet handle**, so what a handle
+is, how one is created, adopted, or replaced is still unknown — which is why the
+box is still open. **Do not infer support from names alone, and do not infer a
+lifecycle from the arity measurement.** See `docs/capabilities.md`, "The five
+measured stylesheet facts".
 
 **2. `ROADMAP.md:33` — "Verify native-only behavior such as dual-thread
 execution, worklets, and first-screen synchronization."** Open *by decision*, and
@@ -291,9 +340,10 @@ carries the same position — do not "finish" this box.
 
 ### The A03 blocker
 
-Both native probe cards and the smoke card are waiting on hardware. The state,
-as recorded in this tree and not re-run here (this worker had no device and ran
-no adb):
+**Nothing is stored from the A03.** No capture exists for any card, on either the
+smoke card or a probe card, and the 2026-10-09 run's own capture is lost. The
+state, as recorded in this tree and not re-run here (this worker had no device and
+ran no adb):
 
 ```console
 $ adb -s R9WT911JVVH get-state
@@ -302,35 +352,48 @@ $ echo $?
 1
 ```
 
-That dependency is recorded as work unit **`ub_y33g9p`** in
-`docs/evidence/native/2026-10-25-1.0.0-pending/pending.json`. `docs/evidence/native/`
-holds three pending records there — one each for `smoke`, `stylesheet`, and
-`list` — covering all 22 native-facing paths of this release's range.
-**The gate's verdict on that range is exit 3, "pending, not a pass", not 0.**
-That is the correct answer, not a failure of the paperwork: nothing was measured.
+That dependency was recorded as work unit **`ub_y33g9p`** in
+`docs/evidence/native/2026-10-25-1.0.0-pending/pending.json`, which **no longer
+exists**: `85ddd12` deleted it once the emulator captures existed, because a
+verified capture supersedes a pending record. What that record asserted is still
+half true — the A03 is still unattached from this worktree and still has no
+capture — and it is now stated in [capabilities.md](capabilities.md),
+[parity-checklist.md](parity-checklist.md) and `ROADMAP.md` instead of in a JSON
+file the gate reads.
 
-- **The stylesheet and list probes are built, unit-tested, and unmeasured.**
-  `examples/lynx-for-native/src/stylesheet-probe.ts` and
-  `examples/lynx-for-native/src/list-probe.ts` both build through
-  `pnpm native:build` (`dist/stylesheet-probe.lynx.bundle`,
-  `dist/list-probe.lynx.bundle`) and their recorders are covered by host-free
-  tests (`test/stylesheet-probe-report.test.ts` 13 tests,
-  `test/list-probe-report.test.ts` 19 tests). **No device run of either card
-  exists.** Until those runs exist, the three stylesheet operations are known to
-  exist and nothing else about them is known, and native list behavior is
-  unverified — no host has been seen to recycle a cell.
-- **One runner drives all three cards:**
+**The gate's verdict is no longer 3 for every range.** On a range that contains
+the 2026-10-25 emulator records it exits **0** with `verdict: satisfied`; on a
+range whose native-facing change has no record of its own it still exits 1. Exit
+3 is still what a `pending.json` returns, and the mechanism for recording a
+missing run is unchanged — it simply has no record in this tree at the moment.
+
+- **The stylesheet and list probes are built, unit-tested, and have run on the
+  emulator.** `examples/lynx-for-native/src/stylesheet-probe.ts`,
+  `.../stylesheet-probe-v2.ts` and `.../list-probe.ts` all build through
+  `pnpm native:build` and their recorders are covered by host-free tests
+  (`test/stylesheet-probe-report.test.ts` 13 tests,
+  `test/stylesheet-probe-v2-report.test.ts` 33 tests,
+  `test/list-probe-report.test.ts` 19 tests). Their captures are stored and
+  re-verified. **No A03 run of either card exists.** What the emulator run leaves
+  open is specific, and it is not "nothing is known": the three stylesheet
+  bindings' arity and return values are measured, their **lifecycle is not** (no
+  call returned a handle), and native list behaviour is measured for create,
+  materialize, keyed reorder and shrink but **not for recycling** — no host has
+  been seen to recycle a cell, and `enqueueComponent` was never called.
+- **One runner drives all four cards:**
   `examples/lynx-for-native/scripts/run-native-probe.sh`, taking the card as its
-  argument (`smoke`, `stylesheet`, `list`; the bundle stems `main`,
-  `stylesheet-probe`, `list-probe` are accepted too). It is pinned to
-  `R9WT911JVVH`, never enumerates devices, and refuses to run if
+  argument (`smoke`, `stylesheet`, `stylesheet2`, `list`; the bundle stems `main`,
+  `stylesheet-probe`, `stylesheet-probe-v2`, `list-probe` are accepted too). It is
+  pinned to `R9WT911JVVH`, never enumerates devices, and refuses to run if
   `DEVICE_SERIAL`, `ADB_SERIAL`, or `ANDROID_SERIAL` names another device. The
   old `run-stylesheet-probe.sh` remains as a thin wrapper that execs it with
-  `stylesheet`. `--dry-run` prints the sequence and touches nothing; all three
-  dry runs exited 0 here. A real run that captures no line for the card's prefix
+  `stylesheet`. `--dry-run` prints the sequence and touches nothing; all four dry
+  runs exited 0 here. A real run that captures no line for the card's prefix
   exits 5 and points at the log and screenshot instead of reporting a result, so
   an empty capture cannot be read as a measurement. A dry run is still not a
-  device result.
+  device result, and **no card has ever been run through this script** — the
+  stored captures were taken by opening the bundles in Explorer directly, on
+  `emulator-5554`.
 
 ### The package-name blocker: resolved by scoping
 
@@ -355,31 +418,41 @@ There are still no git tags and no release workflow, and nothing here has ever
 been published ([release.md](release.md) §5). Do not treat a version bump as a
 release.
 
-### Native parity evidence is reported, not reproduced
+### Native parity evidence: measured on an emulator, reported on the A03
 
 The twenty shared Element PAPI operations were recorded from the A03 on
-2026-10-09 and that capture is gone, so the column stays `reported`. Two
-verifiers now make the *next* run checkable — `scripts/verify-native-parity.mjs`
+2026-10-09 and that capture is gone, so the **A03** column stays `reported`. The
+same twenty operations were measured on an API 33 `x86_64` emulator on
+2026-10-25 with a stored, re-verifiable capture, so the **emulator** column is
+`pass`. Two verifiers make any run checkable — `scripts/verify-native-parity.mjs`
 for a `[solid-lynx parity]` capture, `scripts/verify-native-probe.mjs` for the
-stage-line cards — and `scripts/require-native-evidence.mjs` re-runs the right
-one against a stored capture over every pull request. What that buys is a
-re-checkable next run, not a recovered 2026-10-09 result: **do not describe the
-recorded column as verified by a script.** See "How to check the claims" above
-for which verifier reads which card and what each exit code means.
+stage-line cards — and `scripts/require-native-evidence.mjs` re-runs the right one
+against a stored capture over every pull request. What that buys is a
+re-checkable run, not a recovered 2026-10-09 A03 result: **do not describe the
+A03 column as verified by a script, and do not describe an emulator capture as
+A03 behaviour.** See "How to check the claims" above for which verifier reads
+which card and what each exit code means.
 
 ### Still unmeasured or unimplemented
 
-- Native `global-bind` delivery, event propagation/capture parity, CSS-id
-  execution, and runtime stylesheet PAPI semantics remain unmeasured.
+- Native `global-bind` delivery, event propagation/capture parity, and native
+  CSS-id execution remain unmeasured on both runtimes. Runtime stylesheet
+  **lifecycle** remains unmeasured too, and the reason is specific: no call in
+  any card returned a stylesheet handle.
 - The web host does not implement runtime stylesheet loading/lifecycle. It has no
   corresponding stylesheet PAPI.
 - Web-core global-bind callbacks are registered but its global dispatch pass does
   not invoke function callbacks; this host limitation is documented.
 - The renderer has a list adapter and an indexed row model (`root.createList()`),
-  measured against web-core only. A 2026-10-09 A03 smoke rendered the existing
-  native card and verified its counter tap from 0 to 1; that card did not create
-  a list or exercise either list callback, so native list behavior remains
-  unverified. No host has been seen to recycle a cell.
+  measured against web-core. On the emulator, the list card created a list,
+  materialized three rows, moved them by key across a permuted model, and released
+  two on a shrink — with `enqueueComponent` **never called in any stage**. Native
+  list **recycling** therefore remains unverified, and the card never scrolls, so
+  its own `summary.unmeasured` refuses to read a zero as an inability. No A03 run
+  has created a list at all.
+- Nothing measures native cleanup after `dispose()` (node removal, listener-slot
+  release) on either runtime; `renderer-dispose` passing on the emulator is the
+  parity harness's own sandbox claim, not that.
 - Gesture PAPI functions are web-core no-op stubs; animation PAPI exists but is
   not exposed by the renderer; overlays/portals are not implemented.
 - `@lynx-js/types` is not installed/resolvable in this package; current JSX types
@@ -419,9 +492,12 @@ landed, and where to read it:
   carries a stored, verifier-passing
   capture, an explicit recorded decision, or a recorded *pending* run
   (`docs/evidence/native/README.md`). The verifier is chosen by the manifest's
-  `card`: parity for `smoke`, probe for `stylesheet` and `list`. A pending record
-  exits 3 rather than 0, and the job is written to surface that as a warning
-  annotation — see "How to check the claims" above for the full code table.
+  `card`: parity for `smoke`, probe for `stylesheet`, `stylesheet2` and `list`. A
+  pending record exits 3 rather than 0, and the job is written to surface that as
+  a warning annotation — see "How to check the claims" above for the full code
+  table. Three emulator records are committed and re-verify here, so the job's
+  happy path is no longer hypothetical: run over a range that contains them, the
+  script exits 0 with `verdict: satisfied`.
 - **Release process and 1.0.0.** [release.md](release.md) is the cut order with
   the command behind each step; [CHANGELOG.md](../CHANGELOG.md) carries the
   `1.0.0` entry, and `package.json` and `src/index.ts` both say `1.0.0`. Nothing

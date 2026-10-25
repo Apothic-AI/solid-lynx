@@ -15,14 +15,31 @@ Statuses used here:
 | `unsupported` | Neither host nor renderer provides it. Using it fails or silently does nothing, as described. |
 | not measured | Not yet run against that host in this repository. |
 
-The shared Element PAPI parity card **has** run on a device: all twenty shared
-operations were reported passing on Lynx Explorer 4.1.0 on an SM-A037U on
-2026-10-09. That run's capture was not kept, so
-[parity-checklist.md](parity-checklist.md) records the native column as
-**reported, not reproduced**, and `scripts/verify-native-parity.mjs` is what
-makes the next run checkable; the stylesheet and list cards' stage lines are read
-by `scripts/verify-native-probe.mjs`, its sibling, with the same exit codes. See
-also [building.md](building.md).
+**Two native runtimes, and they are not interchangeable.** This document says
+which one a native statement came from, every time it matters:
+
+| Runtime | What exists | What it can back |
+| --- | --- | --- |
+| **A03 tablet** (`R9WT911JVVH`, SM-A037U, Android 13, `arm64-v8a`, Explorer 4.1.0) | **Prose only.** The 2026-10-09 hand run's capture was written to `/tmp` and lost. | A *report* of behaviour. Where it is the only source, the row says so; it backs none of the measured native cells below. |
+| **API 33 emulator** (AVD `lynx33`, serial `emulator-5554`, Android 13 / API 33, `x86_64`, Explorer 4.1.0, APK SHA-256 `6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6`) | **Stored captures** under `docs/evidence/native/2026-10-25-emulator-api33-*/`. Three are records — capture plus `manifest.json` — that a verifier re-checks with exit 0; the v2 stylesheet capture has no manifest, so it is supporting bytes only. | Element PAPI and engine behaviour **on this emulator**. |
+
+Both run the same Lynx Explorer 4.1.0 build — the APK digest recorded for the A03
+in [compatibility.md](compatibility.md) §4 is the digest in every emulator
+manifest — so the Element PAPI and the engine are the same code. The silicon is
+not: the A03 is `arm64-v8a` and the emulator is `x86_64`, and an emulator has no
+real digitizer, no phone GPU, and no memory pressure. An emulator capture
+**cannot** be used to claim A03 behaviour, GPU behaviour, touch latency, or
+memory-pressure behaviour, and nothing below does.
+
+The shared Element PAPI parity card **has** run on both: all twenty shared
+operations were reported passing on the A03 on 2026-10-09, and the same twenty
+operations passed on the emulator on 2026-10-25 with a stored capture. The A03's
+capture was not kept, so
+[parity-checklist.md](parity-checklist.md) keeps that run as its own `reported`
+historical note while recording the emulator column as measured, and
+`scripts/verify-native-parity.mjs` is what makes the next run checkable; the
+stylesheet and list cards' stage lines are read by `scripts/verify-native-probe.mjs`,
+its sibling, with the same exit codes. See also [building.md](building.md).
 
 How a run is kept is now a checked requirement rather than a convention. A
 verifier-passing capture is stored at `docs/evidence/native/<date-or-id>/` beside
@@ -34,17 +51,22 @@ is the script's measured behaviour, not an observed CI event. A third record, `p
 scheduled and blocked on hardware; it is accepted when it covers every
 native-facing path in the change, and it makes the gate exit 3 ("pending, not a
 pass") rather than 0, so a release can be explicit about an absent measurement
-without claiming one.
+without claiming one. The three pending records this release first shipped for
+`smoke`, `stylesheet` and `list` were deleted in `85ddd12` once the emulator
+captures existed; the A03 half of what they said is the historical note above,
+and the cards still have no A03 capture.
 [evidence/native/README.md](evidence/native/README.md) is the
 contract. It enforces that evidence exists and is re-verifiable; it does not
 execute a device, so a capability row still moves only on a run someone
-performed. This release stores no capture; it stores
-`docs/evidence/native/2026-10-25-1.0.0-pending/pending.json`, and that is why
-nothing in the Native column below has moved. The
-capability probe below has only been run in a browser, so the Native column of
-the summary table stays `not measured`. `@lynx-js/types` is not a dependency of
-this repository, so native JSX typings remain unverified and are marked as such
-rather than assumed.
+performed. This release stores three verifier-passing emulator captures under
+`docs/evidence/native/2026-10-25-emulator-api33-*/` (plus the v2 stylesheet
+capture, which has no manifest), and they are what moved the stylesheet and list
+rows below out of "nothing has run". The
+capability probe below has only been run in a browser, so the per-capability
+Native column of the summary table stays `not measured` — the emulator ran the
+parity, stylesheet and list cards, not this probe. `@lynx-js/types` is not a
+dependency of this repository, so native JSX typings remain unverified and are
+marked as such rather than assumed.
 
 ## How these answers are produced
 
@@ -66,10 +88,10 @@ pnpm exec playwright test --config test/browser/patterns.playwright.config.ts
 
 ## Summary
 
-| Capability | Web (`@lynx-js/web-core` 0.26.2) | Native | Status today |
+| Capability | Web (`@lynx-js/web-core` 0.26.2) | Native (emulator measure where noted; otherwise not measured) | Status today |
 | --- | --- | --- | --- |
 | Keyed lists (`For`) | supported, tested | not measured | Works. Rows move instead of being recreated. |
-| List virtualization (`__CreateList`) | supported, measured | not measured | `root.createList()` materializes a row by index, keyed; the host owns which cells it asks for. No recycling observed; the A03 smoke did not exercise list callbacks. |
+| List virtualization (`__CreateList`) | supported, measured | create/materialize/reorder/shrink measured on the API 33 emulator; **recycling not observed** | `root.createList()` materializes a row by index, keyed; the host owns which cells it asks for. On the measured engine a permuted model moved 3 rows keeping element identity, a shrink to 1 released 2 rows, and `enqueueComponent` was never called. No host has been seen to recycle a cell. |
 | Gestures | unsupported, measured | not measured | `gesture-*` props become plain attributes and never fire. |
 | Animation | host-only, measured | not measured | Use inline styles and CSS transitions. |
 | Overlays and portals | unsupported, measured | not measured | `<overlay>` is an ordinary child; importing `Portal` fails at build time. |
@@ -77,7 +99,7 @@ pnpm exec playwright test --config test/browser/patterns.playwright.config.ts
 | Asynchronous content | supported, tested | not measured | Promise plus signal. No `createResource`, no streaming. |
 | Refs and imperative access | supported, tested | not measured | A ref receives the live Lynx node and is released with its Solid scope. |
 | CSS ids | supported, tested | not measured | `root.setCSSId()` assigns a compiled CSS id to a root's own page children. |
-| Stylesheet loading and lifecycle | unsupported, by inspection | load reached a stylesheet, no handle returned, lifecycle unmeasured | web-core has no PAPI for it, so there is nothing implemented to call. Native exposes `__LoadStyleSheet` and friends; the card measured that a `[url, "utf-8"]` load reaches `probe.css` and returns `null`, so no sheet is owned, nothing can be removed, and no rule is shown to be applied. |
+| Stylesheet loading and lifecycle | unsupported, by inspection | load measured on the API 33 emulator; **lifecycle unmeasured** | web-core has no PAPI for it, so there is nothing implemented to call. Native exposes `__LoadStyleSheet` and friends; on the measured engine `[url, "utf-8"]` returns `null` and reaches `probe.css`, a `[url]`-only call and any non-String second argument throw with named errors, and **no call returned a stylesheet handle**, so nothing is owned, nothing can be removed, and no rule is shown to be applied. |
 
 ## Findings
 
@@ -162,13 +184,57 @@ Two things it does not do:
   its callbacks is a list that fails on the first model change instead of at the
   call that could report it.
 
-**Native list behavior remains unmeasured.** The A03 smoke on 2026-10-09
-rendered the existing native card (`Native parity count: 0`) and a `bindtap`
-updated it to `1`, but the card did not create a list or call either list
-callback. No device run has exercised these callbacks; this smoke is evidence
-for native card rendering and tap delivery only, not for native list support.
-The renderer treats the list PAPI as optional and fails loudly when its required
-operations are absent. Nothing here establishes native list behavior.
+**Native list behavior is now measured on an emulator, and recycling is not.**
+The A03 smoke on 2026-10-09 rendered the existing native card
+(`Native parity count: 0`) and a `bindtap` updated it to `1`, but that card did
+not create a list or call either list callback — it is evidence for native card
+rendering and tap delivery only, and **no A03 run has ever created a list**. The
+list measurement that exists was taken on the API 33 `x86_64` emulator instead
+(`docs/evidence/native/2026-10-25-emulator-api33-list/`, seven stages, verifier
+exit 0).
+
+#### What the list card measured on the API 33 emulator
+
+1. **The inventory is three bindings, not four.** `__CreateList` and
+   `__UpdateListCallbacks` are present (`arity` 3 each); `__UpdateListComponents`
+   and `__GetListComponents` are **`undefined`** on this engine. `__AddEventListener`
+   and `__RemoveEventListener` are present. That is one engine's inventory and is
+   recorded per run rather than assumed.
+2. **`create` returned a handle** — `returnedHandle: true`, `handleTypeof:
+   "unknown"`, a `listId` of 14. `typeof` `"unknown"` is the normal native PrimJS
+   reading, not a failure.
+3. **`materialize` produced 3 children** for a 3-item model (unique ids 15, 17,
+   19), and the host did not ask for any of them itself:
+   `hostAskedAfterUpdate`, `hostAskedWhileMaterializing` and `hostAskedOnItsOwn`
+   are all `false`.
+4. **A permuted model moved 3 rows and kept their identity.**
+   `keyedIdentityPreserved: true`, `existingRowsMoved: 3`, element ids went from
+   `[15, 17, 19]` to `[19, 15, 17]`, `sameNode` names all three, and
+   `anyRowReleased: false` with `released: []` — no row was rebuilt or released
+   by the reorder.
+5. **A shrink to 1 released 2 rows.** `diff.released` is `["charlie",
+   "bravo"]`, `kept` is `["alpha"]`, children went 3 → 1, and the surviving
+   child kept id 15.
+6. **`enqueueComponent` was never called in any stage.** `hostCallCounts` reads
+   `componentAtIndex: 0`, `enqueueComponent: 0`, `updateListCallbacks: 3`, and the
+   per-stage `hostRecycled` in `shrunk` is `false`.
+
+That sixth finding is the recycling answer, and it is still a **negative** one:
+recycling remains unobserved. What changed is where that sentence applies. It used
+to be "no device run has created a list"; it is now "a measured engine created a
+list, moved rows, and released rows without ever calling `enqueueComponent`". The
+card's own `summary.unmeasured` says why a zero cannot be read as an inability:
+
+> Nothing in this card scrolls. A native list recycles cells in response to a
+> viewport asking for them, and no stage produces that request, so a zero
+> enqueueComponent count cannot be read as the host being unable to recycle.
+
+Scroll behaviour, cell reuse timing, `operationId` and `enableReuseNotification`
+semantics, and `__UpdateListComponents`/`__GetListComponents` are all listed as
+unmeasured in that same stage. So: native list support is **measured for
+create, materialize, keyed reorder and shrink on this emulator**, and
+**unmeasured for recycling, scrolling and cell reuse**, and there is still no A03
+list run of any kind.
 
 Real virtualization would need a host that asks for cells on its own, and native
 validation of both callbacks against the native list.
@@ -408,12 +474,62 @@ Supporting it would mean inventing an API the host does not have, so it is
 recorded as unsupported rather than approximated. An app that needs a
 runtime-loaded stylesheet has to drive its own host.
 
-Native is not measured for semantics, but the device run did record the global
-PAPI inventory: a native host **does** expose `__LoadStyleSheet`,
-`__AdoptStyleSheet`, and `__ReplaceStyleSheets`, names web-core does not have.
-What they accept and do is untested here, so this document does not claim they
-work; `@lynx-js/types` is still not a dependency, so their contract is not
-described either.
+Native is not measured for the renderer's purposes, and the inventory half is
+measured: both the A03 hand run and the API 33 emulator capture record that a
+native host **does** expose `__LoadStyleSheet`, `__AdoptStyleSheet`, and
+`__ReplaceStyleSheets`, names web-core does not have. What they accept and do is
+now partly measured on the emulator — see "The five measured stylesheet facts"
+below — and the parts that are not measured are named there rather than left
+implied. `@lynx-js/types` is still not a dependency, so their declared contract
+is not described either.
+
+#### The five measured stylesheet facts
+
+All of these calls were made on the API 33 emulator, Lynx Explorer 4.1.0, and
+every one is traceable to a stored line. The v2 capture's own `summary` counts
+them: `attemptsRecorded: 16`, `callsThatThrew: 10`, `callsThatReturned: 6`,
+`handlesReturned: 0`. The arity facts come from the **v2** capture's
+`loadstyle-arity`, `adopt-arity` and `replace-arity` stages; the one-argument
+negative result is independently recorded in the **v1** capture's
+`load-real-url` stage, on the same engine.
+
+| # | Fact | Engine answer | Where |
+| --- | --- | --- | --- |
+| 1 | `__LoadStyleSheet` requires **two** parameters, the second a **String** | `[url]` throws `LoadStyleSheet param size should >= 2`; `[url, null]`, `[url, 0]`, `[url, {}]`, `[url, function(){}]`, `[url, []]` throw `LoadStyleSheet param 1 should be String`; `[url, "utf-8"]` and `[url, url2]` **return `null`** | v2 `loadstyle-arity`; v1 `load-real-url` |
+| 2 | `__AdoptStyleSheet` requires **>= 1** parameter | `[]` throws `AdoptStyleSheet param size should >= 1`; `[null]` and `[{}]` throw `AdoptStyleSheet param 0 should be RefCounted` | v2 `adopt-arity` |
+| 3 | `__ReplaceStyleSheets` accepts nothing and reports nothing | `[]`, `[null]`, `[[]]` all **return `null`** and none throws — so nothing about a set's ownership is proven by the call | v2 `replace-arity` |
+| 4 | **No call in any card returned a stylesheet handle** | `returnedHandles: 0` in both v2 arity stages and in the lifecycle stage; `__CreateStyleObject` exists and returns a **plain object** (`typeof "object"`, empty keys), not an opaque handle | v2 `loadstyle-arity`, `adopt-arity`, `replace-arity`, `style-object-path`, `lifecycle` |
+| 5 | The **lifecycle is still unmeasured**, and why | No handle means nothing to adopt and no set to replace with; the v2 card recorded that in its own `summary.unmeasured` rather than inferring it | v2 `summary` |
+
+The second parameter is therefore an **encoding/label string**, not an instance or
+context: everything that is not a String is rejected by name, and the Strings
+that were tried were accepted. `fn.length` is `0` for all three operations, so
+`fn.length` is **not** the signature — this is the trap the earlier version of
+this section warned about, and the engine's own error text is the answer. The
+engine enforces parameter count and type at call time, so a caller that reads
+`arity` and passes one argument gets a throw, not a load.
+
+**Fact 5 is the one that keeps this capability out of the renderer.** Fact 4 is
+why fact 5 follows, and the v2 capture says it in its own words, in
+`summary.unmeasured`:
+
+> No call in this card returned a handle, so there is nothing to adopt and no
+> set to replace with. The cases that could run (null, {}, []) were run and are
+> recorded above; the handle cases were skipped rather than fabricated.
+
+So: **what a stylesheet handle is, how one is created, how it is adopted, and how
+a set of them is replaced are all unknown.** A load that reaches a stylesheet
+returns `null`; it does not say the sheet is owned, is applied, can be removed,
+or that a rule in it took effect. The card loads `probe.css`, whose rules match
+nothing it renders, precisely so that a successful load cannot change what the
+card observes. Nothing in `src/` may call these bindings on the strength of what
+is measured here, and nothing does.
+
+Two limits on the table above, stated so it is not read as more than it is: all
+five facts are from **one runtime** (the API 33 `x86_64` emulator), and **none of
+them is an A03 measurement** — the A03 run observed the three globals and nothing
+more. If the tablet's engine ever disagrees, that is a new measurement, not a
+contradiction of one.
 
 ### The native stylesheet probe
 
@@ -508,13 +624,17 @@ finding (`lifecycle-claim`).
 
 **v2 has now been run once on the same engine, and it answered the arity
 question.** A `[solid-lynx ss2]` capture was taken on Lynx Explorer 4.1.0 on API
-33 `x86_64`, and its `loadstyle-arity` stage produced the three distinct answers
-in the table above — which is where the encoding-string contract v1's
-`load-real-url` stage now uses comes from. Nothing about the style-object path or
-a lifecycle was answered by it: `style-object-path` found `__CreateStyleObject`
-existing but returning no opaque handle, so no setter was called with one, and
-`lifecycle` recorded reads of the card's own styles only. Those two questions
-remain what a further run is for.
+33 `x86_64` (`docs/evidence/native/2026-10-25-emulator-api33-stylesheet-v2/capture.log`)
+and its `loadstyle-arity` stage produced the three distinct answers in the table
+above — which is where the encoding-string contract v1's `load-real-url` stage now
+uses comes from. **That directory holds a capture and no `manifest.json`, so it
+is supporting bytes rather than a record**: the evidence gate does not count it,
+and neither does any claim here beyond "the bytes say this". Nothing about the
+style-object path or a lifecycle was answered by it: `style-object-path` found
+`__CreateStyleObject` existing but returning no opaque handle, so no setter was
+called with one, and `lifecycle` recorded reads of the card's own styles only.
+Those two questions remain what a further run is for, and the v2 `summary` stage
+states them in `unmeasured` — see "The five measured stylesheet facts" above.
 
 #### What can be verified by process
 
@@ -545,9 +665,10 @@ node scripts/verify-native-probe.mjs \
 
 **The card has since been run once, on an Android emulator, and the run did not
 answer what it was built to answer.** The capture
-(`v1-stylesheet-capture.log`, taken on Lynx Explorer 4.1.0 on an API 33
-`x86_64` emulator rather than on the A03) recorded three facts that change how
-this section has to be read:
+(`docs/evidence/native/2026-10-25-emulator-api33-stylesheet/capture.log`, taken on
+Lynx Explorer 4.1.0 on an API 33 `x86_64` emulator, serial `emulator-5554`, rather
+than on the A03; its `manifest.json` records that runtime and verifier exit 0)
+recorded three facts that change how this section has to be read:
 
 1. `fn.length` is `0` for all three operations. The arity the table above records
    as evidence is therefore not the signature, and cannot be used as one.
@@ -670,23 +791,37 @@ been executed, for all four cards and for the wrapper (exit 0 each). A reviewed
 command sequence is not a measurement, so everything the cards have measured was
 measured by opening a bundle in Lynx Explorer directly, not by a runner result.
 
-The native captures that do exist were all taken outside this runner, by opening
-the bundle in Lynx Explorer on an Android emulator rather than on the pinned A03:
-the v1 stylesheet capture (`v1-stylesheet-capture.log`), the v2 stylesheet capture
-(`stylesheet-v2-capture.log`), and the list capture (`list.log`). They are treated
-as measurements of the engine's behaviour — the v2 card's questions come from the
-v1 capture, and v1's `load-real-url` fix comes from the v2 one — but none of them
-went through this script, so none of them makes a line above a runner result.
+All four captures that exist were taken outside this runner, by opening the
+bundle in Lynx Explorer on an API 33 `x86_64` emulator (`emulator-5554`) rather
+than on the pinned A03, and three of them were then stored as records:
+
+| Card | Stored capture | Manifest |
+| --- | --- | --- |
+| smoke | `docs/evidence/native/2026-10-25-emulator-api33-smoke/` | yes, verifier exit 0 |
+| stylesheet (v1) | `docs/evidence/native/2026-10-25-emulator-api33-stylesheet/` | yes, verifier exit 0 |
+| list | `docs/evidence/native/2026-10-25-emulator-api33-list/` | yes, verifier exit 0 |
+| stylesheet (v2) | `docs/evidence/native/2026-10-25-emulator-api33-stylesheet-v2/` | **no** — supporting bytes, not a record |
+
+They are treated as measurements of the engine's behaviour — the v2 card's
+questions come from the v1 capture, and v1's `load-real-url` fix comes from the v2
+one — but none of them went through this script, so none of them makes a line
+above a runner result, and none of them is an A03 run. The runner's pinned serial
+is still `R9WT911JVVH`.
 
 ## Remaining blockers
 
-- The Native column of the summary table. The shared Element PAPI parity card has
-  run on a device, but the capability probe has not, so no per-capability native
-  claim in this document is verified.
-- Native PAPI names: the device run recorded the global inventory (for example
-  `__SetCSSId`, `__LoadStyleSheet`, `__AdoptStyleSheet`, `__ReplaceStyleSheets`
-  all exist), but their semantics were not exercised, so nothing here asserts
-  what a native host does with these same names.
+- The Native column of the summary table is `not measured` for every capability
+  except the two the cards measure. The shared Element PAPI parity card has run
+  on the A03 (reported) and on the API 33 emulator (captured), and the stylesheet
+  and list cards have run on the emulator (captured); the *capability probe* in
+  `examples/lynx-patterns` has still only run in a browser, so no per-capability
+  native claim outside those two rows is verified.
+- Native PAPI names: both the A03 hand run and the emulator captures recorded the
+  global inventory (for example `__SetCSSId`, `__LoadStyleSheet`,
+  `__AdoptStyleSheet`, `__ReplaceStyleSheets` all exist). On the emulator the
+  stylesheet names' **call-time arity and return values** are now measured (see
+  "The five measured stylesheet facts"), and their **semantics — ownership,
+  application, removal — are not**, because no call returned a handle.
 - Gestures are the only silent failure. Making them fail loudly would mean
   changing the property path in `src/lynx-host.ts`, which is renderer behaviour
   rather than a platform capability, so it is left for a deliberate change.
@@ -695,19 +830,26 @@ went through this script, so none of them makes a line above a runner result.
   on the emulator engine and recorded rows, element identity across a permuted
   model, and a release on shrink — with the host asking for no cells and
   recycling none. What is still missing is a host that recycles cells: native
-  list *recycling* is unverified, not merely untested.
+  list *recycling* is unverified, not merely untested. An emulator that never
+  scrolls the card cannot produce that observation.
 - The native list PAPI on the measured engine is three bindings, not four:
   `__CreateList` and `__UpdateListCallbacks` exist and `__UpdateListComponents` and
   `__GetListComponents` do not. That is one engine's inventory and is not
   generalised; the card records the answer per run rather than assuming it.
-- Native `__SetCSSId` exists — the device inventory lists it — but
+- Native `__SetCSSId` exists — both device inventories list it — but
   `root.setCSSId()` has not been exercised on a device, so that path is still
   unmeasured even though the renderer already treats the PAPI as optional and
   fails loudly when a host lacks it.
-- Stylesheet loading has no PAPI on either host to verify, so the capability is
-  absent rather than blocked. On native, a load now reaches a stylesheet, but the
-  engine returns no handle, so there is still no ownership, removal, or applied
-  rule to measure. This is also why stylesheet *cleanup* is not a pending item
+- Stylesheet loading has no PAPI on web to verify, so on that host the capability
+  is absent rather than blocked. On native, a load now reaches a stylesheet and
+  returns `null`: arity and argument types are measured, ownership is not. There
+  is still no handle, therefore still no adoption, replacement, removal, or
+  applied rule to measure, and the lifecycle questions the card was built to ask
+  are still open. This is also why stylesheet *cleanup* is not a pending item
   anywhere: the renderer never loads one, so the 1.0 roadmap box now claims
   cleanup only for the resources it does acquire (see
   [ROADMAP.md](../ROADMAP.md) and `docs/contract.md` §9).
+- The A03 has no capture for any card. Every stored capture in this repository
+  is from the API 33 `x86_64` emulator, so nothing here can be cited as
+  tablet behaviour: the two runtimes share an Explorer build and an APK digest,
+  not silicon, not a device image, and not an input path.

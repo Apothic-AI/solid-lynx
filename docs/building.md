@@ -154,22 +154,28 @@ for any of the three native cards:
 ```bash
 examples/lynx-for-native/scripts/run-native-probe.sh smoke        # [solid-lynx parity]
 examples/lynx-for-native/scripts/run-native-probe.sh stylesheet   # [solid-lynx ss]
+examples/lynx-for-native/scripts/run-native-probe.sh stylesheet2  # [solid-lynx ss2]
 examples/lynx-for-native/scripts/run-native-probe.sh list         # [solid-lynx lp]
 ```
 
 Add `--dry-run` to print the command sequence without touching a device. The
-bundle stems (`main`, `stylesheet-probe`, `list-probe`) are accepted as aliases,
-and `scripts/run-stylesheet-probe.sh` remains as a wrapper for the `stylesheet`
-card. Only `--dry-run` has been executed here; no card has been run on a device
-through this runner, so the manual recipe above is still the record of what the
-A03 smoke did.
+bundle stems (`main`, `stylesheet-probe`, `stylesheet-probe-v2`, `list-probe`) are
+accepted as aliases, and `scripts/run-stylesheet-probe.sh` remains as a wrapper
+for the `stylesheet` card. Only `--dry-run` has been executed here; no card has
+been run through this runner, so the manual recipe above is still the record of
+what the A03 smoke did. The captures that do exist were taken the manual way,
+by opening the bundles in Lynx Explorer on an API 33 `x86_64` emulator, and are
+stored under `docs/evidence/native/2026-10-25-emulator-api33-*/`.
 
 The environment is named `lynx`, which is Rspeedy's default; an app that ships
 both targets declares `environments: { lynx: {}, web: {} }` instead.
 
 ### What a native run confirmed
 
-Recorded from the device run; per-operation rows are in
+Two runtimes, two evidence levels: the bullets below are from the **2026-10-09
+A03 hand run**, whose capture was lost, unless they say otherwise. The
+**2026-10-25 API 33 `x86_64` emulator** captures are stored and re-verified, and
+where they confirm a bullet it says so. Per-operation rows are in
 [parity-checklist.md](parity-checklist.md).
 
 - **Root element (resolved).** The native host exposes both `__CreatePage` and
@@ -190,12 +196,15 @@ Recorded from the device run; per-operation rows are in
 - **Rendering and events (confirmed).** The card renders an `Increment` button
   and `Native parity count: 0`; tapping increments the counter to 1 through
   `bindtap`, so flush and reactive text updates work on the device.
-- **Parity (reported on 2026-10-09, capture lost).** The native card and host
-  reported all twenty shared Element PAPI operations passing. The `logcat`
-  capture that carried the report was not copied out of `/tmp`, so
-  [parity-checklist.md](parity-checklist.md) records the native column as
-  reported, not reproduced. Keep the capture and verify it with
-  `node scripts/verify-native-parity.mjs <capture>` when re-running this.
+- **Parity (measured on the emulator; reported on the A03).** The 2026-10-25 API
+  33 `x86_64` emulator run passed all twenty shared Element PAPI operations with
+a stored capture
+  (`docs/evidence/native/2026-10-25-emulator-api33-smoke/`; re-check it with
+  `node scripts/verify-native-parity.mjs <capture>`, exit 0). The 2026-10-09 A03
+  run *reported* the same twenty, but the `logcat` capture that carried the
+  report was not copied out of `/tmp`, so
+  [parity-checklist.md](parity-checklist.md) keeps the A03 column as reported,
+not reproduced. Keep the capture on the next run, whichever device it is.
 - **`processData is not a function` (observed host warning).** With
   `background: false` the bundle's `/app-service.js` is intentionally empty, and
   Explorer still invokes `processData` on it, so LogBox shows a red banner. It
@@ -209,11 +218,18 @@ Recorded from the device run; per-operation rows are in
   the web host.
 - **Event delivery.** `global-bind` handlers are registered but never invoked by
   `@lynx-js/web-core`; native delivery was not part of the smoke card.
-- **CSS ids and stylesheets.** The A03 exposes `__SetCSSId`,
-  `__LoadStyleSheet`, `__AdoptStyleSheet`, and `__ReplaceStyleSheets` in its
-  global PAPI inventory. Their native semantics were not exercised. The renderer
-  implements root-scoped `__SetCSSId`; runtime stylesheet loading/lifecycle is
-  not implemented.
+- **CSS ids and stylesheets.** Both device inventories expose `__SetCSSId`,
+  `__LoadStyleSheet`, `__AdoptStyleSheet`, and `__ReplaceStyleSheets`. The
+  renderer implements root-scoped `__SetCSSId`; runtime stylesheet
+  loading/lifecycle is not implemented. `root.setCSSId()` has never been run on
+  a device or emulator, so native `__SetCSSId` behaviour is unmeasured. The
+  stylesheet bindings were exercised on the API 33 emulator and their **call
+  shape** is measured — `__LoadStyleSheet` needs a second String parameter and
+  returns `null`, `__AdoptStyleSheet` throws with no arguments,
+  `__ReplaceStyleSheets` returns `null` without throwing — but no call returned a
+  stylesheet handle, so **what a handle is and what a lifecycle would look like is
+  unknown**. See [capabilities.md](capabilities.md), "The five measured stylesheet
+  facts".
 
 ### Using Lynx Explorer
 

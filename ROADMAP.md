@@ -86,18 +86,29 @@ Verified notes for this milestone:
 - Native smoke: the card loads through `lynx://open?url=http://127.0.0.1:8099/main.lynx.bundle`
   in Lynx Explorer 4.1.0 (`com.lynx.explorer`) on an SM-A037U, renders an
   `Increment` control and `Native parity count: 0`, and tapping increments the
-  count through `bindtap` with no renderer error.
-- Native parity: the 2026-10-09 device run reported all twenty shared Element
-  PAPI operations passing, matching the web host and the fake PAPI. Its capture
-  is gone, so `docs/parity-checklist.md` marks the native column **reported, not
-  reproduced**; re-running the card and verifying the capture is what closes it.
-- Two defects were found and fixed by the device run: the native host returns
+  count through `bindtap` with no renderer error. **That is the 2026-10-09 A03
+  hand run and it is still prose**; the emulator captures do not cover a tap, so
+  this bullet is the only record of one.
+- Native parity, two runtimes: the 2026-10-09 A03 device run *reported* all
+  twenty shared Element PAPI operations passing, matching the web host and the
+  fake PAPI, and its capture is gone — so that run stays **reported, not
+  reproduced** in `docs/parity-checklist.md`, as its own historical note. The
+  2026-10-25 API 33 `x86_64` emulator run passed the same twenty operations **and
+  its capture is stored**
+  (`docs/evidence/native/2026-10-25-emulator-api33-smoke/`, verifier exit 0), so
+  the checklist's native column is measured for that runtime. Closing the A03
+  half still needs an A03 run with a kept capture.
+- Two defects were found and fixed by the A03 device run: the native host returns
   element handles whose `typeof` is `"unknown"` (the host no longer validates
   creators with a DOM `typeof` check), and `__GetPageElement()` returns `null`
-  until `__CreatePage()` has been called (the example now creates the page).
+  until `__CreatePage()` has been called (the example now creates the page). The
+  emulator run reproduces the first — the list card records a returned handle
+  with `handleTypeof: "unknown"` — which is why the fix is measured rather than
+  remembered.
 - Explorer still shows a `processData is not a function` banner because the
   documented main-thread-only build emits an empty `/app-service.js`; it does not
-  affect load, render, or tap. Dual-thread cards remain unverified, and the
+  affect load, render, or tap, and the emulator capture carries the same banner
+  and the same non-effect. Dual-thread cards remain unverified, and the
   native-only box above is scope-excluded rather than pending: see "Out of scope
   for the renderer".
 
@@ -123,21 +134,38 @@ Add platform features through explicit, testable adapters while keeping the core
       (`docs/capabilities.md` "Stylesheet loading and lifecycle"). Integration
       there would mean inventing an API the host does not have, so it is
       documented as unsupported rather than approximated.
-    - *Unmeasured on native.* The A03 run did observe the
-      `__LoadStyleSheet`/`__AdoptStyleSheet`/`__ReplaceStyleSheets` globals in
-      the host inventory, but their signatures and lifecycle were never
-      exercised, so nothing about them is claimed and no renderer stylesheet API
-      exists to call (`docs/contract.md` §8 "Important limit", §9 "Not proven /
-      not applicable").
-  - **How the native half would be measured, and recorded.** The card is
-    `examples/lynx-for-native/src/stylesheet-probe.ts`, logging one
-    `[solid-lynx ss]` line per stage, calling only what cannot mutate the card
-    (`pnpm native:build` emits `dist/stylesheet-probe.lynx.bundle`). It is run
-    through the single native runner,
-    `examples/lynx-for-native/scripts/run-native-probe.sh stylesheet`, which
-    pins the A03 serial, serves the bundle on loopback, opens it in Explorer and
+    - *Unmeasured on native — measured in part on an emulator.* The A03 run did
+      observe the `__LoadStyleSheet`/`__AdoptStyleSheet`/`__ReplaceStyleSheets`
+      globals in the host inventory, but it never exercised them, so nothing from
+      that run claims their signatures or lifecycle
+      (`docs/contract.md` §8 "Important limit", §9 "Not proven / not
+      applicable"). The API 33 `x86_64` emulator run has since measured what the
+      bindings will **accept and return** — `__LoadStyleSheet` needs a second,
+      String parameter and `[url, "utf-8"]` returns `null`; `__AdoptStyleSheet`
+      throws `param size should >= 1` with no arguments;
+      `__ReplaceStyleSheets` accepts `[]`, `[null]` and `[[]]` and returns `null`
+      without throwing — and **no call returned a stylesheet handle**, so the
+      lifecycle (what a handle is, how one is created, adopted, or replaced) is
+      still unmeasured. That is why the box stays open: the capability is not
+      merely unexercised, it has no ownership contract to implement against
+      (`docs/capabilities.md`, "The five measured stylesheet facts").
+  - **How the native half is measured, and recorded.** The cards are
+    `examples/lynx-for-native/src/stylesheet-probe.ts` (v1, one
+    `[solid-lynx ss]` line per stage) and
+    `examples/lynx-for-native/src/stylesheet-probe-v2.ts` (v2, one
+    `[solid-lynx ss2]` line per stage), both built by `pnpm native:build` as
+    `dist/stylesheet-probe.lynx.bundle` and
+    `dist/stylesheet-probe-v2.lynx.bundle`. They call only what cannot mutate the
+    card. The intended runner is
+    `examples/lynx-for-native/scripts/run-native-probe.sh stylesheet`, which pins
+    the A03 serial, serves the bundle on loopback, opens it in Explorer and
     captures logcat; `run-native-probe.sh stylesheet --dry-run` reviews the
-    sequence without hardware.
+    sequence without hardware. The runs that exist were taken outside that
+    runner, by opening the bundles in Explorer on an API 33 `x86_64` emulator,
+    and are stored in
+    `docs/evidence/native/2026-10-25-emulator-api33-stylesheet/` (record, with
+    manifest) and `.../2026-10-25-emulator-api33-stylesheet-v2/` (capture only,
+    no manifest, so it is supporting bytes and not a record).
   - **The capture is now verifiable by process.**
     `scripts/verify-native-probe.mjs` reads a `[solid-lynx ss]` capture and
     requires the six stylesheet stages (`inventory`, `no-arguments`,
@@ -149,29 +177,41 @@ Add platform features through explicit, testable adapters while keeping the core
     into an expected parameter count. Exit codes are 0 verified / 1 findings /
     2 could not evaluate, the same three the parity verifier uses, and
     `scripts/require-native-evidence.mjs` now runs it for a stored manifest whose
-    `card` is `stylesheet` (parity for `smoke`, the same checker for `list`).
+    `card` is `stylesheet` or `stylesheet2` (parity for `smoke`, the same checker
+    for `list`).
     `test/native-probe-verify.test.ts` drives every exit code through a real
     process against `test/fixtures/native-probe/`, whose README states that those
     fixtures are not device evidence. The parity verifier is unchanged: it still
     reads only `[solid-lynx parity]` and still exits 2 on a capture carrying only
     `[solid-lynx ss]` lines, which is asserted in that suite.
-  - **No run has happened.** `--dry-run` for all three cards (and the
-    `run-stylesheet-probe.sh` wrapper) exits 0, and `docs/capabilities.md`
-    records the probe as "This has not been run yet". A reviewed command
+  - **No run has happened *through the runner*, and one has happened beside it.**
+    `--dry-run` for all four cards (and the `run-stylesheet-probe.sh` wrapper)
+    exits 0, and no card has been executed by that script. A reviewed command
     sequence is not a measurement, and neither is a verifier that passes on a
-    synthetic fixture: no stage line has been observed on a device. That is why
-    the stylesheet half stays open and the box stays unticked, even though its
-    CSS-id half is done and tested and its capture format is now checkable.
-  - **The absence is now recorded rather than implied.**
-    `docs/evidence/native/2026-10-25-1.0.0-pending/pending.json` names this card
-    among its pending records, with the A03 as the blocker and every
-    native-facing path the release touches. `scripts/require-native-evidence.mjs`
-    accepts that third form as an answer about honesty, not about behaviour: it
-    exits **3** and prints `verdict: pending`, never 0, and the `native-evidence`
-    job surfaces it as a warning rather than a pass. So this box staying open is
-    no longer a claim a reader has to take on trust — it is a state the release
-    gate reports, and `--range origin/master..HEAD` on this release returns that
-    code on its own.
+    synthetic fixture. Since this note was first written, a real measurement has
+    been taken by hand: the v1 and v2 cards were opened in Lynx Explorer 4.1.0 on
+    an API 33 `x86_64` emulator and both captures are stored. They measured the
+    arity and return values of the three bindings and, for v2, the shape of
+    `__CreateStyleObject`'s return. They did **not** measure a lifecycle — no
+    call returned a handle — so the stylesheet half still stays open and the box
+    stays unticked, even though its CSS-id half is done and tested and its
+    capture format is checkable.
+  - **The absence used to be recorded, and is now recorded as a partial
+    measurement.** The pending record that named this card among its three
+    (`docs/evidence/native/2026-10-25-1.0.0-pending/pending.json`) has been
+    deleted in `85ddd12`, because a storable capture now exists and leaving a
+    "nothing ran" record beside it would be false. What replaces it is not a
+    closed box: it is two stored emulator captures (one of them a record, the v2
+    one supporting bytes), a named missing capability (no handle, therefore no
+    ownership contract), and a gate that still exits **1** for a native-facing
+    change with no record of its own. `scripts/require-native-evidence.mjs`
+    accepts evidence as answers about honesty, not about behaviour: a capture
+    verifies or it does not, a `pending.json` exits **3** and prints
+    `verdict: pending` (never 0), and the `native-evidence` job surfaces 3 as a
+    warning rather than a pass. This box staying open is therefore still a state
+    the release gate reports rather than a claim a reader has to take on trust —
+    but the gate green is no longer the same thing as the capability being
+    available.
 - [x] Add refs and imperative element access with deterministic cleanup.
 - [x] Evaluate native list virtualization and expose list callbacks if the Solid model can support them cleanly.
   - The renderer side is done: `root.createList()` creates the list through
@@ -179,10 +219,9 @@ Add platform features through explicit, testable adapters while keeping the core
     with a keyed indexed row model (`src/list.ts`), covered by fake-PAPI unit
     tests and by the browser suite driving the host's own `update-list-info`
     request path. `<list>` in JSX now fails rather than rendering a
-    non-virtualized container. What is still open is recycling and native
-    validation: no host in this repository has been seen to recycle a cell, and
-    nothing has run on a device, so native list support is unverified.
-  - A native measurement card now exists:
+    non-virtualized container. What is still open is recycling: no host in this
+    repository has been seen to recycle a cell.
+  - A native measurement card exists and **has run**:
     `examples/lynx-for-native/src/list-probe.ts`, built as
     `dist/list-probe.lynx.bundle` by `pnpm native:build`, with one
     `[solid-lynx lp]` stage line per step and host-free recorder tests in
@@ -191,12 +230,22 @@ Add platform features through explicit, testable adapters while keeping the core
     order and treats the recycling question as one that must be *answered*: a
     recorded `0` for `enqueueComponent` verifies (the host never called it), an
     omitted counter is a finding, and `materialize` has to keep "the host asked"
-    apart from "the probe materialized". Its **device run is pending**, so it
-    measures nothing yet; when run it reports the list-named globals, the created
-    handle, materialized children, keyed identity across a permuted model, and
-    whether the host ever called `enqueueComponent`. Viewport-driven recycling,
-    scroll behavior, and cell reuse timing stay outside it because it never
-    scrolls.
+    apart from "the probe materialized".
+  - **What the run measured**, on the API 33 `x86_64` emulator (capture:
+    `docs/evidence/native/2026-10-25-emulator-api33-list/`, verifier exit 0):
+    the list PAPI is three bindings — `__CreateList` and `__UpdateListCallbacks`
+    present, `__UpdateListComponents` and `__GetListComponents` **undefined**;
+    `create` returned a handle with `typeof` `"unknown"`; `materialize` produced
+    3 children for 3 toy rows the host never asked for; a permuted model **moved
+    3 rows keeping element identity** (ids `[15,17,19]` → `[19,15,17]`, 0
+    released, 0 rebuilt); a shrink to 1 **released 2 rows**; and
+    `enqueueComponent` was **never called in any stage**. Viewport-driven
+    recycling, scroll behaviour, cell reuse timing, and
+    `operationId`/`enableReuseNotification` semantics stay outside it because the
+    card never scrolls — its own `summary.unmeasured` says a zero there cannot be
+    read as the host being unable to recycle. So recycling is still unobserved,
+    now on a measured engine rather than an unrun adapter, and there is still no
+    A03 list run.
 - [x] Evaluate gesture, animation, and portal/overlay APIs as separate capabilities.
 - [x] Publish examples for forms, keyed lists, asynchronous content, and platform-specific capabilities.
 
@@ -217,7 +266,7 @@ Set a stable public contract after web validation, native validation, and toolin
     then the consumer fixtures), `pnpm typecheck:consumer`
     (`test/consumer/tsconfig.json` and `tsconfig.dev.json`, which assert the
     type-level rejections with `@ts-expect-error`), and `pnpm test` — measured in
-    this tree as **303 unit tests in 12 files**, of which `test/renderer.test.ts`
+    this tree as **304 unit tests in 12 files**, of which `test/renderer.test.ts`
     contributes 63 (the file has grown since this box was written; the counts
     move, the arrangement does not, and `test/documented-counts.test.ts` now
     fails when a document disagrees with the measured suite). A contract item
@@ -250,7 +299,7 @@ Set a stable public contract after web validation, native validation, and toolin
     open-ended `>=22.12.0` admits, chosen because no manifest in the graph caps
     `engines.node`. Locally the same gate exits 0 on 20.19.0, 20.20.2, 22.12.0,
     22.23.3, 24.22.1, and 26.1.0. Those runs recorded 98 tests each, which is
-    what this repository had at the time; the suite is 303 now. The 121 figure
+    what this repository had at the time; the suite is 304 now. The 121 figure
     quoted for the Node lines was re-measured on Node 22.23.3 / pnpm 12.9.1 at
     an earlier commit in this release, before the sweep and probe suites landed;
     the other five Node lines were not re-run, so their 121 is an expectation,
@@ -266,7 +315,7 @@ Set a stable public contract after web validation, native validation, and toolin
       would be red is worse than a narrowed range. On Node 22.23.3 / pnpm
       12.9.1, with the committed pins installed and `solid-js` 1.9.16 + 1.9.17
       overlaid over `babel-preset-solid` 1.9.15/1.9.16: `pnpm typecheck` exit 0,
-      `pnpm test` exit 0 with 121 tests (the suite has since grown to 303 at
+      `pnpm test` exit 0 with 121 tests (the suite has since grown to 304 at
       the same Node and pnpm, but that count was not re-run per Solid leg), and
       `pnpm web:build` exit 0 on **both**.
       Nothing failed, so the range did not need narrowing. The browser suites
@@ -319,6 +368,23 @@ Set a stable public contract after web validation, native validation, and toolin
     hand against throwaway repositories for all four exit codes. It has not run
     on GitHub Actions, so "a bad PR is blocked" is the job's declared behaviour
     and the script's measured behaviour, not yet an observed CI event.
+  - **The native half also has real captures now, which is a narrower statement
+    than it sounds.** Three stored emulator runs are committed — all twenty parity operations pass,
+    stylesheet v1's six stages (including a load of the real `probe.css`), and
+    the list card's seven stages — each with a `manifest.json` whose verifier
+    exits 0 when re-run against the stored bytes, and each naming its runtime
+    (AVD `lynx33`, API 33, `x86_64`, Explorer 4.1.0, APK SHA-256
+    `6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6`). Run over
+    a range that contains them, the gate exits 0 with `verdict: satisfied`, which
+    is the mechanism working on real input rather than on fixtures.
+    **The box's state does not change for this, and the reason is one sentence:**
+    the box asks that the checks be *required*, and what was missing was the
+    enforcement path — green captures prove the path accepts a real run, not that
+    a red PR blocks or that CI ever executed, and both of those still read
+    "declared, never observed". What is still missing for the box to move on its
+    own terms is one GitHub Actions run; what is still missing for the *native
+    capability* record is A03 coverage and the stylesheet lifecycle, neither of
+    which this box claims.
     - The path list is `NATIVE_FACING_PATHS` in
       `scripts/require-native-evidence.mjs`, exported so it is testable, and
       derived by reading the bundle rather than guessing. Runtime-reachable:
@@ -388,7 +454,7 @@ Set a stable public contract after web validation, native validation, and toolin
   - **What is still manual, and is not claimed as automated.** No device runs in
     CI, and this change does not make one run. `native-build` still only
     compiles the bundles. `device.getState` in a manifest is a string a human
-    typed after `adb -s R9WT911JVVH get-state`; nothing here can confirm a device
+    typed after `adb -s <serial> get-state`; nothing here can confirm a device
     existed. The forgery is a concrete one and is recorded in
     `docs/evidence/native/README.md` rather than left implied: copying
     `test/fixtures/native-parity/good-capture.log` into an evidence directory and
@@ -397,17 +463,23 @@ Set a stable public contract after web validation, native validation, and toolin
     existence and re-verifiability of a run is required and checked; performing
     the run, and confirming that the record describes one, is still a human
     step.** A reviewer remains the only thing that can confirm the serial in a
-    manifest matches hardware someone actually held.
-  - **No capture is stored yet, and the release says so in the gate's own
-    language.** `docs/evidence/native/` ships its README, a `TEMPLATE/` with no
-    capture, and `2026-10-25-1.0.0-pending/pending.json` — three pending records
-    covering all 22 native-facing paths of this release's range and naming the
-    A03 as the blocker. Running the gate on that range therefore exits 3 with
-    `verdict: pending`, not 0 and not 1. `docs/parity-checklist.md` still records
-    the native column as `reported`, and this box being ticked does not change
-    that: the requirement is enforced, the measurement it would carry is still
-    missing, and the difference between those two statements is now something a
-    script reports rather than something a reader has to notice.
+    manifest matches hardware someone actually held. The 2026-10-25 records name
+    `emulator-5554` and an AVD, not the A03: they are a run someone performed, and
+    they prove the gate accepts one, not that an attached tablet can be attested
+    by a script.
+  - **What the evidence set now looks like, and what it does not cover.**
+    `docs/evidence/native/` holds its README, a capture-less `TEMPLATE/`, and four
+    run directories from 2026-10-25 — `smoke`, `stylesheet`, `list` with captures
+    and manifests, and `stylesheet-v2` with a capture and **no manifest**, so the
+    gate does not count it. The three-record pending set that stood for these
+    cards was deleted in `85ddd12` once the captures existed; deleting it was
+    correct because a "nothing ran" record beside a verified capture is false,
+    and the A03 gap it also described is now stated in
+    `docs/capabilities.md` and `docs/parity-checklist.md` instead. Running the
+    gate on the range that contains those captures exits **0**, not 3 — and a
+    range whose only native evidence would be an A03 run still has none, so the
+    requirement is as unmet for tablet behaviour as it was, which
+    `docs/parity-checklist.md` records as its own historical note.
 - [x] Confirm deterministic root, listener, ref, and list-callback cleanup.
       **Retitled from "Confirm deterministic root, listener, and stylesheet
       cleanup".** The original wording is kept in this paragraph because the
@@ -459,12 +531,18 @@ Set a stable public contract after web validation, native validation, and toolin
     so there is nothing for it to clean up (`docs/contract.md` §8, §9 "Not proven
     / not applicable": a CSS id only selects among stylesheets the toolchain
     already compiled in, and `setCSSId` makes no un-assign call because disposal
-    removes the elements). The native lifecycle is **unmeasured**: the probe card
-    exists (`examples/lynx-for-native/src/stylesheet-probe.ts`, built by `pnpm
-    native:build`) and would be run through
-    `examples/lynx-for-native/scripts/run-native-probe.sh stylesheet`, but no
-    device run has happened — only `--dry-run`. Native cleanup after `dispose()`
-    is unmeasured for the same reason (`docs/contract.md` §9 "Native disposal").
+    removes the elements). The native lifecycle is **unmeasured**: the probe cards
+    exist (`examples/lynx-for-native/src/stylesheet-probe.ts` and
+    `.../stylesheet-probe-v2.ts`, built by `pnpm native:build`) and have now been
+    run — by hand, on an API 33 `x86_64` emulator, with both captures stored —
+    and they measured the bindings' arity and return values, **not a lifecycle**:
+    no call returned a stylesheet handle, so there is still nothing whose cleanup
+    could be observed or claimed. Neither card has been run through
+    `examples/lynx-for-native/scripts/run-native-probe.sh stylesheet` (only
+    `--dry-run`), and neither has run on the A03. Native cleanup *after
+    `dispose()`* is unmeasured for a different reason and stays so: no card
+    asserts node removal or listener-slot release afterwards (`docs/contract.md`
+    §9 "Native disposal").
   - **The claim, resource by resource, and what each one is proven by.** This is
     the inventory the box asked for: every row is a resource a root can hold, and
     "cleanup" means the fake PAPI's own bookkeeping no longer contains it after
@@ -513,20 +591,28 @@ Set a stable public contract after web validation, native validation, and toolin
     elements the id was applied to. This is therefore a category the renderer
     does not participate in — **not** an unproven part of the claim — and it is
     why the box could not close on a device run either: running the native
-    stylesheet probe would measure `__LoadStyleSheet` semantics, which is a
-    capability question, not this box's cleanup question. The native globals
-    (`__LoadStyleSheet`, `__AdoptStyleSheet`, `__ReplaceStyleSheets`) exist and
-    are unmeasured; that work is tracked where it belongs, in
-    `docs/capabilities.md` "The native stylesheet probe", with the card built and
-    `--dry-run` verified.
-  - **Unmeasurable here: native cleanup after `dispose()`.** The device run
-    exercised load, render, and tap dispatch; it did not assert node removal or
-    listener-slot release afterwards, and no host-free test can, because the fake
-    PAPI is not a host. This stays a named gap in `docs/contract.md` §9 "Native
-    disposal" and `docs/migration.md` §9.2, and it is out of this box's claim
-    rather than left implied: the claim above is about what the renderer releases
-    through the Element PAPI, which is the same code on both hosts, not about
-    what a native engine then does with a removed node.
+    stylesheet probes measured `__LoadStyleSheet` semantics — its arity, its
+    argument types, and that it returns `null` — which is a capability question,
+    not this box's cleanup question. The native globals (`__LoadStyleSheet`,
+    `__AdoptStyleSheet`, `__ReplaceStyleSheets`) exist and their *lifecycle* is
+    unmeasured, now for a specific reason rather than for want of a run: no call
+    in either card returned a stylesheet handle. That work is tracked where it
+    belongs, in `docs/capabilities.md` "The five measured stylesheet facts", with
+    both cards built, run, and captured.
+  - **Unmeasurable here: native cleanup after `dispose()`.** The A03 device run
+    exercised load, render, and tap dispatch, and the 2026-10-25 emulator captures
+    exercise Element PAPI construction, the parity harness's own root disposal,
+    and the list card's model changes — **neither asserts node removal or
+    listener-slot release after the renderer's `dispose()`**, and no host-free
+    test can, because the fake PAPI is not a host. Note what `renderer-dispose`
+    passing on the emulator does and does not mean: it asserts that the nodes the
+    harness's own root rendered were gone from its sandbox, which is the parity
+    row's claim, not a measurement of what the engine does with a removed node or
+    a released listener slot. This stays a named gap in `docs/contract.md` §9
+    "Native disposal" and `docs/migration.md` §9.2, and it is out of this box's
+    claim rather than left implied: the claim above is about what the renderer
+    releases through the Element PAPI, which is the same code on both hosts, not
+    about what a native engine then does with a removed node.
   - **So the box is ticked, as the narrower claim.** Every resource the renderer
     can acquire is proven released, in one test that reads the host's post-dispose
     state rather than a log of calls; the two things it still cannot show —
@@ -564,7 +650,7 @@ The first push is what converts this, and it changes no code.
 | Box | Where the honest limit is now recorded |
 | --- | --- |
 | Define supported Lynx and Solid version ranges and verify them in CI | **Unticked**, on the CI half only. The ranges are defined (`docs/compatibility.md` §5–§7) and their commands pass locally; no workflow has executed on GitHub Actions, so the "in CI" half is unearned. What earns the tick is a push plus one green `node-matrix` and one green `solid-matrix` run recorded with their URLs — one PR away. `docs/compatibility.md` §8, `docs/release.md` §7, and `README.md`'s status block all now say the same thing. |
-| Confirm deterministic root, listener, ref, and list-callback cleanup | Ticked as the narrower claim, with `test/renderer.test.ts:2086` as the new proof that a disposed root leaves no residual host state. Stylesheet cleanup is out of the claim (nothing is ever loaded: `docs/contract.md` §8) and native cleanup after `dispose()` is unmeasurable without a device (`docs/contract.md` §9, "Native disposal"). Both remain recorded as gaps in `docs/capabilities.md` and `docs/migration.md` §9.2. |
+| Confirm deterministic root, listener, ref, and list-callback cleanup | Ticked as the narrower claim, with `test/renderer.test.ts:2086` as the new proof that a disposed root leaves no residual host state. Stylesheet cleanup is out of the claim (nothing is ever loaded: `docs/contract.md` §8) and native cleanup after `dispose()` is unmeasurable without a host that reports it (`docs/contract.md` §9, "Native disposal") — the 2026-10-25 emulator captures do not close it either. Both remain recorded as gaps in `docs/capabilities.md` and `docs/migration.md` §9.2. |
 
 The 0.3 native-only box is absent from this table because it is scope-excluded,
 not pending.

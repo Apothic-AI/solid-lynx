@@ -63,7 +63,46 @@ recorders, against an engine that behaves as the captures measured, and hand it
 to the unmodified verifier, which exits 0.
 
 Measured on this engine, and not generalised: `__UpdateListComponents` and
-`__GetListComponents` are **absent**. They are still inventoried, now by name.
+`__GetListComponents` are **absent** — the list PAPI on the measured engine is
+`__CreateList`, `__UpdateListCallbacks`, `__AddEventListener` and
+`__RemoveEventListener`, and no more. They are still inventoried, now by name.
+
+### The emulator runs are stored, and the pending record they superseded is gone
+
+The three cards were run on an Android emulator — AVD `lynx33`, Android 13 /
+**API 33**, ABI **`x86_64`**, Lynx Explorer **4.1.0**, APK SHA-256
+`6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6` (the same
+digest the A03 install documents) — and the captures are committed:
+
+| Directory | Card | Verifier |
+| --- | --- | --- |
+| `docs/evidence/native/2026-10-25-emulator-api33-smoke/` | smoke | exit 0, 20 operations pass across 1 report |
+| `docs/evidence/native/2026-10-25-emulator-api33-stylesheet/` | stylesheet (v1) | exit 0, 6 required stages present |
+| `docs/evidence/native/2026-10-25-emulator-api33-list/` | list | exit 0, 7 required stages present |
+| `docs/evidence/native/2026-10-25-emulator-api33-stylesheet-v2/` | stylesheet v2 | **no manifest** — supporting bytes, not a record |
+
+`85ddd12` deleted `docs/evidence/native/2026-10-25-1.0.0-pending/pending.json`
+because the gate says of a verified capture that it *supersedes* a pending
+record: leaving it would have kept telling a reader that nothing had run when
+three cards had. **That deletion did not close anything.** What it removed was a
+statement about honesty — "the run is scheduled and has not happened" — which is
+now false. What it did not and could not remove is the gap it was written about:
+
+- The A03 half of that record is still true. `adb -s R9WT911JVVH get-state`
+  still exits 1 from this worktree, **no A03 capture exists for any card**, and
+  the 2026-10-09 run's own capture is still lost. That is recorded in
+  `docs/capabilities.md`, `docs/parity-checklist.md` and the roadmap, where a
+  reader looks for device status.
+- The stylesheet **lifecycle** is still unmeasured, and now for a measured
+  reason: no call in any card returned a stylesheet handle.
+- List cell **recycling** is still unobserved: `enqueueComponent` was never
+  called, and the card never scrolls, so the card's own `summary.unmeasured`
+  refuses to read a zero as an inability.
+
+An emulator is also not the tablet it shares an APK with. It proves nothing about
+GPU behaviour, touch latency, memory pressure, or a physical-device quirk, and it
+carries no tap at all — the only tap evidence in this tree remains the
+2026-10-09 A03 prose.
 
 ### A probe capture can be verified by process, on both cards
 
@@ -122,8 +161,9 @@ count.
 
 No card changed. No field a card emits was altered, so this is not a
 native-facing change by `NATIVE_FACING_PATHS`; no device was attached and no
-device run happened, so `ROADMAP.md` box 4 stays unticked and
-`docs/capabilities.md` still records both probes as "has not been run". The new
+device run happened, so `ROADMAP.md` box 4 stayed unticked and
+`docs/capabilities.md` recorded both probes as "has not been run" **at that
+commit** — the emulator runs described above are what later moved it. The new
 fixtures under `test/fixtures/native-probe/` are synthetic and their README says
 so, beside the same warning the parity fixtures carry.
 
@@ -221,11 +261,11 @@ a `pending.json` whose commit is outside the range, and a failed capture beside 
 pending record all stay exit 1: a real defect must not be buried under a
 scheduled one.
 
-This release uses it for real. `docs/evidence/native/2026-10-25-1.0.0-pending/`
-holds three records — one each for the smoke, stylesheet, and list cards — that
-between them name all 22 native-facing paths of the release range and the A03 the
-runs are waiting on. On that range the gate now reports `verdict: pending` and
-exits 3 instead of reporting a dodge that did not happen. Nine host-free tests
+This release used it for real. `docs/evidence/native/2026-10-25-1.0.0-pending/`
+held three records — one each for the smoke, stylesheet, and list cards — that
+between them named all 22 native-facing paths of the release range and the A03 the
+runs were waiting on. On that range the gate reported `verdict: pending` and
+exited 3 instead of reporting a dodge that did not happen. Nine host-free tests
 cover the new form through throwaway `git init` repositories: full coverage exits
 3 with the warning text, one path missing exits 1, a capture wins with exit 0, a
 decision and the template behave exactly as before, a shrug `blocked_by` is
@@ -233,10 +273,18 @@ rejected, two records in one directory are rejected, a broken record beside a
 pending one stays exit 1, a split record set is judged as a union, and a record
 from outside the range covers nothing.
 
-What did not change: what any document claims was measured. The stylesheet and
-list cards still have not run, `docs/capabilities.md` still says so, and the
-native column of `docs/parity-checklist.md` is still `reported`, not reproduced.
-The new record says that more loudly, not less.
+**That directory no longer exists.** `85ddd12` deleted it once the emulator
+captures in "The emulator runs are stored" above existed, because a verified
+capture supersedes a pending record and this one had become a false statement
+that nothing had run. The pending *form* is unchanged and still tested: the tests
+above build their own throwaway repositories, and none of them reads this tree's
+evidence directory.
+
+What did not change when that record was written: what any document claims was
+measured. At the time, the stylesheet and list cards had not run and the native
+column of `docs/parity-checklist.md` was `reported`, not reproduced. What changed
+later, and only because captures exist, is recorded above: the two probe cards
+have run on an API 33 emulator and the A03 column is still `reported`.
 
 ## 1.0.0 — 2026-10-24
 
@@ -602,22 +650,37 @@ statement matches [docs/capabilities.md](docs/capabilities.md),
 [docs/contract.md](docs/contract.md) §15, and
 [docs/session-handoff.md](docs/session-handoff.md).
 
-The two device-run items below say "has not been run on a device" and "no device
-run", and that is still exactly true: this release ships the cards, the checker,
-and `docs/evidence/native/2026-10-25-1.0.0-pending/pending.json`, which records
-that the runs are blocked on an unattached A03. A pending record is not a
-measurement — the gate exits 3 for it — so nothing in this section improves.
+This section is 1.0.0's own statement, written when nothing native had run for
+that release; it is kept in that tense rather than rewritten. Two things have
+moved since, and neither is an upgrade of what is said below:
 
-- **Native stylesheet lifecycle** — not implemented. The A03 device exposes
-  `__LoadStyleSheet`, `__AdoptStyleSheet`, and `__ReplaceStyleSheets`; their
-  signatures and lifecycle are **unmeasured**, so nothing in this release calls
-  them. The stylesheet probe card that would measure them has not been run on a
-  device.
-- **Native list semantics** — not measured. The adapter is verified against
-  web-core only. No device run has created a list or called either list
-  callback, no host here has been observed to recycle a cell, and
-  `operationId`/`enableReuseNotification` are accepted and given no meaning.
-  Treat native list support as **unverified**.
+1. The pending record that stood for these cards
+   (`docs/evidence/native/2026-10-25-1.0.0-pending/pending.json`) was deleted in
+   `85ddd12` once emulator captures existed. A pending record is not a
+   measurement — the gate exits 3 for it — so deleting it changed no claim.
+2. The stylesheet and list cards **have since run**, on an API 33 `x86_64`
+   emulator, with captures stored and re-verified (see "The emulator runs are
+   stored" above). That measures what the bindings accept and return, and that a
+   list can be created, materialized, reordered by key and shrunk. It does **not**
+   measure a stylesheet lifecycle (no call returned a handle), list **recycling**
+   (`enqueueComponent` was never called and the card never scrolls), or anything
+   on the A03.
+
+What follows is therefore written against those limits:
+
+- **Native stylesheet lifecycle** — not implemented. Both device inventories
+  expose `__LoadStyleSheet`, `__AdoptStyleSheet`, and `__ReplaceStyleSheets`.
+  Their call shape is measured on the emulator; their **lifecycle is unmeasured**,
+  because no call in any card returned a stylesheet handle, so nothing in this
+  release calls them. What a handle is, how one is created, adopted, or replaced
+  remains unknown.
+- **Native list semantics** — measured in part, and **recycling is not measured**.
+  The adapter is verified against web-core, and on the emulator the card created a
+  list, materialized three rows, moved them by key across a permuted model, and
+  released two on a shrink. No host here has been observed to recycle a cell,
+  `enqueueComponent` was never called in any stage, and
+  `operationId`/`enableReuseNotification` are accepted and given no meaning. Treat
+  native list **recycling** as **unverified**.
 - **Native `global-bind` delivery** — unmeasured. The binding is registered and
   removed correctly, and the fake-PAPI tests cover the global dispatch pass, but
   `@lynx-js/web-core` files the handler in its own slot without running the
