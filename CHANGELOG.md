@@ -17,6 +17,68 @@ maintainer, published 2025-03-10); this project ships Apache-2.0.
 
 ## Unreleased
 
+### A probe capture can be verified by process, on both cards
+
+`ROADMAP.md` box 4 recorded the last mechanical gap in the stylesheet half: the
+stylesheet probe card logged its `[solid-lynx ss]` stages and nothing could
+check them. `scripts/verify-native-parity.mjs` reads only the smoke card's
+`[solid-lynx parity]` marker, so a capture carrying only stage lines exited 2,
+and the measurement could only be *recorded* by naming the capture and reading
+it against `docs/capabilities.md` by eye.
+
+`scripts/verify-native-probe.mjs` is the sibling that closes it, and it is a
+sibling rather than a `--probe` mode on purpose: the parity verifier's
+behaviour is unchanged, byte for byte, and its contract is asserted by its own
+suite (it still exits 2 on a capture with no parity line — there are now three
+tests that hold it to that while the probe checker exists). The new script reads
+a text file and nothing else — no device, no adb, no network, and no `dist/`,
+so a missing build can never turn a probe capture into "could not evaluate".
+
+It checks, per card, with the same exit codes the parity verifier uses (0
+verified, 1 findings, 2 could not evaluate):
+
+- **Stylesheet** (`[solid-lynx ss]`): `inventory`, `no-arguments`,
+  `load-missing-url`, `load-real-url`, `summary`, `done` — each present once, in
+  that order, every line parseable as JSON. `inventory` describes all three
+  bindings. `load-missing-url` recorded an absolute URL and a throw;
+  `load-real-url` recorded a *different* absolute URL and a return, which is how
+  "the mutating stage reached the real stylesheet while the missing-URL stage
+  failed" is checked rather than asserted. `summary.unmeasured` must be present
+  and non-empty; the wording is not checked, because it belongs to the card.
+- **List** (`[solid-lynx lp]`): `inventory`, `create`, `materialize`,
+  `reorder`, `shrunk`, `summary`, `done`. `materialize` must keep "the host asked
+  for this row" apart from "the probe materialized this row", and its derived
+  `hostAskedOnItsOwn` must agree with the two fields it is derived from. The
+  recycling question must be *answered*: `summary.hostCallCounts.enqueueComponent`
+  is required, and a recorded `0` verifies — "the host never called it" is a
+  measurement. A capture that omits the counter is a finding, because it then
+  leaves open the question the card was run to close.
+
+**No check infers a signature.** `fn.length` is the parameter count a binding
+reports, and a native binding can report any number regardless of what it
+requires, so an `arity` in a capture is evidence about the binding and never a
+parameter list. The only assertion made about one is that a recorded arity is a
+number; the source says so at `checkArityFields`, and
+`test/native-probe-verify.test.ts` includes a structural test that the code has
+no expected-arity comparison to grow into one.
+
+`scripts/require-native-evidence.mjs` now picks the verifier from the manifest's
+`card` — parity for `smoke`, probe for `stylesheet` and `list` — so the evidence
+contract accepts a verified probe capture. The pairing is enforced in both
+directions: a probe capture offered as `smoke` evidence gets the parity
+verifier's exit 2, and a smoke capture offered as probe evidence gets the probe
+verifier's exit 2. Neither is reported as missing evidence, because "exists but
+cannot be read" is a different result. It also quotes the verifier's own finding
+lines in its report now, so a rejection names the stage rather than only the
+count.
+
+No card changed. No field a card emits was altered, so this is not a
+native-facing change by `NATIVE_FACING_PATHS`; no device was attached and no
+device run happened, so `ROADMAP.md` box 4 stays unticked and
+`docs/capabilities.md` still records both probes as "has not been run". The new
+fixtures under `test/fixtures/native-probe/` are synthetic and their README says
+so, beside the same warning the parity fixtures carry.
+
 ### Native evidence is a requirement, not a convention
 
 `ROADMAP.md` box 4 said the native half of the compatibility requirement was
@@ -48,7 +110,8 @@ nothing. `docs/evidence/native/README.md` documents the record contract and
 `docs/evidence/native/TEMPLATE/manifest.json` is a capture-less template the
 script rejects as evidence by name. 33 host-free tests build their own git
 repositories in `mkdtemp`, so the suite needs no device, no network, and not this
-repository's git state.
+repository's git state. (It is 41 at this commit, after the probe-capture entry
+above added eight cases for the per-card verifier.)
 
 What this does not do: run a device. `device.getState` in a manifest is a string
 a human typed; no runner can confirm hardware existed. The requirement that a

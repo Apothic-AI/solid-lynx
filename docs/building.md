@@ -225,6 +225,9 @@ Recorded from the device run; per-operation rows are in
 3. Read the console, or filter `adb logcat` for `lynx_console`. The card logs
    `[solid-lynx parity] {...}` with the full parity report **on one line**,
    because the native console bridge drops everything after the first newline.
+   (The stylesheet and list cards log one `[solid-lynx ss]` / `[solid-lynx lp]`
+   line per stage instead, and are read by
+   `node scripts/verify-native-probe.mjs <capture>`.)
 4. Compare that report against the web column in
    [parity-checklist.md](parity-checklist.md).
 

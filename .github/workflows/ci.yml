@@ -193,7 +193,7 @@ jobs:
   #
   # Locally, on Node 22.23.3 / pnpm 12.9.1, both legs exited 0 on every step
   # below: `pnpm typecheck`, `pnpm test` (121 tests, 7 files at that commit;
-  # suite is 154 now), `pnpm web:build`.
+  # suite is 204 now), `pnpm web:build`.
   # See `docs/compatibility.md` §2 for the recorded runs.
   solid-matrix:
     name: solid-matrix (solid ${{ matrix.solid }}, preset ${{ matrix.preset }})
@@ -352,9 +352,11 @@ jobs:
   # answers one question: did this change touch native-facing behaviour, and if
   # so is there a committed record that satisfies the requirement? A capture
   # under `docs/evidence/native/<id>/` with a `manifest.json` is re-verified here
-  # by `scripts/verify-native-parity.mjs` against the stored bytes; a
-  # `decision.json` is an explicit recorded decision that this change needs no
-  # device run. A native-facing change with neither is a red job.
+  # by the verifier its `card` selects — `scripts/verify-native-parity.mjs` for
+  # the smoke card's one `[solid-lynx parity]` report,
+  # `scripts/verify-native-probe.mjs` for the stylesheet and list cards' one line
+  # per stage. A `decision.json` is an explicit recorded decision that this change
+  # needs no device run. A native-facing change with neither is a red job.
   #
   # What this job still cannot do: attach a device. `native-build` compiles the
   # bundle and executes nothing, and this job reads files. So the device run

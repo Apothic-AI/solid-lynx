@@ -37,8 +37,8 @@ none needs a secret. Green means exit status 0 on that exact command.
 | `browser` | Lynx-for-Web suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | builds the web bundle, serves it, drives it in Chromium | exit 0, **17 passed** (43.8s, on the 1.9.17 overlay — the pinned run was 54.2s) |
 | `browser` | Pattern suite | `PLAYWRIGHT_PORT=4200 pnpm exec playwright test --config test/browser/patterns.playwright.config.ts` | the separate `examples/lynx-patterns` suite passes | exit 0, **9 passed** (41.5s) |
 | `native-build` | Build the native bundle | `pnpm native:build` | `examples/lynx-for-native/dist/` holds the three bundles | exit 0, `main`, `stylesheet-probe`, `list-probe` |
-| `native-evidence` | Require native evidence for this pull request | `node scripts/require-native-evidence.mjs --range <pr base sha>..HEAD` | a native-facing change carries a committed capture the verifier accepts, or a recorded decision | **not run on GitHub Actions**; the script's 33 host-free tests are, and the three exit codes were demonstrated by hand (§3) |
-| `solid-matrix` | Install / Overlay / Type check / Unit tests / Web build, on solid `1.9.16`+preset `1.9.16` and solid `1.9.17`+preset `1.9.16` | `pnpm install --frozen-lockfile`, `pnpm add`-free `overrides` in `pnpm-workspace.yaml` then `pnpm install --no-frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm web:build` | the gate passes on every published Solid the peer range admits | exit 0 on both legs locally, 121 tests each at the time of that run (the suite is 150 now) — **not yet run on GitHub Actions** |
+| `native-evidence` | Require native evidence for this pull request | `node scripts/require-native-evidence.mjs --range <pr base sha>..HEAD` | a native-facing change carries a committed capture the verifier for its card accepts, or a recorded decision | **not run on GitHub Actions**; the script's 41 host-free tests are, and the three exit codes were demonstrated by hand (§3) |
+| `solid-matrix` | Install / Overlay / Type check / Unit tests / Web build, on solid `1.9.16`+preset `1.9.16` and solid `1.9.17`+preset `1.9.16` | `pnpm install --frozen-lockfile`, `pnpm add`-free `overrides` in `pnpm-workspace.yaml` then `pnpm install --no-frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm web:build` | the gate passes on every published Solid the peer range admits | exit 0 on both legs locally, 121 tests each at the time of that run (the suite is 204 now) — **not yet run on GitHub Actions** |
 
 Two things about the scripts, so you do not run work twice. `pnpm typecheck` is
 `pnpm build && tsc --noEmit && pnpm typecheck:consumer`, and `pnpm test` is
@@ -150,9 +150,12 @@ What CI *does* now check is that evidence exists. The `native-evidence` job runs
 native-facing code and carries neither:
 
 - a capture at `docs/evidence/native/<date-or-id>/` with a `manifest.json`, which
-  the job re-verifies by running `scripts/verify-native-parity.mjs` against the
-  stored bytes and requiring exit 0, cross-checked against the manifest's own
-  recorded exit code and verdict line; or
+  the job re-verifies by running the verifier for that manifest's `card` against
+  the stored bytes and requiring exit 0, cross-checked against the manifest's own
+  recorded exit code and verdict line. `scripts/verify-native-parity.mjs` reads a
+  `smoke` capture; `scripts/verify-native-probe.mjs` reads a `stylesheet` or
+  `list` capture and requires that card's stages in order, including the
+  recycling answer the list card exists to give; or
 - a `decision.json` in the same place, recording explicitly that this
   native-facing change needs no device run, with a reason, an author, a
   timestamp, and the paths it covers.
@@ -172,9 +175,13 @@ Three things are therefore hand work:
    capture it came from; the command is in "The native smoke step" below.
 2. **The stylesheet probe** — `examples/lynx-for-native/src/stylesheet-probe.ts`,
    built to `dist/stylesheet-probe.lynx.bundle`, logging one `[solid-lynx ss]`
-   line per stage.
+   line per stage. Its capture is verified by
+   `scripts/verify-native-probe.mjs`, not by the parity verifier, which still
+   exits 2 on a capture with no `[solid-lynx parity]` line.
 3. **The list probe** — `examples/lynx-for-native/src/list-probe.ts`, built to
    `dist/list-probe.lynx.bundle`, logging one `[solid-lynx lp]` line per stage.
+   The same probe verifier reads it and requires the recycling question to be
+   answered.
 
 Device setup, the pinned serial, the Explorer deep link, and the exact re-run
 commands are in `docs/building.md`, "Verified A03 setup". Two rules from that
@@ -430,7 +437,8 @@ per-capability version of the same statement.
 | --- | --- | --- |
 | A03 smoke card on a device | **not run** | `adb -s R9WT911JVVH get-state` → `device 'R9WT911JVVH' not found`, exit 1. No hardware attached in this worktree, so there is no capture for the verifier to read. |
 | `node scripts/verify-native-parity.mjs <capture>` on a device capture | **not run** | Same reason: no capture exists. The verifier itself is exercised host-free against fixtures for every outcome (0, 1, and 2, including a capture with no parity line). |
-| `node scripts/require-native-evidence.mjs --range <base>..HEAD` against a real device capture | **not run** | No capture exists to point it at. The script's own three exit codes were demonstrated against throwaway git repositories under `/tmp`, and its 33 host-free tests build their own repositories; the `native-evidence` job has not run on GitHub Actions, because no runner can be dispatched from this worktree. |
+| `node scripts/verify-native-probe.mjs <capture>` on a device capture | **not run** | Same reason: no stylesheet or list capture exists. The checker is exercised host-free against `test/fixtures/native-probe/` for all three exit codes on both cards, including a list capture that never answers the recycling question and one where the host never called `enqueueComponent`. A fixture that verifies is not a device run — its README says so. |
+| `node scripts/require-native-evidence.mjs --range <base>..HEAD` against a real device capture | **not run** | No capture exists to point it at. The script's own three exit codes were demonstrated against throwaway git repositories under `/tmp`, and its 41 host-free tests build their own repositories; the `native-evidence` job has not run on GitHub Actions, because no runner can be dispatched from this worktree. |
 | Stylesheet probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0), which reviews the sequence and touches nothing. |
 | List probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0). The list card has had a runner since `run-native-probe.sh` took a card argument — it is no longer loaded by hand — but a reviewed command sequence is not a device result. |
 | `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; CI runs it on a bare runner. |

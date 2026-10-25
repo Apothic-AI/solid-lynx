@@ -20,7 +20,9 @@ operations were reported passing on Lynx Explorer 4.1.0 on an SM-A037U on
 2026-10-09. That run's capture was not kept, so
 [parity-checklist.md](parity-checklist.md) records the native column as
 **reported, not reproduced**, and `scripts/verify-native-parity.mjs` is what
-makes the next run checkable; see also [building.md](building.md).
+makes the next run checkable; the stylesheet and list cards' stage lines are read
+by `scripts/verify-native-probe.mjs`, its sibling, with the same exit codes. See
+also [building.md](building.md).
 
 How a run is kept is now a checked requirement rather than a convention. A
 verifier-passing capture is stored at `docs/evidence/native/<date-or-id>/` beside
@@ -170,12 +172,45 @@ yet. `examples/lynx-for-native/src/list-probe.ts` builds through
 stylesheet probe (`[solid-lynx lp]` stages, one JSON line each, recorder helpers
 in `list-probe-report.ts` covered by `test/list-probe-report.test.ts`) so one
 runner drives all three cards. It is a measurement, not support: it calls
-`root.createList()` with three toy items and logs one line per stage —
-`inventory` (what the host exposes, with `typeof`, `fn.length`, `fn.name`, and
-`String(fn)`, no calls), `create`, `materialize`, `reorder`, `shrunk`, `summary`,
-and `done`. **Its device run is pending.** No line from it has been observed, so
-nothing below changes: no native list behavior is measured, and no host has been
-seen to recycle a cell. What the card cannot establish even when it runs is
+`root.createList()` with three toy items and logs one line per stage:
+
+| Stage | What it does | Why that is allowed |
+| --- | --- | --- |
+| `inventory` | `typeof`, `fn.length`, `fn.name`, `String(fn)` for the four list bindings, plus `namedPresent` and whether the counting layer installed | No call is made, so nothing is mutated. `fn.length` is recorded as evidence about the binding, not read as a signature. |
+| `create` | `root.createList()` with three toy items, then `flush()` | Reports whether a handle came back and what `typeof` says about it, because a native PrimJS element reports `typeof === "unknown"` and is still usable. |
+| `materialize` | Gives the host its chance first (`update()`), then materializes rows through the model's `materialize()` | Scores the two apart: `hostAskedAfterUpdate`, `hostAskedWhileMaterializing`, and `hostAskedOnItsOwn` are the host's half; `requestedCount`/`materialized` are the probe's. |
+| `reorder` | Installs a permuted model and calls `update()` | Compares element unique ids before and after, so a moved row is not mistaken for a rebuilt one; `elementOrderChanged` is the host-visible half. |
+| `shrunk` | Installs a one-item model and calls `update()` | Records which rows were released and whether the host called `enqueueComponent` during the stage — recycling is the host's decision, so the counter is the only honest evidence either way. |
+| `summary` | States what was measured and what was not, and carries the final `hostCallCounts` | Keeps the report from claiming more than it did, and is where the recycling answer lands. |
+| `done` | `status: "all stages logged"` | Says the card reached the end. |
+
+#### What can be verified by process
+
+The same checker reads a `[solid-lynx lp]` capture
+(`scripts/verify-native-probe.mjs`), and requires the seven stages above in that
+order. Beyond presence and parseability it checks the two distinctions the card
+exists to make:
+
+- **"the host asked for this row" is not merged with "the probe materialized
+  this row".** `materialize` must carry both halves, and
+  `hostAskedOnItsOwn` must equal
+  `hostAskedAfterUpdate || hostAskedWhileMaterializing` — a capture whose derived
+  field disagrees with its own inputs is a finding.
+- **whether `enqueueComponent` was ever called is answered, including when it
+  was not.** `summary.hostCallCounts.enqueueComponent` must be present and a
+  number. A recorded `0` is a complete answer ("the host never called it on this
+  card") and the capture verifies; an omitted counter is a finding, because the
+  capture then leaves open the question the card was run to close. The same
+  fields are required on `shrunk`, where `hostRecycled` is derived from the
+  counter.
+
+The checker also records that a list arity is only ever checked for being a
+number, for the same reason as the stylesheet card.
+
+**Its device run is pending.** No line from it has been observed, so nothing
+below changes: no native list behavior is measured, and no host has been seen to
+recycle a cell. A verified fixture proves the checker works, not that a device
+produced the stages. What the card cannot establish even when it runs is
 also recorded in its own `summary` stage: recycling driven by a viewport, scroll
 behavior, and cell reuse timing all need a scrolling list, and the card creates
 none.
@@ -361,6 +396,7 @@ stage that fails hard must not take earlier evidence with it:
 | `load-missing-url` | `__LoadStyleSheet` pointed at a path the loopback server returns 404 for | The load has to fail, which separates "accepts a URL-shaped argument" from "rejects its argument" without letting anything load. |
 | `load-real-url` | `__LoadStyleSheet` pointed at a real, inert stylesheet next to the bundle | The only call that can change anything, and it changes a disposable card. It is the first step to any handle or ownership contract. |
 | `summary` | States explicitly what was not exercised and why | Keeps the report from being read as a claim about the unexercised operations. |
+| `done` | `status: "all stages logged"` | Says the card reached the end, so a capture that stops earlier is visibly short. |
 
 Adopting and replacing are **not** called with fabricated arguments. Both need a
 stylesheet handle or a stylesheet set whose membership and ownership this probe
@@ -368,13 +404,43 @@ has no contract for, so any call would either prove nothing or would strip the
 card's own styles. They are recorded as unmeasured with that reason rather than
 guessed at.
 
-**This has not been run yet.** The probe is built and its recorder is covered by
-host-free tests, but the A03 run has not happened: during this attempt the device
-was not attached over adb (`adb -s R9WT911JVVH get-state` reported
-`device 'R9WT911JVVH' not found` while a Samsung device was present on the USB
-bus). So this section records what the probe *will* measure, and the paragraph
-above is unchanged: the three names are known to exist on the A03, and their
-signatures and lifecycle remain unmeasured.
+#### What can be verified by process
+
+`scripts/verify-native-probe.mjs` reads a capture and exits with the same three
+codes as the parity verifier — 0 verified, 1 findings, 2 could not evaluate. For
+a `[solid-lynx ss]` capture it checks:
+
+- all six stages above are present, once each, in that order, and every line
+  after the marker parses as JSON;
+- `inventory` describes all three bindings, and any `arity` it records is a
+  *number* — the checker never turns `fn.length` into an expected parameter
+  count, and says so in the source (see `checkArityFields`);
+- `load-missing-url` recorded an absolute URL and a `threw`, and `load-real-url`
+  recorded a *different* absolute URL and a return rather than a throw. That is
+  the "the mutating stage reached the real stylesheet while the missing-URL stage
+  failed" claim, checked against the capture's own fields rather than asserted;
+- `summary.unmeasured` is present and non-empty. The wording is not checked — it
+  belongs to the card — only that the summary does not assert nothing.
+
+A capture with an unknown extra stage still verifies: the rule is *at least* the
+required set, so a later card that logs more does not fail its own checker.
+
+```bash
+examples/lynx-for-native/scripts/run-native-probe.sh stylesheet
+node scripts/verify-native-probe.mjs \
+  /tmp/solid-lynx-logs/lynx_console-stylesheet-<stamp>.log
+```
+
+**This has not been run yet.** The probe is built, its recorder is covered by
+host-free tests, and its capture format is now verifiable by process, but the A03
+run has not happened: during this attempt the device was not attached over adb
+(`adb -s R9WT911JVVH get-state` reported `device 'R9WT911JVVH' not found` while
+a Samsung device was present on the USB bus). So this section records what the
+probe *will* measure and how its capture *will* be verified, not a measurement.
+The paragraph above is unchanged: the three names are known to exist on the A03,
+and their signatures and lifecycle remain unmeasured. A verifier that accepts a
+synthetic fixture is not a device run, which is why
+`test/fixtures/native-probe/README.md` labels every fixture as not evidence.
 
 #### Running it
 
@@ -417,7 +483,11 @@ the port and output directory.
 
 A run that captures no line for the chosen prefix exits 5 and points at the log
 and screenshot rather than reporting a result; the script does not parse the
-stages, so reading the capture is still the measurement.
+stages, so reading the capture is still a separate step — but it is no longer a
+separate *checker*: `scripts/verify-native-probe.mjs` reads the stylesheet and
+list captures, and `scripts/verify-native-parity.mjs` reads the smoke capture.
+Each turns a capture into exit 0/1/2, and `scripts/require-native-evidence.mjs`
+runs the right one for a stored manifest's `card`.
 
 **No card has been run on a device through this script.** Only `--dry-run` has
 been executed, for all three cards and for the wrapper (exit 0 each). A reviewed

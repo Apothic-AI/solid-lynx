@@ -50,6 +50,31 @@ const FIXTURES = path.join(REPO_ROOT, "test", "fixtures", "native-parity");
 /** The good capture, as bytes. It is a fixture, never device evidence. */
 const GOOD_CAPTURE = readFileSync(path.join(FIXTURES, "good-capture.log"), "utf8");
 
+/**
+ * The probe fixtures, as bytes. Also fixtures, also never device evidence:
+ * `test/fixtures/native-probe/README.md` says so beside them.
+ */
+const PROBE_FIXTURES = path.join(REPO_ROOT, "test", "fixtures", "native-probe");
+const probeFixture = (name: string): string =>
+  readFileSync(path.join(PROBE_FIXTURES, name), "utf8");
+
+const PROBE_VERIFIER =
+  "scripts/verify-native-probe.mjs";
+const PARITY_VERIFIER =
+  "scripts/verify-native-parity.mjs";
+
+/** The probe verifier's verdict line for a clean stylesheet capture. */
+const STYLESHEET_VERDICT =
+  "verdict: verified — 6 required stage(s) present across 1 card(s), and nothing in"
+  + " the capture contradicts what it records. What the stages mean is still read"
+  + " against docs/capabilities.md.";
+
+/** The same line for a clean list capture, which has seven required stages. */
+const LIST_VERDICT =
+  "verdict: verified — 7 required stage(s) present across 1 card(s), and nothing in"
+  + " the capture contradicts what it records. What the stages mean is still read"
+  + " against docs/capabilities.md.";
+
 const VERDICT_ZERO =
   `verdict: verified — ${parityOperationIds.length} operation(s) pass across 1 captured report(s).`;
 
@@ -133,11 +158,18 @@ function manifestFor(dir: string, overrides: Record<string, unknown> = {}): stri
  * first, and the manifest — now able to name that commit — follows, inside the
  * same range. Returns the sha of the final commit.
  */
-function storeCaptureInChange(dir: string, message: string, name = "2026-11-20-smoke"): string {
-  write(dir, `docs/evidence/native/${name}/lynx_console-smoke-test.log`, GOOD_CAPTURE);
+function storeCaptureInChange(
+  dir: string,
+  message: string,
+  name = "2026-11-20-smoke",
+  options: { capture?: string; captureName?: string; manifest?: Record<string, unknown> } = {},
+): string {
+  const captureName = options.captureName ?? "lynx_console-smoke-test.log";
+  write(dir, `docs/evidence/native/${name}/${captureName}`,
+    options.capture ?? GOOD_CAPTURE);
   const recorded = commitAll(dir, message);
   write(dir, `docs/evidence/native/${name}/manifest.json`,
-    manifestFor(dir, { commit: recorded }));
+    manifestFor(dir, { capture: captureName, commit: recorded, ...options.manifest }));
   return commitAll(dir, "evidence: record the capture's commit");
 }
 
@@ -552,6 +584,183 @@ describe("require-native-evidence: a stored capture", () => {
   });
 });
 
+describe("require-native-evidence: probe captures, verified by their own card", () => {
+  /**
+   * The evidence contract now accepts a probe capture, because there is a process
+   * that can verify one. What these cases keep honest is the pairing: the card in
+   * the manifest picks the verifier, so a probe capture cannot back a smoke claim
+   * and a smoke capture cannot back a probe claim. Neither direction is allowed to
+   * degrade into "whichever verifier understands the bytes".
+   */
+  it("passes when a stylesheet capture carries every stage its card emits", () => {
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    const final = storeCaptureInChange(dir, "native: change the host with a probe capture",
+      "2026-11-20-stylesheet", {
+        capture: probeFixture("stylesheet-good.log"),
+        captureName: "lynx_console-stylesheet-test.log",
+        manifest: {
+          card: "stylesheet",
+          verifier: { exitCode: 0, verdict: STYLESHEET_VERDICT },
+        },
+      });
+
+    const run = runScript("--repo", dir, "--range", range(base, final));
+
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: satisfied");
+    expect(run.stdout).toContain("verified exit 0 by " + PROBE_VERIFIER);
+    expect(run.stdout).toContain("docs/evidence/native/2026-11-20-stylesheet");
+  });
+
+  it("passes when a list capture answers the recycling question with a zero", () => {
+    // The case a weaker contract would reject: the host never called
+    // enqueueComponent, which is a measurement, not missing evidence.
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    const final = storeCaptureInChange(dir, "native: a list run with a probe capture",
+      "2026-11-20-list", {
+        capture: probeFixture("list-never-recycled.log"),
+        captureName: "lynx_console-list-test.log",
+        manifest: {
+          card: "list",
+          verifier: { exitCode: 0, verdict: LIST_VERDICT },
+        },
+      });
+
+    const run = runScript("--repo", dir, "--range", range(base, final));
+
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: satisfied");
+    expect(run.stdout).toContain("list capture from R9WT911JVVH");
+  });
+
+  it("fails a list capture whose stages never answer the recycling question", () => {
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    const final = storeCaptureInChange(dir, "native: a list capture with no answer",
+      "2026-11-20-list", {
+        capture: probeFixture("list-no-answer.log"),
+        captureName: "lynx_console-list-test.log",
+        // The manifest claims a clean run; the stored bytes disagree.
+        manifest: {
+          card: "list",
+          verifier: { exitCode: 0, verdict: LIST_VERDICT },
+        },
+      });
+
+    const run = runScript("--repo", dir, "--range", range(base, final));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("verdict: missing evidence");
+    expect(run.stdout).toContain(PROBE_VERIFIER);
+    expect(run.stdout).toContain("as findings (exit 1)");
+  });
+
+  it("fails a stylesheet capture that is missing a required stage", () => {
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    const final = storeCaptureInChange(dir, "native: a short stylesheet capture",
+      "2026-11-20-stylesheet", {
+        capture: probeFixture("stylesheet-missing-stage.log"),
+        captureName: "lynx_console-stylesheet-test.log",
+        manifest: { card: "stylesheet" },
+      });
+
+    const run = runScript("--repo", dir, "--range", range(base, final));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain(PROBE_VERIFIER);
+    expect(run.stdout).toContain("as findings (exit 1)");
+    // The verifier's own finding is quoted, so the report names the stage.
+    expect(run.stdout).toContain("[missing-stage]");
+    expect(run.stdout).toContain("`load-real-url`");
+  });
+
+  it("cannot evaluate a probe capture whose stage line was truncated", () => {
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    const final = storeCaptureInChange(dir, "native: an unreadable probe capture",
+      "2026-11-20-stylesheet", {
+        capture: probeFixture("stylesheet-unparseable.log"),
+        captureName: "lynx_console-stylesheet-test.log",
+        manifest: { card: "stylesheet" },
+      });
+
+    const run = runScript("--repo", dir, "--range", range(base, final));
+
+    // Not "missing evidence": the record exists and cannot be read, which has to
+    // keep its own exit code.
+    expect(run.status).toBe(2);
+    expect(run.stdout).toContain("could not evaluate");
+    expect(run.stdout).toContain(PROBE_VERIFIER);
+  });
+
+  it("cannot evaluate a probe capture offered as smoke evidence", () => {
+    // The card decides the verifier, so the two capture formats are not
+    // interchangeable. A `smoke` manifest over stage lines gets exit 2 from the
+    // parity verifier rather than passing through the verifier that understands
+    // the bytes.
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    const final = storeCaptureInChange(dir, "native: a probe capture labelled smoke",
+      "2026-11-20-smoke", {
+        capture: probeFixture("stylesheet-good.log"),
+        manifest: { card: "smoke" },
+      });
+
+    const run = runScript("--repo", dir, "--range", range(base, final));
+
+    expect(run.status).toBe(2);
+    expect(run.stdout).toContain("could not evaluate");
+    expect(run.stdout).toContain(PARITY_VERIFIER);
+    expect(run.stdout).toContain("no [solid-lynx parity] line");
+  });
+
+  it("cannot evaluate a smoke capture offered as probe evidence", () => {
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    const final = storeCaptureInChange(dir, "native: a parity capture labelled stylesheet",
+      "2026-11-20-stylesheet", {
+        capture: GOOD_CAPTURE,
+        captureName: "lynx_console-stylesheet-test.log",
+        manifest: { card: "stylesheet" },
+      });
+
+    const run = runScript("--repo", dir, "--range", range(base, final));
+
+    expect(run.status).toBe(2);
+    expect(run.stdout).toContain("could not evaluate");
+    expect(run.stdout).toContain(PROBE_VERIFIER);
+    expect(run.stdout).toContain("contains no [solid-lynx ss] or [solid-lynx lp] line");
+  });
+
+  it("still refuses a probe capture whose card is not a card", () => {
+    const dir = newRepo();
+    const base = gitOutput(dir, "rev-parse", "HEAD");
+    write(dir, "src/lynx-host.ts", "export const nativeFacing = true;\n");
+    const final = storeCaptureInChange(dir, "native: a manifest with an invented card",
+      "2026-11-20-stylesheet", {
+        capture: probeFixture("stylesheet-good.log"),
+        captureName: "lynx_console-stylesheet-test.log",
+        manifest: { card: "stylesheet-probe" },
+      });
+
+    const run = runScript("--repo", dir, "--range", range(base, final));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain('"card" must be one of smoke, stylesheet, list');
+  });
+});
+
 describe("require-native-evidence: the state of this repository", () => {
   it("rejects docs/evidence/native/TEMPLATE when it is offered as evidence", () => {
     // The template ships a manifest and no capture. If it could satisfy the
@@ -758,6 +967,10 @@ describe("require-native-evidence: refusing to guess", () => {
       "decision.json",
       "TEMPLATE",
       "pnpm build",
+      // The per-card verifier pairing has to be in the help text, because a
+      // contributor deciding which capture to store reads this first.
+      "scripts/verify-native-parity.mjs",
+      "scripts/verify-native-probe.mjs",
     ]) {
       expect(run.stdout).toContain(phrase);
     }

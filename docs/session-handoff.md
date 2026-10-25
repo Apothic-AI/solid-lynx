@@ -161,13 +161,16 @@ evidence is in [capabilities.md](capabilities.md).
   exits 5 and points at the log and screenshot instead of reporting a result, so
   an empty capture cannot be read as a measurement. A dry run is still not a
   device result.
-- **Native parity evidence is currently reported, not reproduced.** The twenty
+- **Native parity evidence is reported, not reproduced.** The twenty
   shared Element PAPI operations were recorded from the A03 in
-  [parity-checklist.md](parity-checklist.md). There is no `test/fixtures/native-parity`
-  directory and no `scripts/verify-native-parity.mjs` in this tree, and nothing
-  in the docs references either, so no automated verifier resolves the recorded
-  evidence: the verifier is in flight, not present. Quote the checklist as a
-  hand run, and do not describe it as verified by a script.
+  [parity-checklist.md](parity-checklist.md), and that capture is gone, so the
+  column stays `reported`. The verifier that makes the *next* run checkable now
+  exists in this tree: `scripts/verify-native-parity.mjs` reads a
+  `[solid-lynx parity]` capture, `test/fixtures/native-parity/` holds synthetic
+  fixtures for each exit code, and `scripts/require-native-evidence.mjs` re-runs
+  it against a stored capture over every pull request. What that buys is a
+  re-checkable next run, not a recovered 2026-10-09 result: do not describe the
+  recorded column as verified by a script.
 - The web host does not implement runtime stylesheet loading/lifecycle. It has no
   corresponding stylesheet PAPI.
 - Web-core global-bind callbacks are registered but its global dispatch pass does
@@ -217,6 +220,8 @@ landed, and where to read it:
   compiles the native bundle and **executes nothing native**; `native-evidence`
   enforces that a native-facing change carries a stored, verifier-passing
   capture or an explicit recorded decision (`docs/evidence/native/README.md`).
+  The verifier is chosen by the manifest's `card`: parity for `smoke`, probe for
+  `stylesheet` and `list` (`scripts/verify-native-probe.mjs`).
 - **Release process and 1.0.0.** [release.md](release.md) is the cut order with
   the command behind each step; [CHANGELOG.md](../CHANGELOG.md) carries the
   `1.0.0` entry, and `package.json` and `src/index.ts` both say `1.0.0`. Nothing

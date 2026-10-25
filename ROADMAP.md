@@ -131,19 +131,31 @@ Add platform features through explicit, testable adapters while keeping the core
     `examples/lynx-for-native/scripts/run-native-probe.sh stylesheet`, which
     pins the A03 serial, serves the bundle on loopback, opens it in Explorer and
     captures logcat; `run-native-probe.sh stylesheet --dry-run` reviews the
-    sequence without hardware. **`scripts/verify-native-parity.mjs` does not
-    verify these lines yet** — it reads only the `[solid-lynx parity]` marker
-    (`scripts/verify-native-parity.mjs:28`) and exits 2 on a capture carrying
-    only `[solid-lynx ss]` lines, which was re-checked for this revision. So the
-    measurement would be *recorded* by naming the capture path and reading its
-    `[solid-lynx ss]` stages against `docs/capabilities.md` "The native
-    stylesheet probe"; it would not be *verified by a process* until the
-    verifier grows a stylesheet mode or a sibling checker exists.
+    sequence without hardware.
+  - **The capture is now verifiable by process.**
+    `scripts/verify-native-probe.mjs` reads a `[solid-lynx ss]` capture and
+    requires the six stylesheet stages (`inventory`, `no-arguments`,
+    `load-missing-url`, `load-real-url`, `summary`, `done`) to be present, once
+    each, in that order, with every line parsing as JSON. It reads the
+    capture's own fields for the two claims the card exists to make — that the
+    mutating stage reached a real stylesheet while the missing-URL stage failed,
+    and that `summary.unmeasured` is non-empty — and it never turns an `arity`
+    into an expected parameter count. Exit codes are 0 verified / 1 findings /
+    2 could not evaluate, the same three the parity verifier uses, and
+    `scripts/require-native-evidence.mjs` now runs it for a stored manifest whose
+    `card` is `stylesheet` (parity for `smoke`, the same checker for `list`).
+    `test/native-probe-verify.test.ts` drives every exit code through a real
+    process against `test/fixtures/native-probe/`, whose README states that those
+    fixtures are not device evidence. The parity verifier is unchanged: it still
+    reads only `[solid-lynx parity]` and still exits 2 on a capture carrying only
+    `[solid-lynx ss]` lines, which is asserted in that suite.
   - **No run has happened.** `--dry-run` for all three cards (and the
     `run-stylesheet-probe.sh` wrapper) exits 0, and `docs/capabilities.md`
     records the probe as "This has not been run yet". A reviewed command
-    sequence is not a measurement. That is why the stylesheet half stays open
-    and the box stays unticked, even though its CSS-id half is done and tested.
+    sequence is not a measurement, and neither is a verifier that passes on a
+    synthetic fixture: no stage line has been observed on a device. That is why
+    the stylesheet half stays open and the box stays unticked, even though its
+    CSS-id half is done and tested and its capture format is now checkable.
 - [x] Add refs and imperative element access with deterministic cleanup.
 - [x] Evaluate native list virtualization and expose list callbacks if the Solid model can support them cleanly.
   - The renderer side is done: `root.createList()` creates the list through
@@ -158,7 +170,12 @@ Add platform features through explicit, testable adapters while keeping the core
     `examples/lynx-for-native/src/list-probe.ts`, built as
     `dist/list-probe.lynx.bundle` by `pnpm native:build`, with one
     `[solid-lynx lp]` stage line per step and host-free recorder tests in
-    `test/list-probe-report.test.ts`. Its **device run is pending**, so it
+    `test/list-probe-report.test.ts`. Its capture is read by
+    `scripts/verify-native-probe.mjs`, which requires the seven list stages in
+    order and treats the recycling question as one that must be *answered*: a
+    recorded `0` for `enqueueComponent` verifies (the host never called it), an
+    omitted counter is a finding, and `materialize` has to keep "the host asked"
+    apart from "the probe materialized". Its **device run is pending**, so it
     measures nothing yet; when run it reports the list-named globals, the created
     handle, materialized children, keyed identity across a permuted model, and
     whether the host ever called `enqueueComponent`. Viewport-driven recycling,

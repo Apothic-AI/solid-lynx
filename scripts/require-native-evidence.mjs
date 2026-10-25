@@ -2,12 +2,19 @@
 /**
  * Require native evidence for a change that touches native-facing behaviour.
  *
- * `scripts/verify-native-parity.mjs` turns a captured native log into an exit
- * code, and `docs/parity-checklist.md` says how to record the run. Both were
- * convention: the verifier is a command someone has to remember to run on a
- * capture someone has to keep, so a pull request that changed native behaviour
- * and ticked nothing merged and no check went red. This script is the check that
- * closes that hole. It answers one question about a git diff:
+ * Two verifiers turn a captured native log into an exit code. The smoke card
+ * logs one `[solid-lynx parity]` report and is checked by
+ * `scripts/verify-native-parity.mjs`; the stylesheet and list cards log one
+ * stage line each and are checked by `scripts/verify-native-probe.mjs`. Both
+ * answer the same question — is this capture clean? — with the same three exit
+ * codes, so the evidence requirement below treats them the same way and picks
+ * between them by the manifest's `card`.
+ *
+ * `docs/parity-checklist.md` says how to record a run. That and the verifier
+ * were both convention: the verifier is a command someone has to remember to run
+ * on a capture someone has to keep, so a pull request that changed native
+ * behaviour and ticked nothing merged and no check went red. This script is the
+ * check that closes that hole. It answers one question about a git diff:
  *
  *   does this change touch native-facing behaviour, and if so, is there a
  *   stored evidence artifact committed with it that satisfies the requirement?
@@ -16,11 +23,11 @@
  * *committed by the change itself*:
  *
  *   1. `docs/evidence/native/<id>/manifest.json` plus the capture it names.
- *      This script runs `verify-native-parity.mjs` against the stored bytes and
- *      requires exit 0, cross-checking the manifest's recorded exit code and
- *      verdict line against the live run. The manifest's `commit` must fall
- *      inside the evaluated range, so a capture taken before the change cannot
- *      be reused for it.
+ *      This script runs the verifier for the manifest's card against the stored
+ *      bytes and requires exit 0, cross-checking the manifest's recorded exit
+ *      code and verdict line against the live run. The manifest's `commit` must
+ *      fall inside the evaluated range, so a capture taken before the change
+ *      cannot be reused for it.
  *   2. `docs/evidence/native/<id>/decision.json`: an explicit recorded
  *      decision that this native-facing change needs no device run, with a
  *      reason, an author, a timestamp, and the paths it covers.
@@ -31,9 +38,11 @@
  * What this cannot do, and does not claim: no device runs here. The manifest's
  * `device.getState` is a record written by whoever ran the capture, not a
  * measurement made by this process. What is machine-checked is that the capture
- * the manifest names parses, covers every operation in `parityOperationIds`,
- * and passes — plus that the paperwork around it is complete and committed
- * here. Whether a human actually held the A03 is a reviewer's question.
+ * the manifest names parses and covers what its card is supposed to emit — every
+ * operation in `parityOperationIds` for a smoke capture, every required stage in
+ * order for a probe capture — and passes — plus that the paperwork around it is
+ * complete and committed here. Whether a human actually held the A03 is a
+ * reviewer's question.
  */
 
 import { spawnSync } from "node:child_process";
@@ -48,8 +57,12 @@ const EXIT_COULD_NOT_EVALUATE = 2;
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = path.dirname(SCRIPT_PATH);
-const VERIFIER_PATH = path.join(SCRIPT_DIR, "verify-native-parity.mjs");
+const PARITY_VERIFIER_PATH = path.join(SCRIPT_DIR, "verify-native-parity.mjs");
+const PROBE_VERIFIER_PATH = path.join(SCRIPT_DIR, "verify-native-probe.mjs");
 const NODE_LABEL = path.posix.join("scripts", "require-native-evidence.mjs");
+
+const PARITY_VERIFIER_LABEL = path.posix.join("scripts", "verify-native-parity.mjs");
+const PROBE_VERIFIER_LABEL = path.posix.join("scripts", "verify-native-probe.mjs");
 
 /**
  * Where stored evidence lives. One directory per run, named by date or by any
@@ -68,6 +81,23 @@ export const DECISION_RECORD = "decision.json";
 
 /** Cards `examples/lynx-for-native/scripts/run-native-probe.sh` accepts. */
 export const NATIVE_CARDS = Object.freeze(["smoke", "stylesheet", "list"]);
+
+/**
+ * Which verifier reads which card's capture.
+ *
+ * The card decides, not the file contents: a manifest that says `smoke` is
+ * checked against the parity checklist even if the bytes beside it carry probe
+ * stages, and that mismatch comes back as exit 2 from the parity verifier ("this
+ * capture has no parity line") rather than as a silent pass through whichever
+ * verifier happened to understand the bytes. Naming the verifier per card also
+ * keeps the two capture formats from being interchangeable, which is what would
+ * let a probe capture back a smoke claim.
+ */
+export const CARD_VERIFIERS = Object.freeze({
+  smoke: Object.freeze({ label: PARITY_VERIFIER_LABEL, path: PARITY_VERIFIER_PATH }),
+  stylesheet: Object.freeze({ label: PROBE_VERIFIER_LABEL, path: PROBE_VERIFIER_PATH }),
+  list: Object.freeze({ label: PROBE_VERIFIER_LABEL, path: PROBE_VERIFIER_PATH }),
+});
 
 /**
  * The native-facing surface, as an explicit, testable list.
@@ -177,10 +207,22 @@ What it decides
   one of these must be committed by the change itself:
 
     1. ${EVIDENCE_ROOT}/<date-or-id>/${CAPTURE_MANIFEST} plus the capture it names.
-       The script runs ${path.posix.join("scripts", "verify-native-parity.mjs")} against that capture and requires
-       exit 0, and checks the manifest's recorded exit code and verdict line
-       agree with the live run. The manifest's \`commit\` must be inside the
-       evaluated range, so an older capture cannot be re-used for a new change.
+       The script runs the verifier for the manifest's \`card\` against that
+       capture and requires exit 0, and checks the manifest's recorded exit code
+       and verdict line agree with the live run. The manifest's \`commit\` must
+       be inside the evaluated range, so an older capture cannot be re-used for
+       a new change.
+
+         card \`smoke\`       ${PARITY_VERIFIER_LABEL}
+         card \`stylesheet\`  ${PROBE_VERIFIER_LABEL}
+         card \`list\`        ${PROBE_VERIFIER_LABEL}
+
+       A probe capture is verified for the stages its card emits, in order, and
+       for the answers those stages exist to give: the stylesheet card's mutating
+       stage must have reached a real stylesheet while its missing-URL stage
+       failed, and the list card must record whether \`enqueueComponent\` was ever
+       called, including a recorded zero. Neither verifier infers a signature
+       from \`fn.length\`.
     2. ${EVIDENCE_ROOT}/<date-or-id>/${DECISION_RECORD}: an explicit recorded decision
        that this change needs no device run — a reason, an author, a timestamp,
        and the native-facing paths it covers.
@@ -204,7 +246,8 @@ Exit codes
                         outside this range, or a decision with no reason
   2  could not evaluate git failed, the range would not resolve, or a stored
                         capture could not be verified at all (a 2 from the
-                        verifier, e.g. a missing \`dist/\` — run \`pnpm build\`).
+                        verifier: a missing \`dist/\` for a smoke capture, or a
+                        probe capture with no stage line — run \`pnpm build\`).
                         Never a pass.
 
   These follow the same discipline as dagr: 0 means the artefact is clean, 1
@@ -988,16 +1031,24 @@ function judgeEvidenceDir(repoRoot, from, to, nativeChanges, dirName) {
   }
 
   // The point of the whole check: read the stored bytes, not the claim about them.
+  //
+  // The card picks the verifier, so a probe capture and a smoke capture are never
+  // interchangeable: a `smoke` manifest pointing at stage lines gets the parity
+  // verifier's exit 2 ("no [solid-lynx parity] line"), and a `stylesheet` or
+  // `list` manifest pointing at a parity report gets the probe verifier's exit 2
+  // ("no [solid-lynx ss] or [solid-lynx lp] line"). Both are reported as
+  // "could not evaluate", which is never a pass.
   let verifierVerdict = "";
-  if (capturePath !== undefined && existsSync(capturePath) && statSync(capturePath).isFile()) {
-    const run = spawnSync(process.execPath, [VERIFIER_PATH, capturePath], {
+  const verifier = CARD_VERIFIERS[manifest.card];
+  if (capturePath !== undefined && verifier !== undefined
+    && existsSync(capturePath) && statSync(capturePath).isFile()) {
+    const run = spawnSync(process.execPath, [verifier.path, capturePath], {
       encoding: "utf8",
       cwd: SCRIPT_DIR,
     });
     if (run.error) {
       throw new CannotEvaluate(
-        `could not run ${path.posix.join("scripts", "verify-native-parity.mjs")}:`
-          + ` ${run.error.message}`,
+        `could not run ${verifier.label}: ${run.error.message}`,
       );
     }
     const verifierExit = run.status ?? -1;
@@ -1009,13 +1060,22 @@ function judgeEvidenceDir(repoRoot, from, to, nativeChanges, dirName) {
       // "Nothing was evaluated" is a different result from "not evidenced", and
       // the exit code has to keep them apart.
       couldNotEvaluate.push(
-        `the verifier could not evaluate ${manifest.capture} (exit 2), so the stored`
-          + ` capture proves nothing: ${(run.stderr ?? "").trim() || "no detail"}`,
+        `${verifier.label} could not evaluate ${manifest.capture} (exit 2), so the`
+          + ` stored capture proves nothing: ${(run.stderr ?? "").trim() || "no detail"}`,
       );
     } else if (verifierExit !== 0) {
+      // The verifier's own findings, so a reader does not have to re-run it to
+      // learn which stage is missing. Only the indented finding lines are quoted;
+      // the tables above them are re-derivable and would bloat the report.
+      const quotes = (run.stdout ?? "")
+        .split("\n")
+        .filter(line => /^\s+- \[/.test(line))
+        .slice(0, 6)
+        .map(line => line.trim());
       problems.push(
-        `the verifier reads ${manifest.capture} as findings (exit ${verifierExit}), not a`
-          + ` pass: ${verifierVerdict || "no verdict line"}`,
+        `${verifier.label} reads ${manifest.capture} as findings (exit ${verifierExit}),`
+          + ` not a pass: ${verifierVerdict || "no verdict line"}`
+          + (quotes.length > 0 ? ` — ${quotes.join(" ")}` : ""),
       );
     } else {
       if (manifest.verifier !== undefined && manifest.verifier.exitCode !== verifierExit) {
@@ -1051,7 +1111,7 @@ function judgeEvidenceDir(repoRoot, from, to, nativeChanges, dirName) {
     exit: EXIT_SATISFIED,
     note: `${label}: ${manifest.card} capture from ${manifest.device.serial}`
       + ` (${manifest.device.getState}) at ${recordedCommit.sha.slice(0, 7)}, verified exit 0`
-      + ` — ${verifierVerdict}`,
+      + ` by ${verifier.label} — ${verifierVerdict}`,
     problems: [],
   };
 }
@@ -1181,7 +1241,8 @@ async function main(argv) {
   const detail = [
     "looked for, committed by this change:",
     `  ${EVIDENCE_ROOT}/<date-or-id>/${CAPTURE_MANIFEST} + the capture it names`
-      + " (verified here by scripts/verify-native-parity.mjs, must exit 0)",
+      + ` (verified here by ${PARITY_VERIFIER_LABEL} for a \`smoke\` capture and`
+      + ` ${PROBE_VERIFIER_LABEL} for a \`stylesheet\` or \`list\` one; must exit 0)`,
     `  ${EVIDENCE_ROOT}/<date-or-id>/${DECISION_RECORD}`
       + " (an explicit recorded decision that no device run is needed)",
   ].join("\n");

@@ -2,9 +2,12 @@
 
 A native claim in this repository is only worth what can be re-checked. This
 directory is where a native run is stored so the bytes, not the prose, are what
-the next reader verifies. `scripts/verify-native-parity.mjs` reads a capture;
-`scripts/require-native-evidence.mjs` requires one when a change touches
-native-facing code, and runs the verifier against what is stored here.
+the next reader verifies. Two verifiers read a capture —
+`scripts/verify-native-parity.mjs` for the smoke card's one `[solid-lynx parity]`
+report, `scripts/verify-native-probe.mjs` for the stylesheet and list cards' one
+line per stage — and `scripts/require-native-evidence.mjs` requires one when a
+change touches native-facing code, running the verifier that matches the
+manifest's `card` against what is stored here.
 
 ## The contract
 
@@ -38,24 +41,36 @@ guessing at a missing one.
 | Field | Type | What it records |
 | --- | --- | --- |
 | `kind` | `"capture"` | Distinguishes this from `decision.json`. |
-| `card` | `"smoke"` \| `"stylesheet"` \| `"list"` | The card `run-native-probe.sh` ran. Only `smoke` produces a `[solid-lynx parity]` line the verifier can read today; the other two are recorded by reading their stages against `docs/capabilities.md`. |
+| `card` | `"smoke"` \| `"stylesheet"` \| `"list"` | The card `run-native-probe.sh` ran. It also selects the verifier: `smoke` is read by `scripts/verify-native-parity.mjs`, `stylesheet` and `list` by `scripts/verify-native-probe.mjs`. The two capture formats are not interchangeable — a `smoke` manifest over stage lines fails to verify, and so does a probe manifest over a parity report. |
 | `capture` | string | The capture filename, relative to this directory. Absolute paths and `..` are refused: the capture has to travel with the manifest. |
 | `device.serial` | string | The serial the run was pinned to — `R9WT911JVVH` for the A03. |
 | `device.getState` | `"device"` | What `adb -s <serial> get-state` printed. `device` is the only value that means the device was usable; `unauthorized`, `offline`, and `unknown` are not a run. |
 | `timestamp` | ISO 8601 | When the run happened. |
 | `commit` | git sha | The commit the capture was taken at. It must be inside the change's range: a capture taken before a change cannot back that change. |
-| `verifier.exitCode` | `0` | `scripts/verify-native-parity.mjs`'s exit code. `0` is the only code that may be cited as a pass; `1` is findings and `2` is "nothing was verified". |
-| `verifier.verdict` | string | The verifier's `verdict:` line, verbatim. |
+| `verifier.exitCode` | `0` | The card's verifier's exit code. `0` is the only code that may be cited as a pass; `1` is findings and `2` is "nothing was verified". |
+| `verifier.verdict` | string | The verifier's `verdict:` line, verbatim, for the verifier that card selects. |
 | `note` | string | Optional, free text: what the run covered, what it did not. |
 
 `require-native-evidence.mjs` does not take the manifest's word for any of the
-verdict fields. It runs the verifier against the stored capture and fails if:
+verdict fields. It runs the verifier the `card` selects against the stored capture
+and fails if:
 
 - the verifier exits 2 — the stored bytes cannot be evaluated at all;
 - the verifier exits 1 — the stored bytes report findings, not a pass;
 - `verifier.exitCode` disagrees with the live exit code;
 - `verifier.verdict` does not appear in the live output, which means the line
   was written from a different run than the capture beside it.
+
+What each verifier checks, per card:
+
+| `card` | Verifier | What a verified capture must carry |
+| --- | --- | --- |
+| `smoke` | `verify-native-parity.mjs` | Every operation in `parityOperationIds`, each `pass` or `unsupported` with a reason, and a `summary` that agrees with its own rows. |
+| `stylesheet` | `verify-native-probe.mjs` | `inventory`, `no-arguments`, `load-missing-url`, `load-real-url`, `summary`, `done` — once each, in order, every line parseable. The mutating stage must have reached a real stylesheet (an absolute URL, a return, and not the failing stage's URL) while the missing-URL stage threw, and `summary.unmeasured` must be non-empty. |
+| `list` | `verify-native-probe.mjs` | `inventory`, `create`, `materialize`, `reorder`, `shrunk`, `summary`, `done` — once each, in order. `materialize` must separate "the host asked" from "the probe materialized", and the capture must record whether `enqueueComponent` was ever called: a recorded `0` verifies, an omitted counter is a finding. |
+
+Neither probe check infers a signature: an `arity` (which is `fn.length`) is only
+ever checked for being a number, never compared with an expected parameter count.
 
 That is the difference between this directory and a note in `/tmp`: the record
 is re-derived from the stored bytes on every check, so editing either half makes
@@ -89,8 +104,11 @@ cp /tmp/solid-lynx-logs/lynx_console-smoke-<stamp>.log \
    docs/evidence/native/$(date +%F)-smoke/capture.log
 
 # 2. Re-verify the stored copy, so the bytes that ship are the bytes checked.
+#    Use the verifier for the card: parity for smoke, probe for the other two.
 node scripts/verify-native-parity.mjs \
   docs/evidence/native/$(date +%F)-smoke/capture.log
+node scripts/verify-native-probe.mjs \
+  docs/evidence/native/$(date +%F)-stylesheet/lynx_console-stylesheet-<stamp>.log
 
 # 3. Write manifest.json from TEMPLATE/manifest.json.
 #    fill in: card, capture, device.serial, device.getState, timestamp,
@@ -122,8 +140,11 @@ Checked on every pull request by the `native-evidence` job
   an unreadable `jobs:` block is treated as native-facing, because those are the
   shapes where an edit could hide;
 - that a record was committed with the change, in the range being evaluated;
-- that the capture parses, covers every operation in `parityOperationIds`, and
-  passes, re-derived by running the verifier here;
+- that the capture parses and carries what its card is supposed to emit, and
+  passes, re-derived by running the matching verifier here: every operation in
+  `parityOperationIds` for a `smoke` capture, every required stage in order for a
+  `stylesheet` or `list` capture, including whether `enqueueComponent` was ever
+  called;
 - that the manifest's own recorded verdict matches that live run;
 - that the manifest's `commit` is inside the range.
 
@@ -136,10 +157,12 @@ worse than no check: take the fixture at
 `test/fixtures/native-parity/good-capture.log`, copy it into a new evidence
 directory, write a manifest naming the current commit and `"getState": "device"`,
 and this check is satisfied — exit 0 — with no device anywhere. It was tried
-against this exact script and it passed. What such a record cannot survive is
-the next person asking which card run produced it, because the capture is
-byte-identical to a fixture that ships in this repository and its
-`[solid-lynx parity]` line says nothing about when or where it was taken.
+against this exact script and it passed. The probe fixtures are just as
+forgeable: `test/fixtures/native-probe/stylesheet-good.log` verifies clean as a
+`stylesheet` capture for the same reason, and its README says so. What such a
+record cannot survive is the next person asking which card run produced it,
+because the capture is byte-identical to a fixture that ships in this repository
+and its lines say nothing about when or where they were taken.
 
 So the requirement is real and the evidence is re-verifiable, but **the claim
 that a human ran a device is still a reviewer's question**, not this script's

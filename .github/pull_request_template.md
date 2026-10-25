@@ -38,8 +38,10 @@ to be true of the committed diff, not of this text.
       The check confirms this from the diff.
 - [ ] **Native-facing, and the run is recorded** — both of:
       - [ ] The capture is committed at `docs/evidence/native/<date-or-id>/` with
-            a `manifest.json`, and `node scripts/verify-native-parity.mjs` exits 0
-            against that stored copy
+            a `manifest.json`, and the verifier for that manifest's `card` exits 0
+            against the stored copy: `node scripts/verify-native-parity.mjs` for
+            a `smoke` run, `node scripts/verify-native-probe.mjs` for a
+            `stylesheet` or `list` run
       - [ ] `docs/parity-checklist.md` and `docs/capabilities.md` updated with
             what the run showed; the stylesheet probe reviewed if that PAPI moved
 - [ ] **Native-facing, and no device run is needed** — a `decision.json` is

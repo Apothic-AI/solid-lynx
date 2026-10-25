@@ -69,6 +69,13 @@ was empty" and "the run passed" are different results, and an empty capture
 cannot be read as a measurement. `--help` documents all of this, and
 `test/native-parity-verify.test.ts` asserts each code against a capture fixture.
 
+This page is about the smoke card. The stylesheet and list cards log one line
+per stage instead of one report, and they are read by a sibling checker,
+`scripts/verify-native-probe.mjs`, with the same three exit codes; a stored
+manifest's `card` decides which verifier runs. See
+[capabilities.md](capabilities.md) "The native stylesheet probe" and
+"List virtualization" for the stage sets each capture must carry.
+
 ## Native column: reported, not reproduced
 
 The history, in full, because the distinction is the point:
