@@ -4,7 +4,11 @@ Solid rendering for [Lynx](https://lynxjs.org/).
 
 `solid-lynx` connects Solid's fine-grained reactive runtime to Lynx Element PAPI. Solid components, signals, effects, and control flow create and update Lynx elements without targeting the browser DOM or adding a virtual DOM layer.
 
-> **Status:** early experimental release (`0.1.0`). The renderer targets Lynx Element PAPI. The Solid TSX `.web.bundle` example passes its focused Lynx-for-Web Playwright suite, and the native smoke card loads, renders, and passes all twenty shared Element PAPI operations in Lynx Explorer on an Android device. Dual-thread cards and broader toolchain integration remain in progress.
+> **Status:** stable `1.0.0` release of the renderer and its Element PAPI bridge. The public host, root, event, JSX, ref, CSS-id, list, Rspeedy, and parity surfaces are frozen and each item is mapped to its covering test in [docs/contract.md](docs/contract.md). The supported Solid, Lynx, Rspeedy, Node, and pnpm versions, and how narrow each range is, are in [docs/compatibility.md](docs/compatibility.md); upgrading from `0.x` is covered by [docs/migration.md](docs/migration.md); per-capability support and measurement status is in [docs/capabilities.md](docs/capabilities.md).
+>
+> What is actually verified: 94 unit tests against an in-memory fake Element PAPI, the consumer fixtures compiled by `pnpm typecheck:consumer`, the Lynx-for-Web bundle and the pattern card in Chromium, and the native smoke card, which loads, renders and passes all twenty shared Element PAPI operations in Lynx Explorer 4.1.0 on an Android device. `.github/workflows/ci.yml` runs `unit`, `browser` and `native-build` on `pull_request` and on `push` to `master`; `native-build` only compiles the bundle and attaches no device.
+>
+> What is **not** verified, and must not be assumed from this release: native stylesheet lifecycle, native list semantics and cell recycling, native `global-bind` delivery, event capture/propagation parity on native, dual-thread/worklets/first-screen, gesture PAPI, animation PAPI exposure, and portals/overlays. This renderer does not implement the ones marked unimplemented in [docs/capabilities.md](docs/capabilities.md), and the native stylesheet and list probe cards have not been run on a device, so they measure nothing yet. [CHANGELOG.md](CHANGELOG.md) records exactly what 1.0.0 contains and why.
 
 ## Why this exists
 

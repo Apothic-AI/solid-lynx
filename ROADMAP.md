@@ -103,13 +103,75 @@ Add platform features through explicit, testable adapters while keeping the core
 
 Set a stable public contract after web validation, native validation, and tooling have matured.
 
-- [ ] Finalize and document the public host, root, event, and JSX contracts.
+- [x] Finalize and document the public host, root, event, and JSX contracts.
+  - Done in `docs/contract.md` (commit `0d77793`): §2 `createLynxRoot`, §3
+    `createLynxRenderer`, §4 `createGlobalLynxHost`, §7 events and properties,
+    and §12 JSX types each list the signature, its status (stable, provisional,
+    or unsupported), and the test that fails if it changes. §15 collects
+    everything outside the contract and §16 the exported surface with no test.
+  - Evidence the document is enforced rather than aspirational: the CI `unit`
+    job runs `pnpm typecheck` (build, then `tsc --noEmit`, then the consumer
+    fixtures), `pnpm typecheck:consumer` (`test/consumer/tsconfig.json` and
+    `tsconfig.dev.json`, which assert the type-level rejections with
+    `@ts-expect-error`), and `pnpm test` (94 unit tests in 5 files: 58 in
+    `test/renderer.test.ts`, 14 in `test/list-probe-report.test.ts`, 9 in
+    `test/parity.test.ts`, 7 in `test/stylesheet-probe-report.test.ts`, 6 in
+    `test/rspeedy.test.ts`), so a contract item that loses its covering test or
+    its type rejection turns CI red.
 - [ ] Define supported Lynx and Solid version ranges and verify them in CI.
+  - Half done. `docs/compatibility.md` §5–§7 (commit `5ecace6`) defines the set:
+    exact pins for `solid-js` 1.9.15, `@lynx-js/web-core` 0.26.2,
+    `@lynx-js/rspeedy` 0.18.0, `@lynx-js/lynx-core` 0.1.4, the two Lynx Rsbuild
+    plugins, `@rsbuild/core` 2.2.11, `@rsbuild/plugin-babel` 2.1.0, and
+    `babel-preset-solid` 1.9.15, plus the Node and pnpm ranges.
+  - Not done: CI **verifies one pinned set, not the declared ranges**.
+    `.github/workflows/ci.yml` runs `node-version: 22` with that single
+    resolved Solid/web-core/Rspeedy set, and `docs/compatibility.md` §8 says so
+    outright ("No version matrix in CI … CI therefore repeats the local gate; it
+    does not widen the supported set"). Node 20.19.x and 22.12.x have never
+    been run. The box stays open until CI checks more than the one set.
 - [ ] Require native and web compatibility checks for changes to shared behavior.
+  - Not satisfied, and the gap is a native runtime in CI. The `browser` job does
+    run both web suites on every pull request — `PLAYWRIGHT_PORT=4186 pnpm
+    web:test` (17 tests) and `PLAYWRIGHT_PORT=4200` with
+    `test/browser/patterns.playwright.config.ts` (9 tests) — so web is checked.
+  - Native is not: the `native-build` job only compiles the bundle with `pnpm
+    native:build` and uploads `examples/lynx-for-native/dist`. No device or
+    emulator is attached, and the job's own comment says native runtime
+    behaviour stays a manual check. Nothing in CI fails when a change breaks
+    native rendering, tap dispatch, or the `[solid-lynx parity]` report, so
+    nothing *requires* a native check.
 - [ ] Confirm deterministic root, listener, and stylesheet cleanup.
-- [ ] Publish migration and compatibility guidance for breaking changes.
+  - Root, listener, and ref cleanup are proven; the stylesheet half cannot be.
+    `docs/contract.md` §9 names the mechanism and the covering test for each:
+    node removal and per-root ownership (`test/renderer.test.ts:561`, `:1014`;
+    browser `test/browser/lynx-for-web.test.ts:471`), listener-slot release on
+    disposal (`:976`, `:821`), subtree detach and restore (`:789`), ref release
+    (`:1163`; browser `:690`), one flush at the end of disposal (`:733`),
+    independent disposal of roots sharing a page (`:1014`; browser `:527`), and
+    remount with fresh listeners (`:853`; browser `:527`).
+  - Stylesheet cleanup is unconfirmable in this release: the renderer never loads
+    a stylesheet (`docs/contract.md` §8, §9 "Not proven / not applicable"), and
+    the native stylesheet lifecycle is **unmeasured** — the probe card exists
+    (`examples/lynx-for-native/src/stylesheet-probe.ts`, built by `pnpm
+    native:build`) but has not run on a device. Native cleanup after `dispose()`
+    is unmeasured for the same reason. This box stays open until at least the
+    stylesheet probe has a device run.
+- [x] Publish migration and compatibility guidance for breaking changes.
+  - `docs/migration.md` (commit `002b786`) is the consumer-side guide: refs,
+    CSS ids, event props, JSX types, the `<list>` → `root.createList()` move,
+    root lifecycle, and a "deterministic cleanup" section that separates what is
+    proven from what is not, with a numbered verification checklist.
+  - `docs/compatibility.md` (commit `5ecace6`) is the version half, including §8
+    for what the ranges do not claim and §9 for how to change a supported
+    version. Both are linked from `README.md` (Status block and Development
+    section) and from `CHANGELOG.md`.
 
 **Milestone complete when:** consumers can build and maintain a Solid Lynx app using documented APIs, with core behavior continuously validated in supported runtimes.
+
+**Status of this milestone:** not complete. Two of the five items are done; the
+remaining three are blocked on a version matrix and a native runtime in CI, and
+on the native stylesheet measurement.
 
 ## Out of scope for the renderer
 
