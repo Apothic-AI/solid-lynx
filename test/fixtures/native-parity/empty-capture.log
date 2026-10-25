@@ -1,0 +1,4 @@
+--------- beginning of main
+10-09 14:22:38.104  4311  4311 I lynx_console: [lynx] engine ready, background: false
+10-09 14:22:39.877  4311  4311 W lynx_console: processData is not a function
+10-09 14:22:40.020  4311  4311 E lynx_console: failed to load main.lynx.bundle? v=1760020961

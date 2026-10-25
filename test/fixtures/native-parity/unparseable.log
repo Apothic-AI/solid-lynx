@@ -1,0 +1,4 @@
+--------- beginning of main
+10-09 14:22:38.104  4311  4311 I lynx_console: [lynx] engine ready, background: false
+10-09 14:22:39.877  4311  4311 W lynx_console: processData is not a function
+10-09 14:22:41.512  4311  4311 I lynx_console: [solid-lynx parity] {"label":"native","operations":[{"operation":"page","papi":["__CreatePage"],"status":"pass","expected":"page","observed":"page"},{"operation":"sandbox","papi":["__CreateView","__AppendElement"],"status":"pass","expected"
