@@ -130,6 +130,8 @@ Three things are therefore hand work:
 1. **The A03 smoke card** — `examples/lynx-for-native/src/main-thread.tsx`,
    built to `dist/main.lynx.bundle`. It renders a counter and logs one
    `[solid-lynx parity] {...}` line carrying all twenty Element PAPI operations.
+   That line is only evidence once `scripts/verify-native-parity.mjs` accepts the
+   capture it came from; the command is in "The native smoke step" below.
 2. **The stylesheet probe** — `examples/lynx-for-native/src/stylesheet-probe.ts`,
    built to `dist/stylesheet-probe.lynx.bundle`, logging one `[solid-lynx ss]`
    line per stage.
@@ -179,6 +181,40 @@ run of any of the three cards is recorded anywhere in this tree, and
 `docs/capabilities.md` says so for the stylesheet and list probes in as many
 words.
 
+### The native smoke step
+
+The smoke card's job is one log line, so naming the line is not enough: the line
+has to be verified, and the capture has to outlive `/tmp`. The step is four
+commands, and the fourth is the one that produces a verdict:
+
+```bash
+pnpm build
+pnpm native:build
+examples/lynx-for-native/scripts/run-native-probe.sh smoke
+node scripts/verify-native-parity.mjs /tmp/solid-lynx-logs/lynx_console-smoke-<stamp>.log
+```
+
+`scripts/verify-native-parity.mjs` reads the capture and exits **0** verified,
+**1** findings, **2** could not evaluate, following the same discipline as dagr.
+It parses every `[solid-lynx parity]` line, compares the operations against
+`parityOperationIds` from the built `dist/parity.js` (so `pnpm build` has to run
+first, or it exits 2 and says so), and rejects any operation that is not `pass`
+or `unsupported` with a recorded reason. Its `--help` documents all of it, and
+`test/native-parity-verify.test.ts` asserts each exit code against a capture
+fixture without a device.
+
+**Only exit 0 may be cited as a native pass.** An exit 1 is findings to record or
+fix; an exit 2 is not a result at all — an empty capture, an unparseable line, or
+a missing `dist/` — and must never be written up as a run that passed.
+
+Then keep the capture. A log left in `/tmp` cannot be re-checked, which is
+exactly what happened to the 2026-10-09 A03 run: it reported all twenty
+operations, its `[solid-lynx parity]` line was never copied out of `/tmp`, and
+`docs/parity-checklist.md` now records the native column as **reported, not
+reproduced**. Copy the capture somewhere durable, name that path in the record
+`docs/capabilities.md`, and re-run the verifier against the copy so the stored
+bytes are the ones that were verified.
+
 **Whether the device is attached right now:**
 
 ```bash
@@ -196,13 +232,22 @@ device run recorded in `docs/capabilities.md` before the release is called done.
 Not before the commit; before the release is declared. Where that record is
 absent, the release says so rather than inheriting the previous run's result.
 
+"A recorded run" now has a definition, so it cannot be argued with after the
+fact: **the capture file, the verifier's exit code and verdict line, and the
+path where the capture is kept.** A release note that has the first two but not
+the third is not recorded, because nobody can re-run the check on those bytes.
+An unrecorded run cannot be cited, not even as a pass nobody disputes — and one
+whose capture is gone is not recorded, however clear its original report was.
+
 That is the current state, and it is not a formality: `docs/capabilities.md`
 records the stylesheet probe as **"This has not been run yet"**, its
 "Remaining blockers" section says the capability probe has not run on a device,
 and `docs/contract.md` §16 lists the stylesheet and list probes as built and
 unit-tested but **unmeasured on native**. A release note may repeat what
-`docs/parity-checklist.md` records from the A03 smoke (twenty shared operations,
-rendering, one `bindtap`); it may not upgrade anything else from "unmeasured".
+`docs/parity-checklist.md` records from the A03 smoke (that the 2026-10-09 run
+*reported* twenty shared operations, rendering, and one `bindtap`), and must say
+in the same breath that the capture is gone. It may not restate those rows as a
+present-tense pass, and it may not upgrade anything else from "unmeasured".
 
 ## 4. Build and pack
 
@@ -224,7 +269,8 @@ carries whatever was last built.
 
 What does **not** ship, and this surprises people reading the repo:
 
-- `src/`, `test/`, `examples/` — none of it.
+- `src/`, `test/`, `examples/`, `scripts/` — none of it. The parity verifier is
+  a repository tool, not a published one, so a consumer never gets it.
 - `docs/` — including `docs/contract.md`, so a consumer reading the published
   package gets `README.md` and the type declarations, not the contract.
 - `CHANGELOG.md`, even once it exists.
@@ -296,7 +342,8 @@ per-capability version of the same statement.
 
 | Step | Status | Why |
 | --- | --- | --- |
-| A03 smoke card on a device | **not run** | `adb -s R9WT911JVVH get-state` → `device 'R9WT911JVVH' not found`, exit 1. No hardware attached in this worktree. |
+| A03 smoke card on a device | **not run** | `adb -s R9WT911JVVH get-state` → `device 'R9WT911JVVH' not found`, exit 1. No hardware attached in this worktree, so there is no capture for the verifier to read. |
+| `node scripts/verify-native-parity.mjs <capture>` on a device capture | **not run** | Same reason: no capture exists. The verifier itself is exercised host-free against fixtures for every outcome (0, 1, and 2, including a capture with no parity line). |
 | Stylesheet probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0), which reviews the sequence and touches nothing. |
 | List probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0). The list card has had a runner since `run-native-probe.sh` took a card argument — it is no longer loaded by hand — but a reviewed command sequence is not a device result. |
 | `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; CI runs it on a bare runner. |
