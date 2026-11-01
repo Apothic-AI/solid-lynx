@@ -15,7 +15,7 @@
     "apkSha256": "6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6"
   },
   "timestamp": "2026-11-01T05:58:00Z",
-  "commit": "172bafc",
+  "commit": "2d67451fa94080600d4d413ce4fad48b95b5311a",
   "verifier": {
     "exitCode": 0,
     "verdict": "verdict: verified \u2014 10 required stage(s) present across 1 card(s), and nothing in the capture contradicts what it records. What the stages mean is still read against docs/capabilities.md."
