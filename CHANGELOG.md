@@ -502,10 +502,13 @@ that decide what an emitted bundle means: `@lynx-js/rspeedy` 0.18.0,
 1.9.15. `typescript`, `vite`, `vitest`, `@playwright/test`, and `@babel/core`
 keep caret ranges; their lockfile-resolved versions are what was actually run.
 `docs/compatibility.md` §8 states what the ranges do **not** claim: the workflow
-would repeat the local gate on one toolchain set rather than widening the
-supported set — and it has not run yet. No workflow has executed on GitHub
-Actions for any commit in this release, so the pinned set is verified locally
-and declared for CI, not verified by CI.
+repeats the local gate on one toolchain set rather than widening the supported
+set. It has since run: [run `40224892605`](https://github.com/Apothic-AI/solid-lynx/actions/runs/40224892605)
+finished 9/9 jobs green on `headSha` `172bafc` — this release's commit — with
+`node-matrix` green on `20.x`, `22.x`, and `24.x` and `solid-matrix` green on
+`solid-js` `1.9.16` and `1.9.17`. So the pinned set is verified locally and
+verified by CI **on that one commit**; that is an execution, not a cadence, and
+it does not make a later commit covered.
 
 ### Migration and compatibility guidance
 
@@ -541,11 +544,13 @@ prove a record exists and re-verifies, never that hardware existed.
 
 Both version matrices are what put a run behind a declared range rather than
 trusting it: `node-matrix` behind `engines.node`, `solid-matrix` behind the
-`^1.9.15` peer range. Neither has run on GitHub Actions yet — this worktree
-cannot dispatch a workflow — so the recorded evidence for both is a local replay
-of the same commands, which [compatibility.md](docs/compatibility.md) §1–§2 and
-§8 record in full, including the two `pnpm add` routes that were tried and
-failed.
+`^1.9.15` peer range. Both have now run on GitHub Actions — all five legs green
+in [run `40224892605`](https://github.com/Apothic-AI/solid-lynx/actions/runs/40224892605)
+— and the local replay of the same commands is recorded in
+[compatibility.md](docs/compatibility.md) §1–§2 and §8, including the two
+`pnpm add` routes that were tried and failed. The run is one execution on one
+commit, so the local replay is still what proves the mechanism and the run is
+what proves the wiring executed.
 
 ### Indexed list row model
 
@@ -701,8 +706,9 @@ Two documents that a contributor follows rather than a consumer:
   both `package.json` and `src/index.ts`, what CI cannot check (native, §3), the
   build-and-pack step, publishing, rollback, and an explicit section on what that
   document could not itself run. Its §1 exists so a release does not re-derive
-  which commands the workflow is written to run — and §7 records that no job of
-  it has yet executed on GitHub Actions.
+  which commands the workflow runs — and §7 records which of its steps have
+executed and which have not: as of run `40224892605` every job has executed
+green, while the device hand run in §3 is still never covered by CI.
 - `.github/pull_request_template.md` (commit `e73168f`) puts the same checks in
   front of every pull request as boxes to tick, including the native-evidence
   question with its three honest answers and the hand-work steps on the A03. The

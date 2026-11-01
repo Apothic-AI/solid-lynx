@@ -226,8 +226,10 @@ node scripts/require-native-evidence.mjs --range <base>..HEAD
 ```
 
 This is the command the `native-evidence` CI job is wired to run over a pull
-request (`pull_request.base.sha..HEAD`) — **the job itself has not run on GitHub
-Actions yet**. It decides whether the diff touches
+request (`pull_request.base.sha..HEAD`) — **and the job has now run it on GitHub
+Actions**, in `40213211128`, where it reported
+`verdict: nothing to require` because that diff touched no native-facing path.
+It decides whether the diff touches
 native-facing code, then looks for a committed record that satisfies the
 requirement. It reads git and the filesystem only, so running it by hand gives
 the same answer the job would.
@@ -490,11 +492,13 @@ landed, and where to read it:
   `node-matrix`, standing alone; then `solid-matrix`, `browser`, `native-build`,
   and `native-evidence`, all `needs: unit`); `.github/pull_request_template.md`
   repeats the same checks and states the native evidence requirement.
-  **No workflow has executed on GitHub Actions for any commit in this
-  repository** — `gh run list` returns no runs and `ci.yml` is not on
-  `origin/master` — so the workflow is defined, statically parsed, and locally
-  replayed, not exercised. That is why the 1.0 box about CI verification is
-  unticked. `native-build` compiles the native bundle and **executes nothing
+  **A workflow has now executed on GitHub Actions for this repository:** run
+  [`40224892605`](https://github.com/Apothic-AI/solid-lynx/actions/runs/40224892605)
+  finished 9/9 jobs green on `headSha` `172bafc`, so the workflow is now defined,
+  statically parsed, locally replayed, **and** observed running. That is what
+  closed the 1.0 box about CI verification. It is one execution on one commit,
+  not a cadence, and of the six runs so far two were red, both on `browser`.
+  `native-build` compiles the native bundle and **executes nothing
   native**; `native-evidence` is written to enforce that a native-facing change
   carries a stored, verifier-passing
   capture, an explicit recorded decision, or a recorded *pending* run
@@ -510,12 +514,14 @@ landed, and where to read it:
   `1.0.0` entry, and `package.json` and `src/index.ts` both say `1.0.0`. Nothing
   is tagged or published ([release.md](release.md) §5).
 
-[ROADMAP.md](../ROADMAP.md) records the milestone honestly: **four of the five
-`1.0` items are ticked and one is not.** The unticked one is "Define supported
-Lynx and Solid version ranges and verify them in CI" — the ranges are defined
-and their commands pass locally, but no workflow has ever run on GitHub Actions,
-so the "in CI" half is unearned and the tick was withdrawn. Nothing else is
-needed for it but a push. The cleanup box that used to stay open was retitled
+[ROADMAP.md](../ROADMAP.md) records the milestone honestly: **all five `1.0`
+items are ticked.** The last one to move was "Define supported Lynx and Solid
+version ranges and verify them in CI" — the ranges were defined and their
+commands passed locally, and the "in CI" half was earned by run
+[`40224892605`](https://github.com/Apothic-AI/solid-lynx/actions/runs/40224892605),
+whose three `node-matrix` legs and both `solid-matrix` legs were green. Read that
+as one execution on one commit, not a standing guarantee. The cleanup box that
+used to stay open was retitled
 rather than ticked as written: its third noun was stylesheet cleanup, which this
 renderer cannot claim because it never loads a stylesheet; the box now claims
 cleanup only for the resources it acquires (root, listener, ref, list callback)

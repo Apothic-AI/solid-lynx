@@ -35,11 +35,14 @@ repository ran the unit gate — `pnpm install --frozen-lockfile`,
 was 98 passing tests; that figure is a snapshot of those runs and is not
 re-measured here, while `test/documented-counts.test.ts` keeps the current
 figure honest. The `node-matrix` job in
-`.github/workflows/ci.yml` is written to run the same three commands as three
+`.github/workflows/ci.yml` runs the same three commands as three
 legs (`20.x`, `22.x`, `24.x`), which resolve to the newest release on each line
-rather than to the floor — but **it has not run on GitHub Actions**: no workflow
-has, for any commit on this branch. So the Node range is verified here and
-declared for CI, not verified in CI. Node 21, 23, and 25 are outside the range
+rather than to the floor, and **it has now run on GitHub Actions**: in run
+[`40224892605`](https://github.com/Apothic-AI/solid-lynx/actions/runs/40224892605)
+all three legs exited 0, resolving to `20.20.2`, `22.23.3`, and `24.21.0`. So
+the Node range is verified here and verified in CI at those three line tops —
+and the floors are still verified *only* here, because the matrix resolves to
+line tops. Node 21, 23, and 25 are outside the range
 by declaration and were never run.
 
 Note that `engines` is advisory unless a consumer's package manager enforces it.
@@ -75,9 +78,9 @@ builds against; `1.9.16` and `1.9.17` are overlaid on top of it and run by the
 
 | Solid | `babel-preset-solid` | Where it runs | Result |
 | --- | --- | --- | --- |
-| `1.9.15` | `1.9.15` | `unit`, `node-matrix`, `browser`, `native-build`, every local run | green |
-| `1.9.16` | `1.9.16` | `solid-matrix` leg 1 | green, locally |
-| `1.9.17` | `1.9.16` | `solid-matrix` leg 2 | green, locally |
+| `1.9.15` | `1.9.15` | `unit`, `node-matrix`, `browser`, `native-build`, every local run | green, locally and in CI |
+| `1.9.16` | `1.9.16` | `solid-matrix` leg 1 | green, in run `40224892605` |
+| `1.9.17` | `1.9.16` | `solid-matrix` leg 2 | green, in run `40224892605` |
 
 The two versions above the pin are run with the preset a consumer on that Solid
 would resolve, which is why `1.9.17` uses the `1.9.16` preset: there is no
@@ -344,29 +347,32 @@ specifier starts resolving again.
 
 ## 8. What this document does not claim
 
-- **One axis of a matrix, and no CI run yet.** Nothing in this repository has
-  executed on GitHub Actions — `gh run list` for the repository returns no runs,
-  and `.github/workflows/ci.yml` is not on `origin/master`. The `node-matrix`
-  job is *written* to run the unit gate on `20.x`,
+- **One axis of a matrix, and one CI execution so far.** CI has run, and run
+  [`40224892605`](https://github.com/Apothic-AI/solid-lynx/actions/runs/40224892605)
+  is the one this document cites: 9/9 jobs green on `headSha` `172bafc`. The
+  `node-matrix`
+  job runs the unit gate on `20.x`,
   `22.x`, and `24.x`, so Node 20 (lower line) and Node 24 (admitted by the
-  open-ended `>=22.12.0`) would be exercised instead of only Node 22. The
-  `solid-matrix` job is written to run the gate on `solid-js` 1.9.16 and
-  1.9.17, the two published versions `^1.9.15` admits above the pin, and its
-  steps were replayed locally (§2). Between them those are **the
+  open-ended `>=22.12.0`) are exercised instead of only Node 22 — those
+  specifiers resolved to `20.20.2`, `22.23.3`, and `24.21.0` in that run. The
+  `solid-matrix` job runs the gate on `solid-js` 1.9.16 and
+  1.9.17, the two published versions `^1.9.15` admits above the pin, and both
+  legs were green. Between them those are **the
   Node and Solid axes only**. They do not test any `@lynx-js/web-core` other than
   0.26.2, any Lynx toolchain other than the pinned set in `package.json`, or any
-  OS other than `ubuntu-latest`. A green matrix would narrow the Node and Solid
-  claims; it would not widen the supported set on any other axis. There is no
-  green matrix yet — the local replays above are what exists.
-- **The Solid matrix tests the full admitted range; a green run is what licenses
-  that sentence.** `^1.9.15` admits exactly `1.9.15`, `1.9.16`, and `1.9.17`
-  (checked against the published list; `1.9.14` and below and every `2.x` and
-  `1.10.0-beta` are outside). `1.9.15` is what every other job resolves;
-  `1.9.16` and `1.9.17` are overlaid by `solid-matrix` and ran green locally
-  (§2). Two limits remain: the `solid-matrix` legs have not yet run on GitHub
-  Actions, and the range stops at `1.9.17` only because that is the newest
-  published version — a `1.9.18` would be admitted by the range and would need a
-  matrix entry before it could be claimed.
+  OS other than `ubuntu-latest`. One execution on one commit is also not a
+  cadence and not a guarantee about the next commit — and it is worth reading the
+  whole run list rather than only the green one: of the six CI runs so far, two
+  were red, both on the `browser` job and neither on a version axis.
+- **The Solid matrix tests the full admitted range; the green run is what
+  licenses that sentence.** `^1.9.15` admits exactly `1.9.15`, `1.9.16`, and
+  `1.9.17` (checked against the published list; `1.9.14` and below and every
+  `2.x` and `1.10.0-beta` are outside). `1.9.15` is what every other job
+  resolves; `1.9.16` and `1.9.17` are overlaid by `solid-matrix`, and both legs
+  ran green in run `40224892605`. One limit remains: the range stops at `1.9.17`
+  only because that is the newest published version — a `1.9.18` would be
+  admitted by the range and would need a matrix entry before it could be
+  claimed.
 - **The Solid legs override rather than pin.** `solid-matrix` installs with
   `pnpm install --no-frozen-lockfile` after appending an `overrides` entry to
   `pnpm-workspace.yaml`, because an override is a resolution the committed
@@ -427,8 +433,10 @@ specifier starts resolving again.
   were proven by hand instead.** `actions/setup-node` resolves `20.x` to the
   newest 20 and `22.x` to the newest 22, not to `20.19.0` or `22.12.0`, so a CI run
   would not by itself prove the declared floors. Those floors were run locally
-  before this change: the unit gate exited 0 on both 20.19.0 and 22.12.0. Right
-  now the local run is the only evidence there is, because no CI run exists.
+  before this change: the unit gate exited 0 on both 20.19.0 and 22.12.0. CI has
+  now run (run `40224892605`) and it resolved the three legs to `20.20.2`,
+  `22.23.3`, and `24.21.0` — line tops, as predicted — so the floors remain a
+  local result and CI is not evidence for them.
   Node 21, 23, and 25 sit outside `^20.19.0 || >=22.12.0` by declaration and were
   never run.
 
@@ -496,18 +504,18 @@ Because most entries above are exact versions, bumping one is a deliberate act:
    entry are the same commit, or the range publishes a version with no run behind
    it.
 
-`.github/workflows/ci.yml` is written to repeat steps 1-2 on Node 22 plus both
+`.github/workflows/ci.yml` repeats steps 1-2 on Node 22 plus both
 browser suites and the native build, with the `node-matrix` job repeating the
 unit gate on the `20.x`, `22.x`, and `24.x` Node lines and the `solid-matrix`
-job repeating it on the two published Solids above the pin. **It has not run:**
-no workflow has executed on GitHub Actions for any commit on this branch. The
-`solid-matrix` steps were replayed locally (§2); `node-matrix`'s legs resolve
-to line tops that were not re-run here.
+job repeating it on the two published Solids above the pin. **It has run** — run
+[`40224892605`](https://github.com/Apothic-AI/solid-lynx/actions/runs/40224892605),
+9/9 jobs green — so both version axes have an execution behind them.
 
-Once it does run, a green CI run would be
+The green run is
 evidence for three Node lines and every version inside the Solid peer range, all
 on `ubuntu-latest` — not for the exact `20.19.0` / `22.12.0` floors, not for any
-other OS, and not for any other version axis. Step 3's native hand run is never
+other OS, not for any other version axis, and not for native behaviour. It is one
+execution on one commit, not a cadence. Step 3's native hand run is never
 covered by CI.
 
 The consumer fixture gate matters most in step 2: `pnpm typecheck:consumer`

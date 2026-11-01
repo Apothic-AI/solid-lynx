@@ -333,9 +333,11 @@ record of its own is exit 1, not exit 3.
 
 Wired into the `native-evidence` job (`.github/workflows/ci.yml`) to run on
 every pull request, and runnable locally as
-`node scripts/require-native-evidence.mjs`. The job has not yet executed on
-GitHub Actions — no workflow in this repository has — so what is established
-below is the script's measured behaviour and the job's declared wiring:
+`node scripts/require-native-evidence.mjs`. The job has now executed on
+GitHub Actions — its pull-request path ran in `40213211128` and reported
+`verdict: nothing to require` — so what is established below is the script's
+measured behaviour, the job's declared wiring, and one observed execution of
+that wiring (not of a red result):
 
 - that a native-facing change was detected at all — the path list is in
   `scripts/require-native-evidence.mjs` as `NATIVE_FACING_PATHS`. For

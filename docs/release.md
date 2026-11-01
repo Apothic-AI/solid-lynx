@@ -26,11 +26,13 @@ has `needs: unit`. `node-matrix` has no `needs:` on purpose, so a failing matrix
 leg reads as the matrix rather than as the unit gate. Every step below runs the same command a developer runs locally;
 none needs a secret. Green means exit status 0 on that exact command.
 
-**No workflow has executed on GitHub Actions for this repository.** The file is
-validated by static parse and every command in it has been replayed locally at
-named commits — that is what the "Result here" column records — but the jobs
-themselves, their `needs:` edges, and every `actions/*` step are unexecuted. So a
-green row below means "this command passes here", never "CI ran it and passed".
+**A workflow has executed on GitHub Actions for this repository.** Run
+[`40224892605`](https://github.com/Apothic-AI/solid-lynx/actions/runs/40224892605)
+(`headSha` `172bafc`, 9/9 jobs green) is the one this document cites. Every
+command below has also been replayed locally at named commits, which is what the
+"Result here" column records. So a green row means both "this command passes
+here" and, where the row says so, "CI ran it and passed" — on that one commit,
+not as a standing guarantee.
 
 | CI job | Step in `ci.yml` | Command | Green means | Result here |
 | --- | --- | --- | --- | --- |
@@ -41,13 +43,13 @@ green row below means "this command passes here", never "CI ran it and passed".
 | `unit` | (inside `pnpm test`) | `test/documented-counts.test.ts` | every document that states this suite's size agrees with the measured size | exit 0; a stale count in README, CHANGELOG, ROADMAP or `docs/` is a test failure, not a review note |
 | `unit` | Build | `pnpm build` | `dist/` is written | exit 0 |
 | `unit` | Package contents | `pnpm pack --dry-run` | the tarball builds and lists its contents | exit 0, 52 entries |
-| `node-matrix` | Install / Type check / Unit tests, on `20.x`, `22.x`, `24.x` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` | the unit gate passes at the top of each declared Node line | exit 0 on 20.20.2, 22.23.3, 24.22.1 locally (98 tests each at that commit — the count predates `test/packaging.test.ts`, which was added afterwards and is not re-measured here; the floors 20.19.0 and 22.12.0 also exit 0) |
+| `node-matrix` | Install / Type check / Unit tests, on `20.x`, `22.x`, `24.x` | `pnpm install --frozen-lockfile`, `pnpm typecheck`, `pnpm test` | the unit gate passes at the top of each declared Node line | exit 0 on 20.20.2, 22.23.3, 24.22.1 locally (98 tests each at that commit — the count predates `test/packaging.test.ts`, which was added afterwards and is not re-measured here; the floors 20.19.0 and 22.12.0 also exit 0). **All three legs green in run `40224892605`**, which resolved them to 20.20.2, 22.23.3, and 24.21.0 |
 | `browser` | Install Chromium | `pnpm exec playwright install --with-deps chromium` | Chromium present for Playwright | **not run** — the browser was already installed in this worktree; CI runs it because the runner starts bare |
 | `browser` | Lynx-for-Web suite | `PLAYWRIGHT_PORT=4186 pnpm web:test` | builds the web bundle, serves it, drives it in Chromium | exit 0, **17 passed** (43.8s, on the 1.9.17 overlay — the pinned run was 54.2s) |
 | `browser` | Pattern suite | `PLAYWRIGHT_PORT=4200 pnpm exec playwright test --config test/browser/patterns.playwright.config.ts` | the separate `examples/lynx-patterns` suite passes | exit 0, **9 passed** (41.5s) |
 | `native-build` | Build the native bundle | `pnpm native:build` | `examples/lynx-for-native/dist/` holds the three bundles | exit 0, `main`, `stylesheet-probe`, `list-probe` |
-| `native-evidence` | Require native evidence for this pull request | `node scripts/require-native-evidence.mjs --range <pr base sha>..HEAD` | a native-facing change carries a committed capture the verifier for its card accepts, or a recorded decision | **not run on GitHub Actions**; the script's 50 host-free tests are, and the four exit codes were demonstrated by hand (§3) |
-| `solid-matrix` | Install / Overlay / Type check / Unit tests / Web build, on solid `1.9.16`+preset `1.9.16` and solid `1.9.17`+preset `1.9.16` | `pnpm install --frozen-lockfile`, `pnpm add`-free `overrides` in `pnpm-workspace.yaml` then `pnpm install --no-frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm web:build` | the gate passes on every published Solid the peer range admits | exit 0 on both legs locally, 121 tests each at the time of that run (`ROADMAP.md` records that the suite has since grown; this row is not re-measured) — **not yet run on GitHub Actions** |
+| `native-evidence` | Require native evidence for this pull request | `node scripts/require-native-evidence.mjs --range <pr base sha>..HEAD` | a native-facing change carries a committed capture the verifier for its card accepts, or a recorded decision | **run green in `40213211128`** with `verdict: nothing to require` — that diff changed no native-facing path. The script's 50 host-free tests and the four exit codes demonstrated by hand (§3) remain what proves the other branches; no run has yet produced a red `native-evidence` |
+| `solid-matrix` | Install / Overlay / Type check / Unit tests / Web build, on solid `1.9.16`+preset `1.9.16` and solid `1.9.17`+preset `1.9.16` | `pnpm install --frozen-lockfile`, `pnpm add`-free `overrides` in `pnpm-workspace.yaml` then `pnpm install --no-frozen-lockfile`, `pnpm typecheck`, `pnpm test`, `pnpm web:build` | the gate passes on every published Solid the peer range admits | exit 0 on both legs locally, 121 tests each at the time of that run (`ROADMAP.md` records that the suite has since grown; this row is not re-measured). **Both legs green in run `40224892605`**, including the assertion that the gate ran on the overlay rather than the pins |
 
 Two things about the scripts, so you do not run work twice. `pnpm typecheck` is
 `pnpm build && tsc --noEmit && pnpm typecheck:consumer`, and `pnpm test` is
@@ -347,7 +349,7 @@ device or emulator is attached to a runner, so **no native behaviour is executed
 in CI** (`.github/workflows/ci.yml`, the comment above the `native-build` job,
 and [compatibility.md](compatibility.md#8-what-this-document-does-not-claim) §8).
 
-What the workflow *does* now check, once it runs, is that evidence exists. The
+What the workflow now checks is that evidence exists. The
 `native-evidence` job invokes
 `scripts/require-native-evidence.mjs` over a pull request's diff
 (`pull_request.base.sha..HEAD`) and fails it when the change touches
@@ -367,9 +369,12 @@ native-facing code and carries none of:
   reviewed, and blocked — the card that will measure it, why it has not run, the
   physical dependency named, and every native-facing path it stands in for.
 
-**No workflow has executed on GitHub Actions for this repository**, so everything
-above is the job's wiring plus the script's measured behaviour, not an observed CI
-result. §7 records the whole list of what could not run.
+**A workflow has executed on GitHub Actions for this repository** (run
+`40224892605`, 9/9 jobs green), so the sections above are the job's wiring plus
+the script's measured behaviour **and** one observed CI execution. What that run
+did not produce is a red `native-evidence`: its pull-request path ran once, in
+`40213211128`, and reported `verdict: nothing to require`. §7 records the whole
+list of what could not run.
 
 A `pending.json` is not a pass, and the gate does not report it as one. The
 script exits **3** for it, and the `native-evidence` job is written to turn 3 into
@@ -744,15 +749,18 @@ commit nobody wrote down cannot be audited later.
 **What a release may not claim.**
 [compatibility.md §8](compatibility.md#8-what-this-document-does-not-claim),
 "What this document does not claim", is the list a release note has to stay
-inside. The load-bearing one for this release: **no CI run exists.** No workflow
-has executed on GitHub Actions for any commit on this branch, so a release note
-may not say CI verified anything. What it may say is that the workflow is
-written and statically parsed, that its steps were replayed locally at named
-commits, and that the local gate passes. Beyond that: three Node lines
-(`20.x`, `22.x`, `24.x` from the `node-matrix` job, once it runs) rather than the
+inside. The load-bearing one for this release: **CI has run once, on one
+commit.** Run `40224892605` executed every job green on `headSha` `172bafc`. So
+a release note may now say CI ran these checks **on that commit** — and may not
+turn that into a cadence, a guarantee about a later commit, or coverage of an
+axis the run did not touch. It may also still say that the workflow parses and
+that its steps were replayed locally at named commits. Beyond that: three Node
+lines
+(`20.x`, `22.x`, `24.x` from the `node-matrix` job, which resolved to `20.20.2`,
+`22.23.3`, and `24.21.0`) rather than the
 exact `20.19.0` / `22.12.0` floors of the declared
 `^20.19.0 || >=22.12.0` range, every version inside the Solid peer range (from
-the `solid-matrix` job — locally green, not yet run on GitHub Actions), no
+the `solid-matrix` job — both legs green in that run), no
 web-core matrix, no native runtime in CI, no second native runtime and no device
 other than the A03, no cross-OS claim, no cross-host stylesheet or list claims,
 and no `@lynx-js/types` version.
@@ -772,12 +780,12 @@ per-capability version of the same statement.
 | A03 smoke card on a device | **not run** | `adb -s R9WT911JVVH get-state` → `device 'R9WT911JVVH' not found`, exit 1. No hardware attached in this worktree, so there is no capture for the verifier to read. |
 | `node scripts/verify-native-parity.mjs <capture>` on a device capture | **not run** | Same reason: no capture exists. The verifier itself is exercised host-free against fixtures for every outcome (0, 1, and 2, including a capture with no parity line). |
 | `node scripts/verify-native-probe.mjs <capture>` on a device capture | **not run** | Same reason: no stylesheet or list capture exists. The checker is exercised host-free against `test/fixtures/native-probe/` for all three exit codes on both cards, including a list capture that never answers the recycling question and one where the host never called `enqueueComponent`. A fixture that verifies is not a device run — its README says so. |
-| `node scripts/require-native-evidence.mjs --range <base>..HEAD` against a real device capture | **not run** | No capture exists to point it at. The script's own four exit codes (0 satisfied, 1 missing, 2 could not evaluate, 3 pending-not-a-pass) were demonstrated against throwaway git repositories under `/tmp`, and its 50 host-free tests build their own repositories; the `native-evidence` job has not run on GitHub Actions, because no runner can be dispatched from this worktree. |
+| `node scripts/require-native-evidence.mjs --range <base>..HEAD` against a real device capture | **not run** | No capture exists to point it at. The script's own four exit codes (0 satisfied, 1 missing, 2 could not evaluate, 3 pending-not-a-pass) were demonstrated against throwaway git repositories under `/tmp`, and its 50 host-free tests build their own repositories. The `native-evidence` job itself has now run on GitHub Actions — `40213211128` ran its pull-request path over `2e0a40b..HEAD` and reported `verdict: nothing to require` — which exercised the wiring, not a device capture. |
 | Stylesheet probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0), which reviews the sequence and touches nothing. |
 | List probe on a device | **not run** | Same device; only `--dry-run` was executed (exit 0). The list card has had a runner since `run-native-probe.sh` took a card argument — it is no longer loaded by hand — but a reviewed command sequence is not a device result. |
-| Any job of `.github/workflows/ci.yml`, on GitHub Actions | **not run** | No workflow has ever executed for this repository: `gh run list` returns no runs, and the workflow file is not on `origin/master` (which sits at `e40d1c5`, 52 commits behind). The file is validated by static parse and its `run:` steps are replayed locally, which is not the same thing — the leg matrices, the `needs:` edges and every `actions/*` step are unexecuted. |
-| `pnpm exec playwright install --with-deps chromium` | **not run** | Chromium was already installed here; a CI runner would install it because it starts bare. |
-| The `solid-matrix` job's steps, verbatim, on both legs | **run locally**, exit 0 | The job's `run:` blocks were extracted from the parsed YAML and executed in order for `solid-js` 1.9.16 / `babel-preset-solid` 1.9.16 and `solid-js` 1.9.17 / preset 1.9.16. Every command exited 0 and the tree was clean afterwards. What is **not** run is the workflow itself on GitHub Actions — no runner could be dispatched from this worktree, so the leg matrix, the `needs: unit` edge, and the `actions/*` steps are unverified until a push runs them. |
+| Any job of `.github/workflows/ci.yml`, on GitHub Actions | **run**, green | Run [`40224892605`](https://github.com/Apothic-AI/solid-lynx/actions/runs/40224892605) executed all nine jobs to `success` on `headSha` `172bafc`: `unit`, the three `node-matrix` legs, both `solid-matrix` legs, `browser`, `native-build`, and `native-evidence`. The `needs:` edges were traversed and the `actions/*` steps ran. **This is one execution on one commit, not a standing claim** — of the six runs so far, two were red, both on `browser` only. |
+| `pnpm exec playwright install --with-deps chromium` | **run in CI** | Chromium was already installed in this worktree when the browser suites were run locally, so this step was never needed here; the `browser` job did execute it, green, in `40224892605`. |
+| The `solid-matrix` job's steps, verbatim, on both legs | **run locally and in CI**, exit 0 | The job's `run:` blocks were extracted from the parsed YAML and executed in order for `solid-js` 1.9.16 / `babel-preset-solid` 1.9.16 and `solid-js` 1.9.17 / preset 1.9.16. Every command exited 0 and the tree was clean afterwards. The job itself has since run on GitHub Actions and both legs were green in `40224892605`, including the two assertions that the gate ran on the overlay rather than on the pins. |
 | `pnpm publish` (real) | **not run here**, deliberately | §5. No publish was made from this worktree, and nothing in this document was produced by one. It is a fact about the registry's current state, not about this document's runs: `@apothic-ai/solid-lynx@1.0.0` was published on 2026-10-25 from commit `aded55b`, which is an ancestor of this tree, so the publish is real and predates everything §2a was written for. |
 
 Everything else in this document — the install, the five gate commands
