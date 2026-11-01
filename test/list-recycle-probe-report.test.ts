@@ -15,6 +15,8 @@ import {
   lrReportLine,
   recyclingAnswer,
   scrollAttemptCases,
+  scrollTarget,
+  withinRange,
 } from "../examples/lynx-for-native/src/list-recycle-probe-report.js";
 
 /**
@@ -64,6 +66,27 @@ describe("list recycle probe: the scroll attempts", () => {
       expect(one.method.length).toBeGreaterThan(0);
       expect(typeof one.params).toBe("object");
     }
+  });
+
+  it("reads the coordinate an attempt names, so a range check does not parse labels", () => {
+    const cases = scrollAttemptCases();
+    expect(scrollTarget(cases[1])).toEqual({ field: "offset", value: 900 });
+    expect(scrollTarget(cases[2])).toEqual({ field: "index", value: 20 });
+    expect(scrollTarget(cases[3])).toEqual({ field: "position", value: 20 });
+  });
+
+  it("says whether an attempt points inside a forty-row list", () => {
+    const cases = scrollAttemptCases();
+    const content = 4000;
+    const maxOffset = 3800;
+
+    for (const one of cases) {
+      expect(withinRange(one, content, maxOffset, 40)).toBe(true);
+    }
+    // The same offset on the four-row list the first version of this card left
+    // behind is out of range, which is why its zero proved nothing.
+    expect(withinRange(cases[1], 400, 200, 4)).toBe(false);
+    expect(withinRange(cases[2], 400, 200, 4)).toBe(false);
   });
 
   it("tries an offset, a cell index and a position, not one shape three times", () => {
@@ -213,12 +236,20 @@ describe("list recycle probe: the zero rule", () => {
       scrollAttempted: true,
       scrollApiExposed: true,
       rowCount: 40,
+      attempts: 4,
+      attemptCodes: [3, 3, 3, 4],
+      viewportHeight: 200,
     });
 
     expect(answer.hostRecycled).toBe(false);
     expect(answer.measuredZero).toBe(true);
     expect(answer.reason).toContain("not evidence");
     expect(answer.reason).toContain("40");
+    // What the bytes support: the calls returned and reported codes, not that the
+    // viewport moved.
+    expect(answer.reason).toContain("3, 3, 3, 4");
+    expect(answer.reason).toContain("not that the viewport moved");
+    expect(answer.reason).not.toContain("scrolled 4 rows");
   });
 
   it("distinguishes a zero with no scroll entry point from a zero after scrolling", () => {

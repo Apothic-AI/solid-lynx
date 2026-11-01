@@ -99,6 +99,44 @@ export function scrollAttemptCases(): ScrollAttemptCase[] {
   ];
 }
 
+/** Which coordinate a scroll attempt names, and its value. */
+export interface ScrollTarget {
+  field: "offset" | "index" | "position";
+  value: number;
+}
+
+/** The coordinate an attempt names, read from the card's own literal. */
+export function scrollTarget(attempt: ScrollAttemptCase): ScrollTarget {
+  const offset = attempt.params.offset;
+  if (typeof offset === "number") return { field: "offset", value: offset };
+  const index = attempt.params.index;
+  if (typeof index === "number") return { field: "index", value: index };
+  const position = attempt.params.position;
+  return { field: "position", value: typeof position === "number" ? position : -1 };
+}
+
+/**
+ * Whether an attempt points inside the list's own content.
+ *
+ * This is the difference between an attempt that could tell us something and one
+ * that cannot: a scroll to 900 px on a list whose whole content is 400 px is
+ * out of range, so its zero is expected and says nothing about virtualization.
+ * The card records the answer per attempt so a later reader does not have to
+ * reconstruct it from the offset and the content height.
+ */
+export function withinRange(
+  attempt: ScrollAttemptCase,
+  contentHeight: number,
+  maxOffset: number,
+  rows: number,
+): boolean {
+  const target = scrollTarget(attempt);
+  if (target.field === "offset") {
+    return target.value >= 0 && target.value <= maxOffset;
+  }
+  return target.value >= 0 && target.value < rows;
+}
+
 /** Counters for the two list callbacks, plus what the host passed to them. */
 export interface HostCallCounts {
   componentAtIndex: number;
@@ -198,6 +236,12 @@ export interface RecyclingInput {
   scrollApiExposed: boolean;
   /** The model's row count at the time of the window. */
   rowCount: number;
+  /** How many attempts were made, so the reason can say what was tried. */
+  attempts?: number;
+  /** The callback codes the host reported, in attempt order. */
+  attemptCodes?: number[];
+  /** The viewport height the list was given. */
+  viewportHeight?: number;
 }
 
 export function recyclingAnswer(input: RecyclingInput): RecyclingAnswer {
@@ -214,12 +258,18 @@ export function recyclingAnswer(input: RecyclingInput): RecyclingAnswer {
         + " viewport was not moved. A zero here is a gap in the run, not a finding about"
         + " the host.";
     } else {
-      reason = "The scroll calls returned and the host made no release call while this card"
-        + " scrolled " + input.rowCount + " rows; it asked for "
-        + input.delta.componentAtIndex + " cell(s) during the same window. A zero records"
-        + " that this engine did not recycle in this window on this card; it is not"
-        + " evidence that the engine cannot recycle, and it does not identify which of"
-        + " layout, timing, or the list's own policy kept the cells.";
+      const codes = (input.attemptCodes ?? []).join(", ");
+      const attempts = input.attempts ?? 1;
+      reason = "The " + attempts + " scroll attempt(s) returned and their callbacks fired"
+        + (codes === "" ? "" : " with code(s) " + codes)
+        + "; the host then made no release call and asked for "
+        + input.delta.componentAtIndex + " cell(s) while the card held "
+        + input.rowCount + " rows in a " + (input.viewportHeight ?? 0) + " px viewport."
+        + " Nothing here reads a scroll offset back, so this shows the calls were accepted,"
+        + " not that the viewport moved. A zero records that this engine did not recycle in"
+        + " this window on this card; it is not evidence that the engine cannot recycle,"
+        + " and it does not identify which of layout, timing, or the list's own policy kept"
+        + " the cells.";
     }
   }
 
@@ -254,6 +304,10 @@ export interface ScrollAttemptRecord {
   callbackCode?: number;
   /** The call counts this attempt produced, from the counter snapshot pair. */
   delta?: CountDelta;
+  /** The coordinate this attempt names, so a reader need not parse the label. */
+  target?: ScrollTarget;
+  /** Whether that coordinate lies inside the list's content. */
+  withinRange?: boolean;
 }
 
 /**

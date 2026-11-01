@@ -2055,6 +2055,22 @@ function checkListRecycleViewport(out, stage) {
   const materialized = expectNumber(out, stage.stage, "probeMaterialized",
     stage.probeMaterialized);
   const rows = expectNumber(out, stage.stage, "rows", stage.rows);
+  const itemCount = expectNumber(out, stage.stage, "itemCount", stage.itemCount);
+  expectNumber(out, stage.stage, "contentHeight", stage.contentHeight);
+  expectNumber(out, stage.stage, "maxOffset", stage.maxOffset);
+
+  // The card's whole point is content taller than the viewport. If the capture
+  // stops short of the model's rows, the viewport claim is about a shorter list
+  // than the summary names, which is the defect the second run of this card fixed.
+  if (rows !== undefined && itemCount !== undefined && rows !== itemCount) {
+    out.add(
+      "derived-field-mismatch",
+      `\`viewport\` records ${rows} row(s) where the model has ${itemCount}. The card` +
+        " fills the model to every row before it scrolls, so a capture with fewer rows" +
+        " describes a shorter list than the one its summary claims to have measured.",
+      stage.stage,
+    );
+  }
   // A host that asked for cells itself is the only thing that can make rows exist
   // before the probe materializes any, and vice versa. A capture where the derived
   // pair disagrees was edited or written by another revision.
@@ -2086,6 +2102,10 @@ function checkListRecycleScroll(out, stage) {
   if (available === false || api === undefined) return;
   const attempts = expectArray(out, stage.stage, "attempts", stage.attempts);
   if (attempts === undefined) return;
+  expectNumber(out, stage.stage, "rowCount", stage.rowCount);
+  expectNumber(out, stage.stage, "viewportHeight", stage.viewportHeight);
+  expectNumber(out, stage.stage, "contentHeight", stage.contentHeight);
+  expectNumber(out, stage.stage, "maxOffset", stage.maxOffset);
 
   let fired = 0;
   let attempted = 0;
@@ -2132,6 +2152,30 @@ function checkListRecycleScroll(out, stage) {
         "derived-field-mismatch",
         `\`scroll.attempts[${index}]\` says its callback fired on a binding that is not` +
           " exposed.",
+        stage.stage,
+      );
+    }
+
+    // An out-of-range attempt cannot say anything about virtualization: its zero
+    // delta would be expected on any list. The card records whether each attempt
+    // points inside the content, and an attempt that does not is a finding.
+    if (!isPlainObject(entry.target) || typeof entry.target.value !== "number"
+      || !isText(entry.target.field)) {
+      out.add(
+        "missing-field",
+        `\`scroll.attempts[${index}].target\` must be an object with a string \`field\`` +
+          " and a numeric `value`, describing the coordinate the attempt names.",
+        stage.stage,
+      );
+    }
+    const inRange = expectBoolean(out, stage.stage, `attempts[${index}].withinRange`,
+      entry.withinRange);
+    if (inRange === false) {
+      out.add(
+        "out-of-range-attempt",
+        `\`scroll.attempts[${index}]\` (${describeValue(entry.label)}) points outside the` +
+          " list's content, so its zero delta is expected on any list and cannot be read" +
+          " as evidence about virtualization.",
         stage.stage,
       );
     }
@@ -2214,7 +2258,21 @@ function checkListRecycleSummary(out, stage, card) {
   const logged = expectTextArray(out, stage.stage, "stagesLogged", stage.stagesLogged);
   expectNumber(out, stage.stage, "itemCount", stage.itemCount);
   expectNumber(out, stage.stage, "viewportHeight", stage.viewportHeight);
-  expectNumber(out, stage.stage, "rowsAtEnd", stage.rowsAtEnd);
+  const rowsAtEnd = expectNumber(out, stage.stage, "rowsAtEnd", stage.rowsAtEnd);
+  const itemCountAtEnd = expectNumber(out, stage.stage, "itemCount", stage.itemCount);
+  // The record says the list held every row. That is checkable from its own two
+  // fields, so a capture that stopped at four cannot be committed with a summary
+  // that talks about forty.
+  if (rowsAtEnd !== undefined && itemCountAtEnd !== undefined
+    && rowsAtEnd !== itemCountAtEnd) {
+    out.add(
+      "derived-field-mismatch",
+      `\`summary\` records ${rowsAtEnd} row(s) at the end where the model has` +
+        ` ${itemCountAtEnd}. The card fills the model to every row before the scroll, so` +
+        " the two cannot disagree.",
+      stage.stage,
+    );
+  }
   expectTextArray(out, stage.stage, "measured", stage.measured);
   checkUnmeasured(out, stage);
 

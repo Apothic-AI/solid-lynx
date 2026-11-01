@@ -25,13 +25,17 @@ identity.
 ## What it measured
 
 The card renders forty rows of 100 px inside a 200 px viewport behind a sized
-wrapper, materializes four rows, and makes four bounded `__InvokeUIMethod`
-attempts. The host's own `componentAtIndex` and `enqueueComponent` counters are
+wrapper (4000 px of content in a 200 px viewport), materializes **all forty rows**
+through the model, and makes four bounded `__InvokeUIMethod` attempts, each
+recorded with the coordinate it names and whether that coordinate is inside the
+content. The host's own `componentAtIndex` and `enqueueComponent` counters are
 read around that scroll window.
 
 - `__InvokeUIMethod` is exposed (`arity 0`). Every attempt returned, and the
   callback the card passed fired all four times, reporting codes `3`, `3`, `3`
-  and `4`. The card records those codes and gives them no meaning.
+  and `4`. The card records those codes and gives them no meaning. All four
+  attempts are in range for the 4000 px content (`offset` 0 and 900 of a 3800 px
+  maximum, `index`/`position` 20 of 40 rows).
 - The host asked for **no cells at all**: `componentAtIndex: 0` through create,
   viewport and the scroll window, even with the viewport wrapper.
 - It released **no cells**: `enqueueComponent: 0`, `hostRecycled: false`,

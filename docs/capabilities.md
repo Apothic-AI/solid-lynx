@@ -94,7 +94,7 @@ pnpm exec playwright test --config test/browser/patterns.playwright.config.ts
 | Capability | Web (`@lynx-js/web-core` 0.26.2) | Native (emulator measure where noted; otherwise not measured) | Status today |
 | --- | --- | --- | --- |
 | Keyed lists (`For`) | supported, tested | not measured | Works. Rows move instead of being recreated. |
-| List virtualization (`__CreateList`) | supported, measured | create/materialize/reorder/shrink measured, and **recycling measured-and-zero**, on the API 33 emulator | `root.createList()` materializes a row by index, keyed; the host owns which cells it asks for. A permuted model moved 3 rows keeping element identity and a shrink to 1 released 2 rows. With a 200 px viewport and four bounded `__InvokeUIMethod` scroll attempts, the host asked for **0 cells** and released **0**; no host has been seen to recycle a cell. |
+| List virtualization (`__CreateList`) | supported, measured | create/materialize/reorder/shrink measured, and **recycling measured-and-zero**, on the API 33 emulator | `root.createList()` materializes a row by index, keyed; the host owns which cells it asks for. A permuted model moved 3 rows keeping element identity and a shrink to 1 released 2 rows. With forty rows (4000 px of content) in a 200 px viewport and four in-range `__InvokeUIMethod` scroll attempts, the host asked for **0 cells** and released **0**; no host has been seen to recycle a cell. |
 | Gestures | unsupported, measured | not measured | `gesture-*` props become plain attributes and never fire. |
 | Animation | host-only, measured | not measured | Use inline styles and CSS transitions. |
 | Overlays and portals | unsupported, measured | not measured | `<overlay>` is an ordinary child; importing `Portal` fails at build time. |
@@ -228,9 +228,11 @@ negative one: the card never scrolled, so its zero could not be read as the host
 being unable to recycle. Its own `summary.unmeasured` said exactly that.
 
 The recycling card was built to close that gap and has now run. It renders forty
-rows inside a 200 px viewport behind a sized wrapper, materializes four rows,
+rows of 100 px inside a 200 px viewport behind a sized wrapper — 4000 px of
+content in a 200 px viewport — materializes **all forty rows** through the model,
 and makes four bounded `__InvokeUIMethod` attempts (`scrollTo` at two offsets,
-`scrollToIndex`, `scrollToPosition`). On the API 33 emulator:
+`scrollToIndex`, `scrollToPosition`), each recorded with the coordinate it names
+and whether that coordinate lies inside the content. On the API 33 emulator:
 
 - `__InvokeUIMethod` **is** exposed (`arity 0`) and every attempt returned; the
   callback it was given fired all four times, reporting codes `3`, `3`, `3` and
@@ -313,7 +315,7 @@ card, so the list capture above stays comparable with itself.
 | --- | --- |
 | `inventory` | The four list bindings, plus every global that could carry a scroll (`__InvokeUIMethod`, `__ScrollBy`, `__ElementScrollBy`, `__GetScrollInfo`, `__GetElementUniqueID`), recording absence as absence |
 | `create` | A forty-row list inside a sized wrapper with a 200 px viewport; the rows are 100 px each, so the content is far taller than the viewport |
-| `viewport` | What the host asks for after layout, before this card materializes anything; if it asks for none, the card materializes four rows and says so |
+| `viewport` | What the host asks for after layout, before this card materializes anything; whatever it did not ask for, the card then materializes every remaining row and records how many it added |
 | `scroll` | Four bounded `__InvokeUIMethod` attempts, each recording the binding, the method, the outcome, whether this card's callback fired, its code, and the counter delta it produced |
 | `recycle` | The answer, from the host's own counters in that window, with a `reason` required whenever the release count is zero |
 | `reorder` | A permuted model update, compared by unique id, after the scroll |
@@ -982,9 +984,9 @@ true until the ordering is fixed upstream.
 - List virtualization now has a renderer-side indexed row model
   (`root.createList()`), measured against web-core. The native card has run on the
   emulator engine and recorded rows, element identity across a permuted model,
-  and a release on shrink. The recycling card has since run too: it gave the list
-  a 200 px viewport and made four bounded scroll calls, and the host still asked
-  for no cells and released none. Native list **recycling is measured-and-zero in
+  and a release on shrink. The recycling card has since run too: it filled the
+  list to forty rows (4000 px) inside a 200 px viewport and made four in-range
+  scroll calls, and the host still asked for no cells and released none. Native list **recycling is measured-and-zero in
   that window** — observed as absent, with its reason — rather than unobserved.
   A host that recycles has still never been seen, and nothing here says this
   engine cannot.

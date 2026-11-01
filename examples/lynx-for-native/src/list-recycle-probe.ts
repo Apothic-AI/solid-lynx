@@ -46,6 +46,8 @@ import {
   recyclingAnswer,
   safeCall,
   scrollAttemptCases,
+  scrollTarget,
+  withinRange,
   type CountDelta,
   type HostCallCounts,
   type RecyclingAnswer,
@@ -74,8 +76,16 @@ const ITEM_COUNT = 40;
 const ROW_HEIGHT = 100;
 const VIEWPORT_HEIGHT = 200;
 const VIEWPORT_WIDTH = 300;
-/** Rows the card materializes itself when the host asks for none. */
-const PROBE_MATERIALIZE = 4;
+/**
+ * The list's full content height, and the furthest a scroll can go.
+ *
+ * The card fills the model to {@link ITEM_COUNT} rows before it scrolls, so the
+ * content is 4000 px in a 200 px viewport. Recording these lets every attempt
+ * say whether it points inside the content, which is what separates an attempt
+ * that could show movement from one that cannot.
+ */
+const CONTENT_HEIGHT = ITEM_COUNT * ROW_HEIGHT;
+const MAX_OFFSET = Math.max(0, CONTENT_HEIGHT - VIEWPORT_HEIGHT);
 
 const scope = globalThis as unknown as Record<string, unknown>;
 
@@ -324,17 +334,22 @@ function probeViewport(root: LynxRoot): void {
     const hostDelta = deltaCounts(before, afterFlush);
     const hostAskedOnItsOwn = hostDelta.componentAtIndex > 0;
 
-    let probeMaterialized = 0;
-    if (!hostAskedOnItsOwn && rowCount() === 0) {
-      for (let index = 0; index < Math.min(PROBE_MATERIALIZE, ITEM_COUNT); index += 1) {
-        if (list.materialize(index) !== undefined) probeMaterialized += 1;
-      }
-      root.flush();
-    }
+    // Fill the model to every row, whether or not the host asked for any. The
+    // card's question only means something with content taller than the viewport,
+    // and a four-row list (400 px) inside a 200 px viewport is not the card the
+    // summary describes. `materialize` is idempotent per key, so the rows the host
+    // asked for are kept and only the missing ones are added.
+    const rowsBefore = rowCount();
+    for (let index = 0; index < ITEM_COUNT; index += 1) list.materialize(index);
+    root.flush();
+    const probeMaterialized = rowCount() - rowsBefore;
 
     return {
       listAvailable: true,
+      itemCount: ITEM_COUNT,
       viewportHeight: VIEWPORT_HEIGHT,
+      contentHeight: CONTENT_HEIGHT,
+      maxOffset: MAX_OFFSET,
       hostAskedOnItsOwn,
       hostAskedDelta: hostDelta,
       requestedIndices: hostDelta.cellIndices,
@@ -359,6 +374,8 @@ let scrollDelta: CountDelta = {
   releasedSigns: [],
 };
 let scrollAttemptCount = 0;
+/** The callback codes the host reported during the scroll window. */
+let scrollCodes: number[] = [];
 
 /** True when any scroll entry point the host exposes is a function. */
 function scrollApiPresent(): boolean {
@@ -417,11 +434,17 @@ function probeScroll(root: LynxRoot): void {
       root.flush();
       const after = copyCounts(hostCalls);
       record.delta = deltaCounts(before, after);
+      const point = scrollTarget(attempt);
+      record.target = point;
+      record.withinRange = withinRange(attempt, CONTENT_HEIGHT, MAX_OFFSET, rowCount());
       attempts.push(record);
     }
 
     scrollDelta = deltaCounts(windowBefore, copyCounts(hostCalls));
     scrollAttemptCount = attempts.filter(record => record.outcome !== "absent").length;
+    scrollCodes = attempts
+      .map(record => record.callbackCode)
+      .filter((code): code is number => typeof code === "number");
 
     return {
       listAvailable: true,
@@ -429,6 +452,10 @@ function probeScroll(root: LynxRoot): void {
       apiUsed: typeof invoke === "function"
         ? "__InvokeUIMethod"
         : directName ?? "none",
+      rowCount: rowCount(),
+      viewportHeight: VIEWPORT_HEIGHT,
+      contentHeight: CONTENT_HEIGHT,
+      maxOffset: MAX_OFFSET,
       attempted: scrollAttemptCount,
       attempts,
       callbacksFired: attempts.filter(record => record.callbackFired).length,
@@ -461,6 +488,9 @@ function probeRecycle(): void {
       scrollAttempted,
       scrollApiExposed: scrollApiPresent(),
       rowCount: rowCount(),
+      attempts: scrollAttemptCount,
+      attemptCodes: scrollCodes,
+      viewportHeight: VIEWPORT_HEIGHT,
     });
 
     return {
@@ -521,7 +551,8 @@ function probeSummary(): void {
     const answer = recycle;
     const measured = [
       "which list and scroll globals the host exposes, with typeof and arity",
-      "whether a forty-row list was given a viewport smaller than its content",
+      "that the list held all forty rows (4000 px of content) inside a 200 px"
+        + " viewport before any scroll attempt",
       "how many cells the host asked for on its own after layout",
       "what each bounded scroll attempt returned, and whether its callback fired",
       "how many componentAtIndex and enqueueComponent calls the scroll window produced",
