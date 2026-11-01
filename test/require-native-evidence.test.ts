@@ -96,6 +96,19 @@ function newRepo(): string {
   return dir;
 }
 
+/**
+ * The timeout every case in this file is given.
+ *
+ * Each case builds a throwaway repository and shells out to `git` and `node`, and
+ * the evidence gate re-runs the probe verifier as a child process. That is
+ * seconds of wall time per case, not milliseconds: under load or on a two-core
+ * CI runner the 5 s vitest default made one of these cases time out while it was
+ * still working. The value is explicit per case rather than a change to
+ * `vitest.config.ts`, so the rest of the suite keeps the default and a genuinely
+ * slow case here cannot hide behind a global setting.
+ */
+const SUBPROCESS_CASE_TIMEOUT_MS = 30_000;
+
 function gitOutput(dir: string, ...args: string[]): string {
   return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" }).trim();
 }
@@ -192,7 +205,7 @@ describe("require-native-evidence: the native-facing path list", () => {
       .sort();
 
     expect(covered).toEqual(listed);
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("covers the native example, its runner, and the workflow", () => {
     const output = runScript("--print-native-paths");
@@ -203,7 +216,7 @@ describe("require-native-evidence: the native-facing path list", () => {
     // rspeedy.ts configures the native build and does not ship inside it; it
     // must still be in the list, because a bad `generate` breaks the bundle.
     expect(table.some(entry => entry.path === "src/rspeedy.ts")).toBe(true);
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 });
 
 describe("require-native-evidence: what counts as native-facing", () => {
@@ -220,7 +233,7 @@ describe("require-native-evidence: what counts as native-facing", () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("nothing to require");
     expect(run.stdout).toContain("0 native-facing path(s)");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a change under src/ with no evidence, naming the path and what it looked for", () => {
     const dir = newRepo();
@@ -236,7 +249,7 @@ describe("require-native-evidence: what counts as native-facing", () => {
     expect(run.stdout).toContain("docs/evidence/native/<date-or-id>/manifest.json");
     expect(run.stdout).toContain("verdict: missing evidence");
     expect(run.stdout).not.toContain("verdict: satisfied");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a change under examples/lynx-for-native/", () => {
     const dir = newRepo();
@@ -249,7 +262,7 @@ describe("require-native-evidence: what counts as native-facing", () => {
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("examples/lynx-for-native/src/main-thread.tsx");
     expect(run.stdout).toContain("under examples/lynx-for-native/");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a change to src/rspeedy.ts, which configures the native build", () => {
     const dir = newRepo();
@@ -262,7 +275,7 @@ describe("require-native-evidence: what counts as native-facing", () => {
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("src/rspeedy.ts");
     expect(run.stdout).toContain("injects the universal JSX transform");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 });
 
 describe("require-native-evidence: ci.yml, only inside a native job", () => {
@@ -302,7 +315,7 @@ describe("require-native-evidence: ci.yml, only inside a native job", () => {
 
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("0 native-facing path(s)");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("requires evidence when the change lands inside the native job", () => {
     const dir = newRepo();
@@ -317,7 +330,7 @@ describe("require-native-evidence: ci.yml, only inside a native job", () => {
     expect(run.status).toBe(1);
     expect(run.stdout).toContain(".github/workflows/ci.yml");
     expect(run.stdout).toContain("inside the `native-build` job");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("ignores a job APPENDED after native-build (the regression that failed its own install)", () => {
     // Measured on master: `--range 56b402c..HEAD` exited 1 because the appended
@@ -346,7 +359,7 @@ describe("require-native-evidence: ci.yml, only inside a native job", () => {
     expect(run.stdout).toContain("not native-facing");
     expect(run.stdout).toContain("native-evidence");
     expect(run.stdout).toContain("a new job is not an edit to one");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("ignores a comment-only edit above the native job", () => {
     // The same defect in its other shape: text added immediately above
@@ -370,7 +383,7 @@ describe("require-native-evidence: ci.yml, only inside a native job", () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("0 native-facing path(s)");
     expect(run.stdout).toContain("only comment, blank, or whitespace lines changed");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("requires evidence for a real run-step change inside native-build", () => {
     // The case the heuristic exists for, and the one the fix must not lose: the
@@ -392,7 +405,7 @@ describe("require-native-evidence: ci.yml, only inside a native job", () => {
     expect(run.stdout).toContain("native:   1 native-facing path(s)");
     expect(run.stdout).toContain("significant line(s) changed inside the `native-build` job body");
     expect(run.stdout).toContain("not a comment or a");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("requires evidence when the native job's own lines are deleted", () => {
     // A removed step is attributed against the base revision, so deleting the
@@ -423,7 +436,7 @@ describe("require-native-evidence: ci.yml, only inside a native job", () => {
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("removed or renamed by this");
     expect(run.stdout).toContain("native-build");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 });
 
 describe("require-native-evidence: a stored capture", () => {
@@ -441,7 +454,7 @@ describe("require-native-evidence: a stored capture", () => {
     expect(run.stdout).toContain("verified exit 0");
     expect(run.stdout).toContain("docs/evidence/native/2026-11-20-smoke");
     expect(run.stdout).toContain("remains manual");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails when the stored capture is findings, not a pass", () => {
     const dir = newRepo();
@@ -459,7 +472,7 @@ describe("require-native-evidence: a stored capture", () => {
     expect(run.stdout).toContain("verdict: missing evidence");
     expect(run.stdout).toContain("reads");
     expect(run.stdout).toContain("as findings (exit 1)");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("cannot evaluate when the stored capture has no parity line", () => {
     // A verifier exit of 2 is "could not read this at all", which the top-level
@@ -477,7 +490,7 @@ describe("require-native-evidence: a stored capture", () => {
     expect(run.status).toBe(2);
     expect(run.stdout).toContain("could not evaluate");
     expect(run.stdout).not.toContain("verdict: satisfied");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails when the manifest names a capture that is not stored beside it", () => {
     const dir = newRepo();
@@ -490,7 +503,7 @@ describe("require-native-evidence: a stored capture", () => {
 
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("a manifest without its capture is a claim, not evidence");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails when the recorded verifier verdict disagrees with the stored bytes", () => {
     const dir = newRepo();
@@ -514,7 +527,7 @@ describe("require-native-evidence: a stored capture", () => {
 
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("does not appear in today's verifier output");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a manifest whose device never reached `device` state", () => {
     const dir = newRepo();
@@ -529,7 +542,7 @@ describe("require-native-evidence: a stored capture", () => {
 
     expect(run.status).toBe(1);
     expect(run.stdout).toContain('"device.getState" must be "device"');
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a manifest that is missing required fields", () => {
     const dir = newRepo();
@@ -546,7 +559,7 @@ describe("require-native-evidence: a stored capture", () => {
     for (const field of ["card", "capture", "device", "timestamp", "commit", "verifier"]) {
       expect(run.stdout).toContain(field);
     }
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a capture when native code changed after the run that produced it", () => {
     // The reuse hole, and the reason the range edge is not enough on its own: a
@@ -566,7 +579,7 @@ describe("require-native-evidence: a stored capture", () => {
     expect(run.stdout).toContain("changed after the recorded run");
     expect(run.stdout).toContain("src/lynx-host.ts");
     expect(run.stdout).toContain("Run the card again");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a manifest recording a commit this repository does not have", () => {
     const dir = newRepo();
@@ -581,7 +594,7 @@ describe("require-native-evidence: a stored capture", () => {
 
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("does not have");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 });
 
 describe("require-native-evidence: probe captures, verified by their own card", () => {
@@ -613,7 +626,7 @@ describe("require-native-evidence: probe captures, verified by their own card", 
     expect(run.stdout).toContain("verdict: satisfied");
     expect(run.stdout).toContain("verified exit 0 by " + PROBE_VERIFIER);
     expect(run.stdout).toContain("docs/evidence/native/2026-11-20-stylesheet");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("passes when a list capture answers the recycling question with a zero", () => {
     // The case a weaker contract would reject: the host never called
@@ -636,7 +649,7 @@ describe("require-native-evidence: probe captures, verified by their own card", 
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("verdict: satisfied");
     expect(run.stdout).toContain("list capture from R9WT911JVVH");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a list capture whose stages never answer the recycling question", () => {
     const dir = newRepo();
@@ -659,7 +672,7 @@ describe("require-native-evidence: probe captures, verified by their own card", 
     expect(run.stdout).toContain("verdict: missing evidence");
     expect(run.stdout).toContain(PROBE_VERIFIER);
     expect(run.stdout).toContain("as findings (exit 1)");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a stylesheet capture that is missing a required stage", () => {
     const dir = newRepo();
@@ -680,7 +693,7 @@ describe("require-native-evidence: probe captures, verified by their own card", 
     // The verifier's own finding is quoted, so the report names the stage.
     expect(run.stdout).toContain("[missing-stage]");
     expect(run.stdout).toContain("`load-real-url`");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("cannot evaluate a probe capture whose stage line was truncated", () => {
     const dir = newRepo();
@@ -700,7 +713,7 @@ describe("require-native-evidence: probe captures, verified by their own card", 
     expect(run.status).toBe(2);
     expect(run.stdout).toContain("could not evaluate");
     expect(run.stdout).toContain(PROBE_VERIFIER);
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("cannot evaluate a probe capture offered as smoke evidence", () => {
     // The card decides the verifier, so the two capture formats are not
@@ -722,7 +735,7 @@ describe("require-native-evidence: probe captures, verified by their own card", 
     expect(run.stdout).toContain("could not evaluate");
     expect(run.stdout).toContain(PARITY_VERIFIER);
     expect(run.stdout).toContain("no [solid-lynx parity] line");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("cannot evaluate a smoke capture offered as probe evidence", () => {
     const dir = newRepo();
@@ -741,7 +754,7 @@ describe("require-native-evidence: probe captures, verified by their own card", 
     expect(run.stdout).toContain("could not evaluate");
     expect(run.stdout).toContain(PROBE_VERIFIER);
     expect(run.stdout).toContain("contains no [solid-lynx ss3], [solid-lynx ss2], [solid-lynx ss], [solid-lynx lp] line");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("still refuses a probe capture whose card is not a card", () => {
     const dir = newRepo();
@@ -758,7 +771,7 @@ describe("require-native-evidence: probe captures, verified by their own card", 
 
     expect(run.status).toBe(1);
     expect(run.stdout).toContain('"card" must be one of smoke, stylesheet, stylesheet2, stylesheet3, list');
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 });
 
 describe("require-native-evidence: the state of this repository", () => {
@@ -781,7 +794,7 @@ describe("require-native-evidence: the state of this repository", () => {
 
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("is the template, not evidence");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("ships a template manifest with every required field and no capture", () => {
     const templateDir = path.join(REPO_ROOT, "docs/evidence/native/TEMPLATE");
@@ -798,7 +811,7 @@ describe("require-native-evidence: the state of this repository", () => {
     expect(manifest.kind).toBe("capture");
     expect(manifest.device.getState).toBe("device");
     expect(manifest.verifier.exitCode).toBe(0);
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("ships evidence documentation, the template, and only re-verifiable records", () => {
     const root = path.join(REPO_ROOT, "docs/evidence/native");
@@ -848,7 +861,7 @@ describe("require-native-evidence: the state of this repository", () => {
       expect(manifest.kind).toBe("capture");
       expect(files).toContain(manifest.capture);
     }
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("stores the emulator records as A03-free, verifier-passing evidence", () => {
     // Two properties this repository depends on, asserted against the tree
@@ -890,7 +903,7 @@ describe("require-native-evidence: the state of this repository", () => {
       expect(manifest.verifier.exitCode).toBe(0);
       expect(run.stdout).toContain(manifest.verifier.verdict);
     }
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 });
 
 describe("require-native-evidence: a recorded decision instead of a run", () => {
@@ -914,7 +927,7 @@ describe("require-native-evidence: a recorded decision instead of a run", () => 
     expect(run.status).toBe(0);
     expect(run.stdout).toContain("verdict: satisfied");
     expect(run.stdout).toContain("decision recorded by @maintainer");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a decision record with a reason too thin to weigh", () => {
     const dir = newRepo();
@@ -934,7 +947,7 @@ describe("require-native-evidence: a recorded decision instead of a run", () => 
 
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("at least 40 characters");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a decision record that names only some of the changed native paths", () => {
     // A decision has to account for the change, not one file in it. Otherwise a
@@ -959,7 +972,7 @@ describe("require-native-evidence: a recorded decision instead of a run", () => 
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("covers 1 of 2 native-facing path(s)");
     expect(run.stdout).toContain("does not name `src/root.ts`");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("fails a decision record that covers none of the changed native paths", () => {
     const dir = newRepo();
@@ -980,7 +993,7 @@ describe("require-native-evidence: a recorded decision instead of a run", () => 
 
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("covers none of the native-facing paths in this change");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 });
 
 describe("require-native-evidence: refusing to guess", () => {
@@ -998,7 +1011,7 @@ describe("require-native-evidence: refusing to guess", () => {
     expect(run.stderr).toContain("origin/master");
     expect(run.stderr).toContain("--range origin/master..HEAD");
     expect(run.stdout).toContain("could not evaluate");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("cannot evaluate a range whose revision does not resolve", () => {
     const dir = newRepo();
@@ -1008,7 +1021,7 @@ describe("require-native-evidence: refusing to guess", () => {
 
     expect(run.status).toBe(2);
     expect(run.stderr).toContain("cannot resolve `deadbeef`");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("cannot evaluate outside a git repository", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "solid-lynx-no-git-"));
@@ -1017,7 +1030,7 @@ describe("require-native-evidence: refusing to guess", () => {
 
     expect(run.status).toBe(2);
     expect(run.stderr).toContain("is not inside a git repository");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("rejects a malformed --range as usage, not as a pass", () => {
     const dir = newRepo();
@@ -1033,7 +1046,7 @@ describe("require-native-evidence: refusing to guess", () => {
     const threeDot = runScript("--repo", dir, "--range", "HEAD...HEAD");
     expect(threeDot.status).toBe(2);
     expect(threeDot.stderr).toContain("two-dot range");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("documents its exit codes, the evidence contract, and the dagr discipline in --help", () => {
     const run = runScript("--help");
@@ -1058,7 +1071,7 @@ describe("require-native-evidence: refusing to guess", () => {
     ]) {
       expect(run.stdout).toContain(phrase);
     }
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 });
 
 describe("require-native-evidence: a pending record is not a pass", () => {
@@ -1149,7 +1162,7 @@ describe("require-native-evidence: a pending record is not a pass", () => {
     for (const nativePath of NATIVE_PATHS) {
       expect(run.stdout).toContain(`!!   - ${nativePath}`);
     }
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("exits 1 when the pending record leaves one native path out", () => {
     // A pending record has to be the complete truth for the range. Naming one of
@@ -1167,7 +1180,7 @@ describe("require-native-evidence: a pending record is not a pass", () => {
     // The report names the path nobody accounted for, not just the count.
     expect(run.stdout).toContain("covered by no pending.json and no decision.json");
     expect(run.stdout).toContain("  - src/root.ts");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("lets a verifying capture win over a pending record for the same range", () => {
     // The capture supersedes the pending record, and this is the transition a
@@ -1204,7 +1217,7 @@ describe("require-native-evidence: a pending record is not a pass", () => {
     // knows the two records are connected and one of them can be cleaned up.
     expect(run.stdout).toContain("superseded by the verified capture");
     expect(run.stdout).not.toContain("THIS IS NOT A PASS");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("still exits 0 for a decision record, and still 1 for the template", () => {
     // The two forms that existed before are unchanged by the third one. Asserted
@@ -1245,7 +1258,7 @@ describe("require-native-evidence: a pending record is not a pass", () => {
       range(templateBase, templateHead));
     expect(template.status).toBe(1);
     expect(template.stdout).toContain("is the template, not evidence");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("rejects a pending record that is missing a field, or leaves its blocker a shrug", () => {
     // Each case breaks exactly one field, so a failure names the field that is
@@ -1283,7 +1296,7 @@ describe("require-native-evidence: a pending record is not a pass", () => {
       // Never 3: an incomplete record is missing evidence, not a scheduled run.
       expect(run.stdout).not.toContain("verdict: pending");
     }
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("refuses a directory that holds both a pending record and a capture", () => {
     // One directory, one answer. "Was this measured?" has to have exactly one
@@ -1307,7 +1320,7 @@ describe("require-native-evidence: a pending record is not a pass", () => {
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("carries manifest.json and pending.json");
     expect(run.stdout).toContain("a release cannot be both measured and awaiting measurement");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("does not let a broken record beside a pending one turn the range into exit 3", () => {
     // "Pending" is supposed to mean the record set is the complete and honest
@@ -1335,7 +1348,7 @@ describe("require-native-evidence: a pending record is not a pass", () => {
     expect(run.stdout).toContain("verdict: missing evidence");
     expect(run.stdout).toContain("this is missing evidence rather than a scheduled run");
     expect(run.stdout).not.toContain("verdict: pending");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("accepts a block of records, one per card, covering a split change", () => {
     // A release may honestly split its statement: "this file is waiting on the
@@ -1359,7 +1372,7 @@ describe("require-native-evidence: a pending record is not a pass", () => {
     expect(run.stdout).toContain("verdict: pending");
     expect(run.stdout).toContain("Card(s) awaiting a run: stylesheet, list");
     expect(run.stdout).toContain("!! 2 pending native-facing path(s):");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 
   it("rejects a pending record that speaks for a range it is not in", () => {
     // The same discipline a capture's `commit` gets: a record from outside this
@@ -1383,5 +1396,5 @@ describe("require-native-evidence: a pending record is not a pass", () => {
     expect(run.status).toBe(1);
     expect(run.stdout).toContain("verdict: missing evidence");
     expect(run.stdout).not.toContain("verdict: pending");
-  });
+  }, SUBPROCESS_CASE_TIMEOUT_MS);
 });
