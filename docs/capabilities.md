@@ -94,7 +94,7 @@ pnpm exec playwright test --config test/browser/patterns.playwright.config.ts
 | Capability | Web (`@lynx-js/web-core` 0.26.2) | Native (emulator measure where noted; otherwise not measured) | Status today |
 | --- | --- | --- | --- |
 | Keyed lists (`For`) | supported, tested | not measured | Works. Rows move instead of being recreated. |
-| List virtualization (`__CreateList`) | supported, measured | create/materialize/reorder/shrink measured on the API 33 emulator; **recycling not observed** | `root.createList()` materializes a row by index, keyed; the host owns which cells it asks for. On the measured engine a permuted model moved 3 rows keeping element identity, a shrink to 1 released 2 rows, and `enqueueComponent` was never called. No host has been seen to recycle a cell. |
+| List virtualization (`__CreateList`) | supported, measured | create/materialize/reorder/shrink measured, and **recycling measured-and-zero**, on the API 33 emulator | `root.createList()` materializes a row by index, keyed; the host owns which cells it asks for. A permuted model moved 3 rows keeping element identity and a shrink to 1 released 2 rows. With a 200 px viewport and four bounded `__InvokeUIMethod` scroll attempts, the host asked for **0 cells** and released **0**; no host has been seen to recycle a cell. |
 | Gestures | unsupported, measured | not measured | `gesture-*` props become plain attributes and never fire. |
 | Animation | host-only, measured | not measured | Use inline styles and CSS transitions. |
 | Overlays and portals | unsupported, measured | not measured | `<overlay>` is an ordinary child; importing `Portal` fails at build time. |
@@ -223,25 +223,34 @@ exit 0).
    `componentAtIndex: 0`, `enqueueComponent: 0`, `updateListCallbacks: 3`, and the
    per-stage `hostRecycled` in `shrunk` is `false`.
 
-That sixth finding is the recycling answer, and it is still a **negative** one:
-recycling remains unobserved. What changed is where that sentence applies. It used
-to be "no device run has created a list"; it is now "a measured engine created a
-list, moved rows, and released rows without ever calling `enqueueComponent`". The
-card's own `summary.unmeasured` says why a zero cannot be read as an inability:
+That sixth finding is the recycling answer **for that card**, and it is a
+negative one: the card never scrolled, so its zero could not be read as the host
+being unable to recycle. Its own `summary.unmeasured` said exactly that.
 
-> Nothing in this card scrolls. A native list recycles cells in response to a
-> viewport asking for them, and no stage produces that request, so a zero
-> enqueueComponent count cannot be read as the host being unable to recycle.
+The recycling card was built to close that gap and has now run. It renders forty
+rows inside a 200 px viewport behind a sized wrapper, materializes four rows,
+and makes four bounded `__InvokeUIMethod` attempts (`scrollTo` at two offsets,
+`scrollToIndex`, `scrollToPosition`). On the API 33 emulator:
 
-Scroll behaviour, cell reuse timing, `operationId` and `enableReuseNotification`
-semantics, and `__UpdateListComponents`/`__GetListComponents` are all listed as
-unmeasured in that same stage. So: native list support is **measured for
-create, materialize, keyed reorder and shrink on this emulator**, and
-**unmeasured for recycling, scrolling and cell reuse**, and there is still no A03
-list run of any kind.
+- `__InvokeUIMethod` **is** exposed (`arity 0`) and every attempt returned; the
+  callback it was given fired all four times, reporting codes `3`, `3`, `3` and
+  `4`. The card records those codes and gives them no meaning;
+- the host asked for **no cells at all**: `componentAtIndex: 0` across create,
+  viewport and the whole scroll window, despite the viewport wrapper;
+- it released **no cells**: `enqueueComponent: 0`, so `hostRecycled: false` and
+  `measuredZero: true`;
+- element identity still survived a permuted model update (four rows moved,
+  ids preserved), so the list itself is live while making no cell request.
 
-Real virtualization would need a host that asks for cells on its own, and native
-validation of both callbacks against the native list.
+So: native list support is **measured for create, materialize, keyed reorder,
+shrink and a bounded scroll attempt on this emulator**, and **recycling is
+measured-and-zero in that window** — not "unmeasured". The zero is stated with
+its reason in the capture, and it still cannot be read as an inability: the host
+never asked for a single cell, and nothing here identifies which of layout,
+timing, or the list's own policy that is. Cell reuse timing, `operationId` and
+`enableReuseNotification` semantics, scroll offsets, and
+`__UpdateListComponents`/`__GetListComponents` remain unmeasured, and there is
+still no A03 list run of any kind.
 
 A measurement card for that validation **has been run**, on the same emulator
 engine as the stylesheet captures, and it measured the card rather than the
@@ -288,13 +297,36 @@ exists to make:
 The checker also records that a list arity is only ever checked for being a
 number, for the same reason as the stylesheet card.
 
-**Its device run is pending.** No line from it has been observed, so nothing
-below changes: no native list behavior is measured, and no host has been seen to
-recycle a cell. A verified fixture proves the checker works, not that a device
-produced the stages. What the card cannot establish even when it runs is
-also recorded in its own `summary` stage: recycling driven by a viewport, scroll
-behavior, and cell reuse timing all need a scrolling list, and the card creates
-none.
+**Its device run happened**, and the capture is stored:
+`docs/evidence/native/2026-10-25-emulator-api33-list/`. It measured the card, not
+host recycling: three rows materialized, keyed identity survived a permutation,
+a shrink released two rows, and `enqueueComponent` was `0` throughout.
+
+#### The native list-recycling probe (`[solid-lynx lr]`)
+
+The card the earlier one named as missing is
+`examples/lynx-for-native/src/list-recycle-probe.ts`, built by
+`pnpm native:build` as `dist/list-recycle-probe.lynx.bundle`. It is a separate
+card, so the list capture above stays comparable with itself.
+
+| Stage | What it does |
+| --- | --- |
+| `inventory` | The four list bindings, plus every global that could carry a scroll (`__InvokeUIMethod`, `__ScrollBy`, `__ElementScrollBy`, `__GetScrollInfo`, `__GetElementUniqueID`), recording absence as absence |
+| `create` | A forty-row list inside a sized wrapper with a 200 px viewport; the rows are 100 px each, so the content is far taller than the viewport |
+| `viewport` | What the host asks for after layout, before this card materializes anything; if it asks for none, the card materializes four rows and says so |
+| `scroll` | Four bounded `__InvokeUIMethod` attempts, each recording the binding, the method, the outcome, whether this card's callback fired, its code, and the counter delta it produced |
+| `recycle` | The answer, from the host's own counters in that window, with a `reason` required whenever the release count is zero |
+| `reorder` | A permuted model update, compared by unique id, after the scroll |
+| `summary` | Counters, the answer, and what is still unmeasured |
+| `done` | `status: "all stages logged"` |
+
+The record is
+`docs/evidence/native/2026-11-01-emulator-api33-list-recycle/` (capture +
+manifest, verifier exit 0). Its answer is a **measured zero**: the host asked for
+no cells and released none while the card scrolled, and the capture states why
+that is not an inability. The checker requires that reason — a bare `0` is a
+finding — and it also rejects a `hostRecycled` flag that disagrees with its
+counter, and a fired-callback count that disagrees with the attempts.
 #### The inventory's names, and the two bindings that are absent
 
 A real capture found that this card's `inventory` stage could not name the
@@ -948,12 +980,14 @@ true until the ordering is fixed upstream.
   changing the property path in `src/lynx-host.ts`, which is renderer behaviour
   rather than a platform capability, so it is left for a deliberate change.
 - List virtualization now has a renderer-side indexed row model
-  (`root.createList()`), measured against web-core. The native card has since run
-  on the emulator engine and recorded rows, element identity across a permuted
-  model, and a release on shrink — with the host asking for no cells and
-  recycling none. What is still missing is a host that recycles cells: native
-  list *recycling* is unverified, not merely untested. An emulator that never
-  scrolls the card cannot produce that observation.
+  (`root.createList()`), measured against web-core. The native card has run on the
+  emulator engine and recorded rows, element identity across a permuted model,
+  and a release on shrink. The recycling card has since run too: it gave the list
+  a 200 px viewport and made four bounded scroll calls, and the host still asked
+  for no cells and released none. Native list **recycling is measured-and-zero in
+  that window** — observed as absent, with its reason — rather than unobserved.
+  A host that recycles has still never been seen, and nothing here says this
+  engine cannot.
 - The native list PAPI on the measured engine is three bindings, not four:
   `__CreateList` and `__UpdateListCallbacks` exist and `__UpdateListComponents` and
   `__GetListComponents` do not. That is one engine's inventory and is not

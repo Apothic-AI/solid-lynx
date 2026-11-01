@@ -279,7 +279,7 @@ Set a stable public contract after web validation, native validation, and toolin
     then the consumer fixtures), `pnpm typecheck:consumer`
     (`test/consumer/tsconfig.json` and `tsconfig.dev.json`, which assert the
     type-level rejections with `@ts-expect-error`), and `pnpm test` — measured in
-    this tree as **359 unit tests in 13 files**, of which `test/renderer.test.ts`
+    this tree as **383 unit tests in 14 files**, of which `test/renderer.test.ts`
     contributes 63 (the file has grown since this box was written; the counts
     move, the arrangement does not, and `test/documented-counts.test.ts` now
     fails when a document disagrees with the measured suite). A contract item
@@ -324,7 +324,7 @@ Set a stable public contract after web validation, native validation, and toolin
     prove the *top* of each line. The floors were run locally instead: the same
     gate exits 0 on 20.19.0, 20.20.2, 22.12.0, 22.23.3, 24.22.1, and 26.1.0.
     Those local runs recorded 98 tests each, which is what this repository had
-    at the time; the suite is 359 now. The 121 figure quoted for the Node lines
+    at the time; the suite is 383 now. The 121 figure quoted for the Node lines
     was re-measured on Node 22.23.3 / pnpm 12.9.1 at an earlier commit in this
     release, before the sweep and probe suites landed; the other five Node lines
     were not re-run, so their 121 is an expectation, not a result, and the 268
@@ -341,7 +341,7 @@ Set a stable public contract after web validation, native validation, and toolin
       would be red is worse than a narrowed range. On Node 22.23.3 / pnpm
       12.9.1, with the committed pins installed and `solid-js` 1.9.16 + 1.9.17
       overlaid over `babel-preset-solid` 1.9.15/1.9.16: `pnpm typecheck` exit 0,
-      `pnpm test` exit 0 with 121 tests (the suite has since grown to 359 at
+      `pnpm test` exit 0 with 121 tests (the suite has since grown to 383 at
       the same Node and pnpm, but that count was not re-run per Solid leg), and
       `pnpm web:build` exit 0 on **both**.
       Nothing failed, so the range did not need narrowing. The browser suites

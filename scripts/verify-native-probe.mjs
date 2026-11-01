@@ -90,6 +90,26 @@ const LIST_REQUIRED_STAGES = Object.freeze([
   "done",
 ]);
 
+/**
+ * The list-recycling card's stages.
+ *
+ * A separate card from the list probe because that one is the ground truth this
+ * one reasons from, and a card whose stage set grew would make the two captures
+ * incomparable. Its question is the one the probe left open: the probe's own
+ * summary said nothing in it scrolled, so its zero `enqueueComponent` count could
+ * not be read as an inability. This card supplies the viewport and the scroll.
+ */
+const LIST_RECYCLE_REQUIRED_STAGES = Object.freeze([
+  "inventory",
+  "create",
+  "viewport",
+  "scroll",
+  "recycle",
+  "reorder",
+  "summary",
+  "done",
+]);
+
 const STYLESHEET_REQUIRED_STAGES = Object.freeze([
   "inventory",
   "no-arguments",
@@ -250,6 +270,30 @@ const CARDS = Object.freeze({
       done: checkDone,
     },
   },
+  listRecycle: {
+    key: "listRecycle",
+    card: "list-recycle",
+    marker: "[solid-lynx lr]",
+    probe: "native-list-recycle",
+    bundle: "list-recycle-probe.lynx.bundle",
+    stages: LIST_RECYCLE_REQUIRED_STAGES,
+    operations: Object.freeze([
+      "__CreateList",
+      "__UpdateListCallbacks",
+      "__UpdateListComponents",
+      "__GetListComponents",
+    ]),
+    checks: {
+      inventory: checkListRecycleInventory,
+      create: checkListRecycleCreate,
+      viewport: checkListRecycleViewport,
+      scroll: checkListRecycleScroll,
+      recycle: checkListRecycleRecycle,
+      reorder: checkListRecycleReorder,
+      summary: checkListRecycleSummary,
+      done: checkDone,
+    },
+  },
   stylesheet3: {
     key: "stylesheet3",
     card: "stylesheet-v3",
@@ -281,7 +325,7 @@ const CARDS = Object.freeze({
  * by length makes that impossible rather than relying on the shorter marker's
  * payload failing to parse.
  */
-const CARD_ORDER = ["stylesheet3", "stylesheet2", "stylesheet", "list"];
+const CARD_ORDER = ["stylesheet3", "stylesheet2", "stylesheet", "listRecycle", "list"];
 
 /**
  * The thread tag the console bridge puts in front of a logged message.
@@ -314,7 +358,10 @@ What it does
   So a real line is logcat columns, an opening quote, a \`[main-thread.js] \` or
   \`[background.js] \` prefix, the marker, the JSON, then a closing quote.
 
-  A run is recorded by keeping those lines in a log file. This script then
+  Three of the cards exist to measure native behaviour, and each logs under its
+  own marker: the stylesheet probes (\`ss\`, \`ss2\`, \`ss3\`), the list probe
+  (\`lp\`), and the list-recycling probe (\`lr\`). A run is recorded by keeping
+  those lines in a log file. This script then
   (\`<capture.log>\` may be a logcat dump or a file holding only the stage lines):
 
   1. extracts every line carrying one of the two markers and parses the JSON on
@@ -1945,6 +1992,273 @@ function checkListSummary(out, stage) {
   expectHostCalls(out, stage.stage, stage.hostCallCounts);
 }
 
+/* ------------------------------------------------------ the list-recycle card
+ *
+ * The probe card's own summary said why its zero `enqueueComponent` count could
+ * not be read as an inability: nothing in it scrolled. This card supplies the
+ * viewport and the scroll, and then reports what the host did. Its checks enforce
+ * that distinction rather than a particular outcome: a capture is verified
+ * whether the host recycled or not, and a capture that records a zero *without*
+ * saying what the zero does and does not mean is the finding.
+ */
+
+function checkListRecycleInventory(out, stage, card) {
+  const operations = expectArray(out, stage.stage, "operations", stage.operations);
+  expectTextArray(out, stage.stage, "relatedGlobals", stage.relatedGlobals);
+  expectBoolean(out, stage.stage, "countingInstalled", stage.countingInstalled);
+  const candidates = expectArray(out, stage.stage, "scrollCandidates",
+    stage.scrollCandidates);
+  if (candidates !== undefined) {
+    candidates.forEach((entry, index) => {
+      if (!isPlainObject(entry) || !isText(entry.name)) {
+        out.add(
+          "missing-field",
+          `\`inventory.scrollCandidates[${index}]\` must be an object with a string` +
+            ` \`name\`, got ${describeValue(entry)}.`,
+          stage.stage,
+        );
+        return;
+      }
+      expectText(out, stage.stage, `scrollCandidates[${index}].typeof`, entry.typeof);
+      checkArityFields(out, stage.stage, entry, `scrollCandidates[${index}]`);
+    });
+  }
+  if (operations === undefined) return;
+  for (const name of card.operations) {
+    if (!operations.some(entry => isPlainObject(entry) && entry.name === name)) {
+      out.add(
+        "missing-operation",
+        `\`inventory\` does not describe ${name}. The card asks about every one of its` +
+          ` ${card.operations.length} bindings before it calls any of them, so a capture` +
+          " without it is not this card's inventory.",
+        stage.stage,
+      );
+    }
+  }
+}
+
+function checkListRecycleCreate(out, stage) {
+  expectNumber(out, stage.stage, "itemCount", stage.itemCount);
+  expectNumber(out, stage.stage, "rowHeight", stage.rowHeight);
+  expectNumber(out, stage.stage, "viewportHeight", stage.viewportHeight);
+  expectBoolean(out, stage.stage, "returnedHandle", stage.returnedHandle);
+  expectText(out, stage.stage, "handleTypeof", stage.handleTypeof);
+  expectBoolean(out, stage.stage, "styleApplied", stage.styleApplied);
+  expectHostCalls(out, stage.stage, stage.hostCallCounts);
+}
+
+function checkListRecycleViewport(out, stage) {
+  const available = expectBoolean(out, stage.stage, "listAvailable", stage.listAvailable);
+  if (available === false) return;
+  const asked = expectBoolean(out, stage.stage, "hostAskedOnItsOwn", stage.hostAskedOnItsOwn);
+  expectArray(out, stage.stage, "requestedIndices", stage.requestedIndices);
+  const materialized = expectNumber(out, stage.stage, "probeMaterialized",
+    stage.probeMaterialized);
+  const rows = expectNumber(out, stage.stage, "rows", stage.rows);
+  // A host that asked for cells itself is the only thing that can make rows exist
+  // before the probe materializes any, and vice versa. A capture where the derived
+  // pair disagrees was edited or written by another revision.
+  if (asked === true && materialized !== undefined && materialized !== 0) {
+    out.add(
+      "derived-field-mismatch",
+      "`viewport` says the host asked on its own, but also records that the probe" +
+        ` materialized ${materialized} row(s). The probe only materializes when the host` +
+        " did not.",
+      stage.stage,
+    );
+  }
+  if (asked === false && rows !== undefined && materialized !== undefined
+    && rows !== materialized) {
+    out.add(
+      "derived-field-mismatch",
+      `\`viewport\` records ${rows} row(s) after the probe materialized` +
+        ` ${materialized}, with the host asking for none.`,
+      stage.stage,
+    );
+  }
+}
+
+const SCROLL_OUTCOMES = Object.freeze(["returned", "threw", "absent"]);
+
+function checkListRecycleScroll(out, stage) {
+  const available = expectBoolean(out, stage.stage, "listAvailable", stage.listAvailable);
+  const api = expectBoolean(out, stage.stage, "scrollApiExposed", stage.scrollApiExposed);
+  if (available === false || api === undefined) return;
+  const attempts = expectArray(out, stage.stage, "attempts", stage.attempts);
+  if (attempts === undefined) return;
+
+  let fired = 0;
+  let attempted = 0;
+  attempts.forEach((entry, index) => {
+    if (!isPlainObject(entry)) {
+      out.add(
+        "missing-field",
+        `\`scroll.attempts[${index}]\` must be an object, got ${describeValue(entry)}.`,
+        stage.stage,
+      );
+      return;
+    }
+    expectText(out, stage.stage, `attempts[${index}].label`, entry.label);
+    expectText(out, stage.stage, `attempts[${index}].api`, entry.api);
+    expectText(out, stage.stage, `attempts[${index}].method`, entry.method);
+    const exposed = expectBoolean(out, stage.stage, `attempts[${index}].exposed`, entry.exposed);
+    const outcome = expectOneOf(out, stage, entry.outcome, `attempts[${index}].outcome`,
+      SCROLL_OUTCOMES, "An attempt is a call that returned, a call that threw, or an"
+        + " absent binding; a fourth answer is not a call this card made.");
+    expectBoolean(out, stage.stage, `attempts[${index}].callbackFired`, entry.callbackFired);
+    if (entry.callbackFired === true) fired += 1;
+    if (outcome !== undefined && outcome !== "absent") attempted += 1;
+    // `absent` and `exposed: true` cannot both be true, and a call that threw was
+    // still a call on an exposed binding.
+    if (outcome === "absent" && exposed === true) {
+      out.add(
+        "derived-field-mismatch",
+        `\`scroll.attempts[${index}]\` is \`absent\` but says the binding is exposed.`,
+        stage.stage,
+      );
+    }
+    if ((outcome === "returned" || outcome === "threw") && exposed === false) {
+      out.add(
+        "derived-field-mismatch",
+        `\`scroll.attempts[${index}]\` is \`${outcome}\` but says the binding is not` +
+          " exposed; a binding that does not exist cannot have been called.",
+        stage.stage,
+      );
+    }
+    // A callback is this card's own function: only an exposed, non-absent call can
+    // have handed it to the host at all.
+    if (entry.callbackFired === true && exposed === false) {
+      out.add(
+        "derived-field-mismatch",
+        `\`scroll.attempts[${index}]\` says its callback fired on a binding that is not` +
+          " exposed.",
+        stage.stage,
+      );
+    }
+  });
+
+  const recordedAttempted = expectNumber(out, stage.stage, "attempted", stage.attempted);
+  if (recordedAttempted !== undefined && recordedAttempted !== attempted) {
+    out.add(
+      "derived-field-mismatch",
+      `\`scroll.attempted\` is ${recordedAttempted} but ${attempted} attempt(s) are not` +
+        " absent. The field is derived from the attempts beside it.",
+      stage.stage,
+    );
+  }
+  const recordedFired = expectNumber(out, stage.stage, "callbacksFired", stage.callbacksFired);
+  if (recordedFired !== undefined && recordedFired !== fired) {
+    out.add(
+      "derived-field-mismatch",
+      `\`scroll.callbacksFired\` is ${recordedFired} but ${fired} attempt(s) record a` +
+        " fired callback.",
+      stage.stage,
+    );
+  }
+}
+
+/**
+ * The recycling answer, and the rule that keeps a zero honest.
+ *
+ * `hostRecycled` is exactly `enqueueComponent > 0`, and `measuredZero` is its
+ * negation. When the answer is zero the capture must carry a non-empty `reason`:
+ * a bare `0` is the one shape that lets a reader turn "the host did not recycle in
+ * this window" into "the host cannot recycle", which is a claim no zero can
+ * support. That is why the reason is a required field here rather than prose the
+ * card may or may not write.
+ */
+function checkListRecycleRecycle(out, stage) {
+  const enqueue = expectNumber(out, stage.stage, "enqueueComponent", stage.enqueueComponent);
+  const atIndex = expectNumber(out, stage.stage, "componentAtIndex", stage.componentAtIndex);
+  expectNumber(out, stage.stage, "reuseNotifications", stage.reuseNotifications);
+  expectNumber(out, stage.stage, "releasedRows", stage.releasedRows);
+  expectText(out, stage.stage, "window", stage.window);
+  const recycled = expectBoolean(out, stage.stage, "hostRecycled", stage.hostRecycled);
+  const zero = expectBoolean(out, stage.stage, "measuredZero", stage.measuredZero);
+
+  if (enqueue !== undefined && recycled !== undefined && recycled !== (enqueue > 0)) {
+    out.add(
+      "derived-field-mismatch",
+      `\`recycle.hostRecycled\` is ${describeValue(recycled)} but` +
+        ` \`enqueueComponent\` is ${enqueue}. A positive count is the only release` +
+        " evidence this card can observe.",
+      stage.stage,
+    );
+  }
+  if (enqueue !== undefined && zero !== undefined && zero !== (enqueue === 0)) {
+    out.add(
+      "derived-field-mismatch",
+      `\`recycle.measuredZero\` is ${describeValue(zero)} but \`enqueueComponent\` is` +
+        ` ${enqueue}.`,
+      stage.stage,
+    );
+  }
+  void atIndex;
+
+  if (zero === true) {
+    expectText(out, stage.stage, "reason", stage.reason);
+  }
+}
+
+function checkListRecycleReorder(out, stage) {
+  const available = expectBoolean(out, stage.stage, "listAvailable", stage.listAvailable);
+  if (available === false) return;
+  expectTextArray(out, stage.stage, "before", stage.before);
+  expectTextArray(out, stage.stage, "after", stage.after);
+  expectNumber(out, stage.stage, "movedRows", stage.movedRows);
+  expectNumber(out, stage.stage, "rowCount", stage.rowCount);
+  expectBoolean(out, stage.stage, "identityPreserved", stage.identityPreserved);
+}
+
+function checkListRecycleSummary(out, stage, card) {
+  const logged = expectTextArray(out, stage.stage, "stagesLogged", stage.stagesLogged);
+  expectNumber(out, stage.stage, "itemCount", stage.itemCount);
+  expectNumber(out, stage.stage, "viewportHeight", stage.viewportHeight);
+  expectNumber(out, stage.stage, "rowsAtEnd", stage.rowsAtEnd);
+  expectTextArray(out, stage.stage, "measured", stage.measured);
+  checkUnmeasured(out, stage);
+
+  // The recycling answer has to be in the summary, not only in the stage that
+  // computed it: `0` is an answer and an omission is the question left open.
+  const counters = expectHostCalls(out, stage.stage, stage.hostCallCounts);
+  const recycling = stage.recycling;
+  if (!isPlainObject(recycling)) {
+    out.add(
+      "missing-recycling-answer",
+      "`summary` records no `recycling` object, so the capture never answers whether the" +
+        " host released a cell while the card scrolled. A recorded 0 is an answer; an" +
+        " omission is the question the card was run to close.",
+      stage.stage,
+    );
+  } else {
+    const enqueue = expectNumber(out, stage.stage, "recycling.enqueueComponent",
+      recycling.enqueueComponent);
+    expectBoolean(out, stage.stage, "recycling.hostRecycled", recycling.hostRecycled);
+    expectBoolean(out, stage.stage, "recycling.measuredZero", recycling.measuredZero);
+    if (recycling.measuredZero === true) {
+      expectText(out, stage.stage, "recycling.reason", recycling.reason);
+    }
+    if (counters !== undefined && enqueue !== undefined
+      && counters.enqueueComponent !== enqueue) {
+      out.add(
+        "derived-field-mismatch",
+        `\`summary.hostCallCounts.enqueueComponent\` is ${counters.enqueueComponent} but` +
+          ` \`summary.recycling.enqueueComponent\` is ${enqueue}.`,
+        stage.stage,
+      );
+    }
+  }
+
+  if (logged !== undefined && logged.join("\u0000") !== card.stages.join("\u0000")) {
+    out.add(
+      "summary-does-not-add-up",
+      `\`summary.stagesLogged\` lists ${logged.join(", ")} where this card emits` +
+        ` ${card.stages.join(", ")}. The summary describes the run it closes.`,
+      stage.stage,
+    );
+  }
+}
+
 /* ------------------------------------------------------------ card evaluation
  *
  * A card is one set of stages. Evaluation produces findings, not exceptions, so
@@ -2197,6 +2511,26 @@ function describeStage(stage) {
       parts.push(`handle ${describeValue(stage.returnedHandle)}`);
       if (typeof stage.handleTypeof === "string") parts.push(`typeof ${stage.handleTypeof}`);
       counter("children", isPlainObject(stage.children) ? stage.children.count : undefined);
+      counter("items", stage.itemCount);
+      counter("viewport", stage.viewportHeight);
+      break;
+    }
+    case "viewport": {
+      parts.push(`host asked on its own ${describeValue(stage.hostAskedOnItsOwn)}`);
+      counter("rows", stage.rows);
+      counter("probe materialized", stage.probeMaterialized);
+      break;
+    }
+    case "scroll": {
+      parts.push(`scroll API ${describeValue(stage.scrollApiExposed)}`);
+      counter("attempted", stage.attempted);
+      counter("callbacks fired", stage.callbacksFired);
+      break;
+    }
+    case "recycle": {
+      counter("enqueueComponent", stage.enqueueComponent);
+      counter("componentAtIndex", stage.componentAtIndex);
+      parts.push(`host recycled ${describeValue(stage.hostRecycled)}`);
       break;
     }
     case "materialize": {

@@ -14,7 +14,8 @@ import { pluginSolidLynx } from "@apothic-ai/solid-lynx/rspeedy";
  *
  * Build with `pnpm native:build`, which produces `dist/main.lynx.bundle`,
  * `dist/stylesheet-probe.lynx.bundle`, `dist/stylesheet-probe-v2.lynx.bundle`,
- * `dist/stylesheet-probe-v3.lynx.bundle`, and `dist/list-probe.lynx.bundle`.
+ * `dist/stylesheet-probe-v3.lynx.bundle`, `dist/list-probe.lynx.bundle`, and
+ * `dist/list-recycle-probe.lynx.bundle`.
  * Loading any of them needs Lynx Explorer or a device; see `docs/building.md`.
  */
 export default defineConfig({
@@ -38,6 +39,10 @@ export default defineConfig({
       // A third card, the same shape as the stylesheet probe, measuring the
       // native list PAPI and cell recycling on a device.
       "list-probe": "./src/list-probe.ts",
+      // The recycling probe: the same list PAPI, but with a viewport smaller than
+      // its content and a bounded set of scroll attempts, so the host has the
+      // chance to release a cell that a previous card never gave it.
+      "list-recycle-probe": "./src/list-recycle-probe.ts",
     },
   },
   environments: {
@@ -87,6 +92,10 @@ export default defineConfig({
         },
         "list-probe": {
           mainThread: "./src/list-probe.ts",
+          background: false,
+        },
+        "list-recycle-probe": {
+          mainThread: "./src/list-recycle-probe.ts",
           background: false,
         },
       },

@@ -1,0 +1,24 @@
+{
+  "kind": "capture",
+  "card": "list-recycle",
+  "capture": "capture.log",
+  "device": {
+    "serial": "emulator-5554",
+    "getState": "device"
+  },
+  "runtime": {
+    "kind": "android-emulator",
+    "avd": "lynx33",
+    "androidApi": 33,
+    "abi": "x86_64",
+    "lynxExplorer": "4.1.0",
+    "apkSha256": "6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6"
+  },
+  "timestamp": "2026-11-01T07:03:00Z",
+  "commit": "7a812f4",
+  "verifier": {
+    "exitCode": 0,
+    "verdict": "verdict: verified \u2014 8 required stage(s) present across 1 card(s), and nothing in the capture contradicts what it records. What the stages mean is still read against docs/capabilities.md."
+  },
+  "note": "Emulator run, NOT the A03. Same Lynx Explorer 4.1.0 build and APK digest as the documented A03 install, on Android 13 / API 33 x86_64, so the Element PAPI and the engine are the same code; the silicon and the device image are not. This is the recycling card: forty rows inside a 200 px viewport behind a sized wrapper, four bounded __InvokeUIMethod scroll attempts, and the host's own componentAtIndex/enqueueComponent counters around the scroll window. Measured answer: the host asked for 0 cells and released 0. The manifest's commit is pinned by the evidence commit that follows the change it backs."
+}

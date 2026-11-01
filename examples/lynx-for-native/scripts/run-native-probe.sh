@@ -11,10 +11,12 @@
 #   stylesheet2   stylesheet-probe-v2.lynx.bundle  [solid-lynx ss2]
 #   stylesheet3   stylesheet-probe-v3.lynx.bundle  [solid-lynx ss3]
 #   list          list-probe.lynx.bundle           [solid-lynx lp]
+#   list-recycle  list-recycle-probe.lynx.bundle   [solid-lynx lr]
 #
 # The bundle stem is accepted as an alias, so `smoke` == `main`,
 # `stylesheet` == `stylesheet-probe`, `stylesheet2` == `stylesheet-probe-v2`,
-# and `list` == `list-probe`.
+# `stylesheet3` == `stylesheet-probe-v3`, `list` == `list-probe`, and
+# `list-recycle` == `list-recycle-probe`.
 #
 # It builds with `pnpm native:build`, serves `dist` on loopback, opens the bundle
 # through Lynx Explorer's deep link, captures logcat and a screenshot, prints the
@@ -122,11 +124,14 @@ select_card() {
       CARD="stylesheet3" ;;
     list|list-probe)
       CARD="list" ;;
+    list-recycle|list-recycle-probe|listrecycle)
+      CARD="list-recycle" ;;
     *)
       usage >&2
       fail 2 "unknown card: ${requested}. Expected one of smoke, stylesheet," \
-        "stylesheet2, stylesheet3, list (or the bundle stems main, stylesheet-probe," \
-        "stylesheet-probe-v2, stylesheet-probe-v3, list-probe)." ;;
+        "stylesheet2, stylesheet3, list, list-recycle (or the bundle stems main," \
+        "stylesheet-probe, stylesheet-probe-v2, stylesheet-probe-v3, list-probe," \
+        "list-recycle-probe)." ;;
   esac
 
   case "${CARD}" in
@@ -155,6 +160,11 @@ select_card() {
       BUNDLE_STEM="list-probe"
       BUNDLE_NAME="list-probe.lynx.bundle"
       LOG_PREFIX="[solid-lynx lp]" ;;
+    list-recycle)
+      CARD_TITLE="native list recycle probe"
+      BUNDLE_STEM="list-recycle-probe"
+      BUNDLE_NAME="list-recycle-probe.lynx.bundle"
+      LOG_PREFIX="[solid-lynx lr]" ;;
   esac
 }
 

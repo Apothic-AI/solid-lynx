@@ -874,7 +874,7 @@ describe("verify-native-probe: what it refuses to guess", () => {
     ));
 
     expect(run.status).toBe(2);
-    expect(run.stderr).toContain("contains no [solid-lynx ss3], [solid-lynx ss2], [solid-lynx ss], [solid-lynx lp] line");
+    expect(run.stderr).toContain("contains no [solid-lynx ss3], [solid-lynx ss2], [solid-lynx ss], [solid-lynx lr], [solid-lynx lp] line");
     expect(run.stdout).toContain("could not evaluate");
   });
 
@@ -882,7 +882,7 @@ describe("verify-native-probe: what it refuses to guess", () => {
     const run = runVerifier(writeCapture(""));
 
     expect(run.status).toBe(2);
-    expect(run.stderr).toContain("contains no [solid-lynx ss3], [solid-lynx ss2], [solid-lynx ss], [solid-lynx lp]");
+    expect(run.stderr).toContain("contains no [solid-lynx ss3], [solid-lynx ss2], [solid-lynx ss], [solid-lynx lr], [solid-lynx lp]");
   });
 
   it("cannot evaluate a marker with no JSON after it", () => {
@@ -1376,6 +1376,117 @@ describe("verify-native-probe: the stylesheet v3 card", () => {
 
     const v1 = runVerifier(fixture("stylesheet-good.log"));
     expect(v1.stdout).not.toContain("stylesheet-v3");
+  });
+});
+
+describe("verify-native-probe: the list-recycling card", () => {
+  const LR = "[solid-lynx lr]";
+
+  /** Rewrites one framed stage line, keeping the bridge's framing intact. */
+  const rewrite = (text: string, stage: string, edit: (payload: any) => void): string =>
+    text.split("\n").map(one => {
+      if (!one.includes(`"stage":"${stage}"`)) return one;
+      const at = one.indexOf(`${LR} `);
+      const end = one.lastIndexOf("}");
+      const payload = JSON.parse(one.slice(at + LR.length + 1, end + 1));
+      edit(payload);
+      return one.slice(0, at) + `${LR} ` + JSON.stringify(payload) + one.slice(end + 1);
+    }).join("\n");
+
+  it("verifies a capture where the host asked for no cells and released none", () => {
+    // The honest zero: the card scrolled, the host's counters stayed at zero, and
+    // the capture carries the reason that keeps the zero from being read as
+    // "cannot recycle".
+    const run = runVerifier(fixture("list-recycle-zero.log"));
+
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: verified");
+    expect(run.stdout).toContain("8 required stage(s) present");
+    expect(run.stdout).toContain("list-recycle");
+    expect(run.stdout).toContain("host asked on its own false");
+    expect(run.stdout).toContain("callbacks fired 4");
+    expect(run.stdout).toContain("enqueueComponent 0");
+    expect(run.stdout).toContain("host recycled false");
+  });
+
+  it("reports a capture that stops before the recycling answer", () => {
+    const text = readFileSync(fixture("list-recycle-zero.log"), "utf8");
+    const truncated = text
+      .split("\n")
+      .filter(one => !one.includes('"stage":"recycle"'))
+      .join("\n");
+    const run = runVerifier(writeCapture(truncated));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[missing-stage]");
+    expect(run.stdout).toContain("`recycle`");
+  });
+
+  it("flags a zero release count with no reason, because a bare zero is not an answer", () => {
+    const text = readFileSync(fixture("list-recycle-zero.log"), "utf8");
+    const rewritten = rewrite(text, "recycle", payload => {
+      delete payload.reason;
+    });
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[missing-field]");
+    expect(run.stdout).toContain("reason");
+  });
+
+  it("flags a hostRecycled flag that disagrees with the counter it is derived from", () => {
+    const text = readFileSync(fixture("list-recycle-zero.log"), "utf8");
+    const rewritten = rewrite(text, "recycle", payload => {
+      payload.hostRecycled = true;
+    });
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[derived-field-mismatch]");
+    expect(run.stdout).toContain("hostRecycled");
+  });
+
+  it("flags a scroll stage whose fired-callback count disagrees with its attempts", () => {
+    const text = readFileSync(fixture("list-recycle-zero.log"), "utf8");
+    const rewritten = rewrite(text, "scroll", payload => {
+      payload.callbacksFired = payload.callbacksFired + 1;
+    });
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[derived-field-mismatch]");
+    expect(run.stdout).toContain("callbacksFired");
+  });
+
+  it("requires the list-recycling stage set the card actually emits", () => {
+    const sourcePath = path.join(REPO_ROOT, "examples", "lynx-for-native", "src",
+      "list-recycle-probe.ts");
+    const wrapped = emittedStages(sourcePath, "stage");
+    const direct = emittedStages(sourcePath, "lrReportLine");
+
+    expect([...wrapped, ...direct]).toEqual([
+      "inventory",
+      "create",
+      "viewport",
+      "scroll",
+      "recycle",
+      "reorder",
+      "summary",
+      "done",
+    ]);
+  });
+
+  it("keeps the list probe from being read as the recycling card and back", () => {
+    const recycle = runVerifier(fixture("list-recycle-zero.log"));
+    expect(recycle.stdout).toContain("card 1 of 1 — list-recycle —");
+    expect(recycle.stdout).not.toContain("card 1 of 1 — list —");
+
+    const list = runVerifier(fixture("list-recycles.log"));
+    // The capture path contains "list-recycle" as a substring of its own name, so
+    // the card identity is what is compared, not the path.
+    expect(list.stdout).toContain("card 1 of 1 — list —");
+    expect(list.stdout).not.toContain("card 1 of 1 — list-recycle —");
   });
 });
 
