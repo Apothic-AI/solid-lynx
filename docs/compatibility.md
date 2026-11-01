@@ -362,8 +362,9 @@ specifier starts resolving again.
   0.26.2, any Lynx toolchain other than the pinned set in `package.json`, or any
   OS other than `ubuntu-latest`. One execution on one commit is also not a
   cadence and not a guarantee about the next commit — and it is worth reading the
-  whole run list rather than only the green one: of the six CI runs so far, two
-  were red, both on the `browser` job and neither on a version axis.
+  whole run list rather than only the green one: as of `88b923d`, seven CI runs had
+  completed: five green and two red, both red on the `browser` job and neither on
+  a version axis.
 - **The Solid matrix tests the full admitted range; the green run is what
   licenses that sentence.** `^1.9.15` admits exactly `1.9.15`, `1.9.16`, and
   `1.9.17` (checked against the published list; `1.9.14` and below and every

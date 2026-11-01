@@ -497,7 +497,7 @@ landed, and where to read it:
   finished 9/9 jobs green on `headSha` `172bafc`, so the workflow is now defined,
   statically parsed, locally replayed, **and** observed running. That is what
   closed the 1.0 box about CI verification. It is one execution on one commit,
-  not a cadence, and of the six runs so far two were red, both on `browser`.
+  not a cadence, and as of `88b923d` seven runs had completed: five green and two red, both red on `browser`.
   `native-build` compiles the native bundle and **executes nothing
   native**; `native-evidence` is written to enforce that a native-facing change
   carries a stored, verifier-passing

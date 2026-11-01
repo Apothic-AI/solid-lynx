@@ -691,8 +691,9 @@ What that means for the milestone criterion: "core behavior continuously
 validated in supported runtimes" now has one CI execution behind it as well as
 the local gate. **One execution on one commit is not a cadence.** Nothing in
 this file claims CI runs on a schedule, that a future commit is enforced, or
-that a red run is impossible — two of the six runs so far were red, both on the
-`browser` job, and one of those was a pull request. Continuous validation is
+that a red run is impossible — as of `88b923d`, seven runs had completed: five
+green and two red, both red on the `browser` job, and one of those was a pull
+request. Continuous validation is
 still the workflow's job; what changed is that the workflow has now been
 observed doing it rather than only parsed and replayed.
 
