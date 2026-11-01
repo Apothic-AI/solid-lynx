@@ -479,58 +479,76 @@ Native is not measured for the renderer's purposes, and the inventory half is
 measured: both the A03 hand run and the API 33 emulator capture record that a
 native host **does** expose `__LoadStyleSheet`, `__AdoptStyleSheet`, and
 `__ReplaceStyleSheets`, names web-core does not have. What they accept and do is
-now partly measured on the emulator — see "The five measured stylesheet facts"
-below — and the parts that are not measured are named there rather than left
-implied. `@lynx-js/types` is still not a dependency, so their declared contract
+now measured on the emulator as *calls* — see "The measured stylesheet facts"
+below. The v3 run establishes that the host hands back an opaque style-object
+handle, and that a load hands back nothing at all; ownership, application and
+removal of a loaded sheet remain unmeasured, and are named as such rather than
+left implied. `@lynx-js/types` is still not a dependency, so their declared contract
 is not described either.
 
-#### The five measured stylesheet facts
+#### The measured stylesheet facts
 
-All of these calls were made on the API 33 emulator, Lynx Explorer 4.1.0, and
-every one is traceable to a stored line. The v2 capture's own `summary` counts
-them: `attemptsRecorded: 16`, `callsThatThrew: 10`, `callsThatReturned: 6`,
-`handlesReturned: 0`. The arity facts come from the **v2** capture's
-`loadstyle-arity`, `adopt-arity` and `replace-arity` stages; the one-argument
-negative result is independently recorded in the **v1** capture's
+Every call below was made on the API 33 emulator, Lynx Explorer 4.1.0, and every
+one is traceable to a stored line. The **v3** capture is the record with a
+manifest (`docs/evidence/native/2026-11-01-emulator-api33-stylesheet-v3/`); its
+own `summary` counts `attemptsRecorded: 25`, `callsThatThrew: 10`,
+`callsThatReturned: 15`, `candidatesReturned: 5`, `offersMade: 13`. The
+`__LoadStyleSheet` arity facts come from **v2** and are repeated in **v3**; the
+one-argument negative result is independently recorded in the **v1** capture's
 `load-real-url` stage, on the same engine.
 
 | # | Fact | Engine answer | Where |
 | --- | --- | --- | --- |
-| 1 | `__LoadStyleSheet` requires **two** parameters, the second a **String** | `[url]` throws `LoadStyleSheet param size should >= 2`; `[url, null]`, `[url, 0]`, `[url, {}]`, `[url, function(){}]`, `[url, []]` throw `LoadStyleSheet param 1 should be String`; `[url, "utf-8"]` and `[url, url2]` **return `null`** | v2 `loadstyle-arity`; v1 `load-real-url` |
-| 2 | `__AdoptStyleSheet` requires **>= 1** parameter | `[]` throws `AdoptStyleSheet param size should >= 1`; `[null]` and `[{}]` throw `AdoptStyleSheet param 0 should be RefCounted` | v2 `adopt-arity` |
-| 3 | `__ReplaceStyleSheets` accepts nothing and reports nothing | `[]`, `[null]`, `[[]]` all **return `null`** and none throws — so nothing about a set's ownership is proven by the call | v2 `replace-arity` |
-| 4 | **No call in any card returned a stylesheet handle** | `returnedHandles: 0` in both v2 arity stages and in the lifecycle stage; `__CreateStyleObject` exists and returns a **plain object** (`typeof "object"`, empty keys), not an opaque handle | v2 `loadstyle-arity`, `adopt-arity`, `replace-arity`, `style-object-path`, `lifecycle` |
-| 5 | The **lifecycle is still unmeasured**, and why | No handle means nothing to adopt and no set to replace with; the v2 card recorded that in its own `summary.unmeasured` rather than inferring it | v2 `summary` |
+| 1 | `__LoadStyleSheet` requires **two** parameters, the second a **String** | `[url]` throws `LoadStyleSheet param size should >= 2`; `[url, null]`, `[url, 0]`, `[url, {}]`, `[url, function(){}]`, `[url, []]` throw `LoadStyleSheet param 1 should be String`; `[url, "utf-8"]` and `[url, url2]` **return `null`** | v2 `loadstyle-arity`; v3 `load-retry`; v1 `load-real-url` |
+| 2 | A load hands back **no handle**, and ignores a third argument | `[url, "utf-8", <a value the host returned>]` returns `null`, exactly as the two-argument form does | v3 `load-retry` |
+| 3 | `__AdoptStyleSheet` requires **one `RefCounted` argument** | `[]` throws `param size should >= 1`; `[null]` and `[[<a value the host returned>]]` throw `param 0 should be RefCounted`; **`[<that value>]` returns `null`** | v2 `adopt-arity`; v3 `adopt-retry` |
+| 4 | `__CreateStyleObject` hands back an **opaque host object** | five of eight shapes return a value; it reports `typeof "unknown"`, `Object.prototype.toString` `[object Object]`, a **null prototype**, no own property names, and it is not the argument it was given | v3 `create-style-object`, `handle-verdict` |
+| 5 | That object **is accepted where a `RefCounted` is demanded** | `__AdoptStyleSheet(value)` returned; `__SetStyleObject(value, <parsed style map>)` returned `null` | v3 `adopt-retry`, `style-object-setters`, `handle-verdict` |
+| 6 | The other style setters demand **two** parameters | `__SetParsedStyles(value)` throws `FiberSetParsedStyles param size should >= 2`; `__UpdateStyleObject(value)` throws `UpdateStyleObject param size should >= 2` | v3 `style-object-setters` |
+| 7 | `__ReplaceStyleSheets` accepts anything and reports nothing | `[]`, `[null]`, `[[]]`, `[<value>]` and `[[<value>]]` all **return `null`**; none throws | v2 `replace-arity`; v3 `replace-retry` |
+| 8 | The surface names **no cleanup verb** | no style-named global contains release, destroy, free, unload, remove, dispose, delete or cleanup | v3 `lifecycle` |
 
-The second parameter is therefore an **encoding/label string**, not an instance or
-context: everything that is not a String is rejected by name, and the Strings
-that were tried were accepted. `fn.length` is `0` for all three operations, so
-`fn.length` is **not** the signature — this is the trap the earlier version of
-this section warned about, and the engine's own error text is the answer. The
-engine enforces parameter count and type at call time, so a caller that reads
-`arity` and passes one argument gets a throw, not a load.
+**Fact 2 is what keeps a loaded stylesheet out of reach.** A load that reaches a
+stylesheet returns `null`: it hands back nothing to adopt, replace or remove. The
+card loads `probe.css` and `probe-2.css`, whose rules match nothing it renders,
+precisely so that a successful load cannot change what it observes.
 
-**Fact 5 is the one that keeps this capability out of the renderer.** Fact 4 is
-why fact 5 follows, and the v2 capture says it in its own words, in
-`summary.unmeasured`:
+**Fact 4 corrects v2, and the correction is the point of the v3 run.** v2's
+capture recorded `returnedHandles: 0` and described the value
+`__CreateStyleObject` returned as a *plain object*. It is not plain: it is an
+opaque host object whose `typeof` is `"unknown"`, and v2's `isOpaqueHandle`
+predicate tested `typeof value === "object"`, which is `false` for exactly this
+value. The host had handed it a handle and the card's own test discarded it. v3
+offers every returned value back to the host instead of deciding in advance what
+it is, and the host accepts it: adopt accepts it as `RefCounted`, and
+`__SetStyleObject` accepts it with a parsed style map.
 
-> No call in this card returned a handle, so there is nothing to adopt and no
-> set to replace with. The cases that could run (null, {}, []) were run and are
-> recorded above; the handle cases were skipped rather than fabricated.
+**Fact 3 and fact 5 are what a stylesheet handle would have to be.** Adopt's type
+check accepts the style object and rejects `null` and an array containing it, so
+the check is real and the value passes it. What that does **not** show is a
+loaded stylesheet: the handle is the one `__CreateStyleObject` makes.
 
-So: **what a stylesheet handle is, how one is created, how it is adopted, and how
-a set of them is replaced are all unknown.** A load that reaches a stylesheet
-returns `null`; it does not say the sheet is owned, is applied, can be removed,
-or that a rule in it took effect. The card loads `probe.css`, whose rules match
-nothing it renders, precisely so that a successful load cannot change what the
-card observes. Nothing in `src/` may call these bindings on the strength of what
-is measured here, and nothing does.
+**What is still unmeasured, and why it is not a gap.** Ownership, application,
+replacement and cleanup of a *loaded* stylesheet: a load returns `null`, replace
+returns `null` for every set offered, and the surface names no release verb, so
+there is no call this card could make that would answer them. Whether a rule in
+a loaded sheet is applied is unmeasurable with these bindings: the readbacks are
+the card's own styles, and the served rules match nothing it renders. The v3
+capture states both in its own `summary.unmeasured`.
 
-Two limits on the table above, stated so it is not read as more than it is: all
-five facts are from **one runtime** (the API 33 `x86_64` emulator), and **none of
-them is an A03 measurement** — the A03 run observed the three globals and nothing
-more. If the tablet's engine ever disagrees, that is a new measurement, not a
-contradiction of one.
+One hazard belongs with the facts. `__GetComputedStyleByKey(value, "color")`
+returned `""` in one probe run and killed the Explorer process with a `SIGSEGV`
+inside `liblynx` in four others. The committed card therefore does not make that
+call, and the probe run that did is stored as supporting bytes beside the
+capture (`probe-getter-returned.log`, `crash-getter-offer.log`) rather than
+being read as a record. An emulator-visible crash is a property of this engine
+at this build, not evidence about a rule.
+
+Two limits on the table above, stated so it is not read as more than it is: every
+fact is from **one runtime** (the API 33 `x86_64` emulator), and **none is an A03
+measurement** — the A03 run observed the three globals and nothing more. If the
+tablet's engine ever disagrees, that is a new measurement, not a contradiction of
+one.
 
 ### The native stylesheet probe
 
@@ -623,19 +641,53 @@ checker that treated it as a finding would invert the card's purpose. A
 `lifecycle` payload whose `claim` reads as an applied rule or an owned sheet is a
 finding (`lifecycle-claim`).
 
-**v2 has now been run once on the same engine, and it answered the arity
-question.** A `[solid-lynx ss2]` capture was taken on Lynx Explorer 4.1.0 on API
-33 `x86_64` (`docs/evidence/native/2026-10-25-emulator-api33-stylesheet-v2/capture.log`)
-and its `loadstyle-arity` stage produced the three distinct answers in the table
-above — which is where the encoding-string contract v1's `load-real-url` stage now
+**v2 answered the arity question, and got the handle question wrong.** A
+`[solid-lynx ss2]` capture was taken on Lynx Explorer 4.1.0 on API 33 `x86_64`
+(`docs/evidence/native/2026-10-25-emulator-api33-stylesheet-v2/capture.log`) and
+its `loadstyle-arity` stage produced the three distinct answers in the table
+above — which is where the encoding-string contract v1's `load-real-url` stage
 uses comes from. **That directory holds a capture and no `manifest.json`, so it
-is supporting bytes rather than a record**: the evidence gate does not count it,
-and neither does any claim here beyond "the bytes say this". Nothing about the
-style-object path or a lifecycle was answered by it: `style-object-path` found
-`__CreateStyleObject` existing but returning no opaque handle, so no setter was
-called with one, and `lifecycle` recorded reads of the card's own styles only.
-Those two questions remain what a further run is for, and the v2 `summary` stage
-states them in `unmeasured` — see "The five measured stylesheet facts" above.
+is supporting bytes rather than a record.** Its `style-object-path` stage is
+right that `__CreateStyleObject({})` returned a value, and wrong to call it a
+plain object: the value is an opaque host object whose `typeof` is `"unknown"`,
+which v2's `isOpaqueHandle` predicate did not recognise, so its capture recorded
+`returnedHandles: 0` for a handle the host had handed it. v2 is kept unaltered as
+the ground truth v3 reasons from; the correction is in the v3 section below and in
+fact 4 of the table above.
+
+### The third native stylesheet probe (v3)
+
+`examples/lynx-for-native/src/stylesheet-probe-v3.ts` is the card that asks the
+one question v1 and v2 left open: does this host ever hand a JavaScript caller an
+opaque handle? It runs under `[solid-lynx ss3]` and its own probe name
+(`native-stylesheet-papi-v3`), and it is built by `pnpm native:build`.
+
+Its rule is simple and it is what makes the run a measurement: **every value the
+host returns is carried forward and offered back**, and the host's own type check
+decides what the value is. No predicate in the card decides in advance that a
+value is or is not a handle.
+
+| Stage | What it does | Why that is allowed |
+| --- | --- | --- |
+| `inventory-v3` | The same description of every style-named global that v2 records, under this card's stage name | Reading a binding cannot mutate the card, and identical payloads keep the two captures comparable. |
+| `create-style-object` | `__CreateStyleObject` with eight argument shapes: none, `{}`, a marked object, `[]`, a parsed-style array, a string, `0`, a function | Five returned a value and three threw by type. The marked arguments let the capture separate "the host echoed its input" from "the host built something new"; every returned value is compared by identity with the argument it was given. |
+| `style-object-setters` | `__SetParsedStyles`, `__UpdateStyleObject` and `__SetStyleObject` offered the value, with a parsed style map where a second parameter is needed | Only values the host returned are passed. Each binding gets its own bounded list, and a `offer-start` line names the binding before the call so a native crash is attributable. |
+| `load-retry` | `__LoadStyleSheet` at the two shapes v2 measured, plus `[url, value]` and `[url, "utf-8", value]` | The repeated shapes keep the run comparable; the new ones ask whether a load can hand back a handle at all. It cannot: all but the non-String case return `null`. |
+| `adopt-retry` | `__AdoptStyleSheet` with `[]`, `[null]`, `[value]` and `[[value]]` | Adopt's own error text names the type it wants, so its answer is the host answering the handle question in its own words. It accepts `[value]`. |
+| `replace-retry` | `__ReplaceStyleSheets` with the three measured shapes plus `[[value]]` and `[value]` | Every shape returns `null`, as v2 measured for the empty ones, so a return from replace is never read as acceptance. |
+| `handle-verdict` | Two derived answers, each from the calls above: whether a style binding accepted the value, and whether adopt did | The two are separate because they have different answers; the verdict's own fields are the calls it was computed from, and a `derived-field-mismatch` is what an edited capture produces. |
+| `lifecycle` | Read-only readbacks of the card's own styles, plus every style-named global whose name carries a cleanup verb | Read-only, run last, and the served rules match nothing the card renders. `releaseScopedNames: []` is the measurement that there is no cleanup call to make. |
+| `summary` | Counters derived from the stages, the two answers, and what is still unmeasured | Built from the verdict rather than written in advance, so a run that found nothing could not claim it found a handle. |
+| `done` | `status: "all stages logged"` | A capture that stops earlier is visibly short. |
+
+One call is deliberately **absent** from the committed card.
+`__GetComputedStyleByKey(value, "color")` is the only read that shows the host
+resolving the value, and it returned `""` in one probe run — but it also killed
+Explorer with a `SIGSEGV` inside `liblynx` in four later runs of the same build. A
+stored capture has to come from a run that reached `done`, so the card makes only
+the offers that never crashed it, and the getter's one answer is kept in
+`probe-getter-returned.log` beside the record. The crash is in
+`crash-getter-offer.log`. Neither is a record.
 
 #### What can be verified by process
 
@@ -884,9 +936,11 @@ true until the ordering is fixed upstream.
 - Native PAPI names: both the A03 hand run and the emulator captures recorded the
   global inventory (for example `__SetCSSId`, `__LoadStyleSheet`,
   `__AdoptStyleSheet`, `__ReplaceStyleSheets` all exist). On the emulator the
-  stylesheet names' **call-time arity and return values** are now measured (see
-  "The five measured stylesheet facts"), and their **semantics — ownership,
-  application, removal — are not**, because no call returned a handle.
+  stylesheet names' **call-time arity and return values** are measured, and so is
+  the **style-object handle** `__CreateStyleObject` returns (see "The measured
+  stylesheet facts"). What a **loaded** stylesheet's semantics are — ownership,
+  application, removal — is still not measured, because a load returns `null` and
+  the surface names no release verb.
 - Gestures are the only silent failure. Making them fail loudly would mean
   changing the property path in `src/lynx-host.ts`, which is renderer behaviour
   rather than a platform capability, so it is left for a deliberate change.

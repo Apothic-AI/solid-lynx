@@ -517,13 +517,15 @@ stylesheets the Lynx toolchain already compiled into the bundle. Loading,
 adopting, replacing, or removing a stylesheet at runtime is **unsupported**:
 web-core exposes no Element PAPI for it, and the native globals the device
 inventory listed (`__LoadStyleSheet`, `__AdoptStyleSheet`,
-`__ReplaceStyleSheets`) have a measured call shape but **no measured lifecycle**
-— on the API 33 `x86_64` emulator, `__LoadStyleSheet` needs a second String
-parameter and returns `null`, `__AdoptStyleSheet` requires at least one
-parameter, and no call in any card returned a stylesheet handle, so nothing can
-be said about ownership, removal, or an applied rule. See
+`__ReplaceStyleSheets`) have measured call shapes but **no measured lifecycle for
+a loaded sheet**. On the API 33 `x86_64` emulator a load needs a second String
+parameter and returns `null`, even with a third argument, so a loaded sheet hands
+back nothing to adopt, replace or remove. A **style-object handle does exist**:
+`__CreateStyleObject` returns an opaque host object and `__AdoptStyleSheet`
+accepts it where it demands a `RefCounted` value. That is not a loaded
+stylesheet, and nothing here may call these bindings on the strength of it. See
 [capabilities.md](capabilities.md), "Stylesheet loading and lifecycle" and "The
-five measured stylesheet facts".
+measured stylesheet facts".
 
 Native status of `__SetCSSId`: both device inventories recorded that the global
 exists, but `root.setCSSId()` has never been exercised on a device or an emulator.
@@ -919,7 +921,7 @@ and [ROADMAP.md](../ROADMAP.md).
 | Dual-thread execution, worklets, first-screen synchronization | Not implemented by this renderer. Both examples build with `background: false`. A background-thread card is unverified; worklets belong to Lynx's compiler and are out of scope. | `ROADMAP.md` 0.3 unchecked item and "Out of scope"; `docs/building.md` "Dual-thread execution"; `docs/parity-checklist.md` "Runtime behaviour" |
 | Native `global-bind` delivery | The renderer registers and removes the binding correctly; whether a host invokes it is unmeasured. web-core files the handler in its own slot but does not run the global pass for function callbacks. | `docs/capabilities.md`; `docs/parity-checklist.md`; `README.md` "Events and properties" |
 | Event capture/propagation parity on native | The capture, bubble, and catch passes are tested against the fake PAPI and the web host. Native is **not measured**. | `docs/parity-checklist.md` "Runtime behaviour"; `test/renderer.test.ts:887-950` |
-| Native stylesheet lifecycle | `__LoadStyleSheet`, `__AdoptStyleSheet`, `__ReplaceStyleSheets` exist in both device inventories. Their call shape is now measured on the API 33 emulator — load needs a second String parameter and returns `null`, adopt needs `>= 1` parameter, replace accepts `[]`/`[null]`/`[[]]` and returns `null` — but **no call returned a stylesheet handle**, so adoption, replacement, ownership and cleanup are unmeasured. Not integrated. | `docs/capabilities.md` "Stylesheet loading and lifecycle" and "The five measured stylesheet facts"; `ROADMAP.md` 0.4 open item |
+| Native stylesheet lifecycle | `__LoadStyleSheet`, `__AdoptStyleSheet`, `__ReplaceStyleSheets` exist in both device inventories, and their call shapes are measured on the API 33 emulator. A **loaded** sheet hands back nothing: load needs a second String parameter, ignores a third, and returns `null`; replace returns `null` for every set offered; no style-named global carries a cleanup verb. A **style-object handle** is reachable: `__CreateStyleObject` returns an opaque host object and `__AdoptStyleSheet` accepts it as `RefCounted`. Ownership, application and removal of a loaded sheet are unmeasured. Not integrated. | `docs/capabilities.md` "Stylesheet loading and lifecycle" and "The measured stylesheet facts"; `docs/evidence/native/2026-11-01-emulator-api33-stylesheet-v3/`; `ROADMAP.md` 0.4 open item |
 | Native list behaviour and cell recycling | The renderer has a list adapter (§11) measured against web-core. On the API 33 emulator the card measured create (handle returned, `typeof` `"unknown"`), materialize (3 children), keyed identity across a permuted model (3 rows moved, 0 released), and a shrink (2 rows released) — but **no host in this repository has been observed to recycle a cell**, and `enqueueComponent` was never called in any stage. Recycling, scrolling and cell reuse timing are **unmeasured**; there is no A03 list run at all. | `docs/capabilities.md` "List virtualization"; `docs/session-handoff.md`; `ROADMAP.md` 0.4 list entry |
 | Gesture PAPI | No gesture binding form. `gesture-*` props are written as plain attributes and never fire — the one documented silent failure. | `docs/capabilities.md` "Gestures" |
 | Animation PAPI exposure | `__ElementAnimate` exists on web-core; nothing in this renderer calls it and the package exposes no animation API. Use inline styles and CSS transitions. | `docs/capabilities.md` "Animation" |
@@ -964,8 +966,19 @@ documented intention:
     of those three manifests carries a verifier exit code of 0 and the runtime it
     was taken on. The v2 stylesheet capture is stored **without** a manifest, so
     it is supporting bytes and not a record.
-  - **Still unmeasured after both runs:** the stylesheet lifecycle (no call
-    returned a handle), list cell recycling, scrolling, and cell reuse timing
+  - **The 2026-11-01 API 33 `x86_64` emulator run answers the handle question.**
+    The third stylesheet card offered the values the host returned back to the
+    host: `__CreateStyleObject` returns an opaque host object (`typeof` reports
+    `"unknown"`, null prototype, no own property names), `__AdoptStyleSheet`
+    accepts it, `__SetStyleObject` accepts it with a parsed style map, and a load
+    still returns `null` — so a loaded stylesheet hands back nothing to adopt.
+    The record is `docs/evidence/native/2026-11-01-emulator-api33-stylesheet-v3/`
+    (manifest, verifier exit 0). Two supporting logs beside it are not records:
+    one is the probe run where `__GetComputedStyleByKey` returned, the other a
+    run where that same call killed Explorer with a `SIGSEGV`.
+  - **Still unmeasured after every run:** ownership, application and removal of a
+    **loaded** stylesheet (a load returns `null` and the surface names no cleanup
+    verb), list cell recycling, scrolling, and cell reuse timing
     (`enqueueComponent` was never called and the card never scrolls), native
     cleanup after `dispose()` (§9), native `__SetCSSId` execution, event
     capture/propagation on native, `global-bind` delivery, and every
@@ -974,7 +987,8 @@ documented intention:
     physical-device measurement of GPU, touch latency, or memory pressure.
   - The probe cards are built by `pnpm native:build` and covered by host-free
     recorder tests (`test/stylesheet-probe-report.test.ts`,
-    `test/stylesheet-probe-v2-report.test.ts`, `test/list-probe-report.test.ts`).
+    `test/stylesheet-probe-v2-report.test.ts`, `test/stylesheet-probe-v3-report.test.ts`,
+    `test/list-probe-report.test.ts`).
     No native runtime executes in CI, and no card has ever been run through
     `examples/lynx-for-native/scripts/run-native-probe.sh` — the stored captures
     were taken by opening the bundles in Explorer directly.

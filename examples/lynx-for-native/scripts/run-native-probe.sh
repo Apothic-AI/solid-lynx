@@ -9,6 +9,7 @@
 #   smoke         main.lynx.bundle                 [solid-lynx parity]
 #   stylesheet    stylesheet-probe.lynx.bundle     [solid-lynx ss]
 #   stylesheet2   stylesheet-probe-v2.lynx.bundle  [solid-lynx ss2]
+#   stylesheet3   stylesheet-probe-v3.lynx.bundle  [solid-lynx ss3]
 #   list          list-probe.lynx.bundle           [solid-lynx lp]
 #
 # The bundle stem is accepted as an alias, so `smoke` == `main`,
@@ -117,13 +118,15 @@ select_card() {
       CARD="stylesheet" ;;
     stylesheet2|stylesheet-v2|stylesheet-probe-v2)
       CARD="stylesheet2" ;;
+    stylesheet3|stylesheet-v3|stylesheet-probe-v3)
+      CARD="stylesheet3" ;;
     list|list-probe)
       CARD="list" ;;
     *)
       usage >&2
       fail 2 "unknown card: ${requested}. Expected one of smoke, stylesheet," \
-        "stylesheet2, list (or the bundle stems main, stylesheet-probe," \
-        "stylesheet-probe-v2, list-probe)." ;;
+        "stylesheet2, stylesheet3, list (or the bundle stems main, stylesheet-probe," \
+        "stylesheet-probe-v2, stylesheet-probe-v3, list-probe)." ;;
   esac
 
   case "${CARD}" in
@@ -142,6 +145,11 @@ select_card() {
       BUNDLE_STEM="stylesheet-probe-v2"
       BUNDLE_NAME="stylesheet-probe-v2.lynx.bundle"
       LOG_PREFIX="[solid-lynx ss2]" ;;
+    stylesheet3)
+      CARD_TITLE="native stylesheet probe v3"
+      BUNDLE_STEM="stylesheet-probe-v3"
+      BUNDLE_NAME="stylesheet-probe-v3.lynx.bundle"
+      LOG_PREFIX="[solid-lynx ss3]" ;;
     list)
       CARD_TITLE="native list probe"
       BUNDLE_STEM="list-probe"
@@ -376,14 +384,16 @@ main() {
 
   if (( positional == 0 )); then
     usage >&2
-    fail 2 "no card given. Expected one of smoke, stylesheet, stylesheet2, list."
+    fail 2 "no card given. Expected one of smoke, stylesheet, stylesheet2," \
+      "stylesheet3, list."
   fi
 
   assert_serial
 
   # The stylesheet cards point __LoadStyleSheet at fixed probe.css URLs on 8099,
   # so a moved port would fail those stages rather than the run.
-  if [[ ( "${CARD}" == "stylesheet" || "${CARD}" == "stylesheet2" ) && "${LOOPBACK_PORT}" != "8099" ]]; then
+  if [[ ( "${CARD}" == "stylesheet" || "${CARD}" == "stylesheet2"
+    || "${CARD}" == "stylesheet3" ) && "${LOOPBACK_PORT}" != "8099" ]]; then
     log "warning: the ${CARD} card loads http://127.0.0.1:8099/probe.css, so" \
       "with LOOPBACK_PORT=${LOOPBACK_PORT} its load stages cannot succeed."
     log ""

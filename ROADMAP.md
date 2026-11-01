@@ -144,18 +144,27 @@ Add platform features through explicit, testable adapters while keeping the core
       String parameter and `[url, "utf-8"]` returns `null`; `__AdoptStyleSheet`
       throws `param size should >= 1` with no arguments;
       `__ReplaceStyleSheets` accepts `[]`, `[null]` and `[[]]` and returns `null`
-      without throwing — and **no call returned a stylesheet handle**, so the
-      lifecycle (what a handle is, how one is created, adopted, or replaced) is
-      still unmeasured. That is why the box stays open: the capability is not
-      merely unexercised, it has no ownership contract to implement against
-      (`docs/capabilities.md`, "The five measured stylesheet facts").
+      without throwing. The third card then answered the handle question the
+      first two left open: `__CreateStyleObject` returns an **opaque host
+      object** (`typeof` reports `"unknown"`, null prototype, no own property
+      names), and `__AdoptStyleSheet` accepts it where it demands a `RefCounted`
+      value — so a style-object handle *does* exist, while a **loaded** sheet
+      still hands back nothing (`__LoadStyleSheet` returns `null`, replace returns
+      `null` for every set, and no style-named global carries a cleanup verb).
+      That is why the box stays open: there is no ownership, application or
+      removal contract for a loaded sheet to implement against
+      (`docs/capabilities.md`, "The measured stylesheet facts";
+      `docs/evidence/native/2026-11-01-emulator-api33-stylesheet-v3/`).
   - **How the native half is measured, and recorded.** The cards are
     `examples/lynx-for-native/src/stylesheet-probe.ts` (v1, one
     `[solid-lynx ss]` line per stage) and
     `examples/lynx-for-native/src/stylesheet-probe-v2.ts` (v2, one
-    `[solid-lynx ss2]` line per stage), both built by `pnpm native:build` as
-    `dist/stylesheet-probe.lynx.bundle` and
-    `dist/stylesheet-probe-v2.lynx.bundle`. They call only what cannot mutate the
+    `[solid-lynx ss2]` line per stage) and
+    `examples/lynx-for-native/src/stylesheet-probe-v3.ts` (v3, one
+    `[solid-lynx ss3]` line per stage plus `offer-start` extras), all built by
+    `pnpm native:build` as `dist/stylesheet-probe.lynx.bundle`,
+    `dist/stylesheet-probe-v2.lynx.bundle` and
+    `dist/stylesheet-probe-v3.lynx.bundle`. They call only what cannot mutate the
     card. The intended runner is
     `examples/lynx-for-native/scripts/run-native-probe.sh stylesheet`, which pins
     the A03 serial, serves the bundle on loopback, opens it in Explorer and
@@ -164,8 +173,10 @@ Add platform features through explicit, testable adapters while keeping the core
     runner, by opening the bundles in Explorer on an API 33 `x86_64` emulator,
     and are stored in
     `docs/evidence/native/2026-10-25-emulator-api33-stylesheet/` (record, with
-    manifest) and `.../2026-10-25-emulator-api33-stylesheet-v2/` (capture only,
-    no manifest, so it is supporting bytes and not a record).
+    manifest), `.../2026-10-25-emulator-api33-stylesheet-v2/` (capture only, no
+    manifest, so it is supporting bytes and not a record) and
+    `.../2026-11-01-emulator-api33-stylesheet-v3/` (record, with manifest and a
+    verifier exit of 0; two supporting logs beside it are not records).
   - **The capture is now verifiable by process.**
     `scripts/verify-native-probe.mjs` reads a `[solid-lynx ss]` capture and
     requires the six stylesheet stages (`inventory`, `no-arguments`,
@@ -177,8 +188,8 @@ Add platform features through explicit, testable adapters while keeping the core
     into an expected parameter count. Exit codes are 0 verified / 1 findings /
     2 could not evaluate, the same three the parity verifier uses, and
     `scripts/require-native-evidence.mjs` now runs it for a stored manifest whose
-    `card` is `stylesheet` or `stylesheet2` (parity for `smoke`, the same checker
-    for `list`).
+    `card` is `stylesheet`, `stylesheet2` or `stylesheet3` (parity for `smoke`,
+    the same checker for `list`).
     `test/native-probe-verify.test.ts` drives every exit code through a real
     process against `test/fixtures/native-probe/`, whose README states that those
     fixtures are not device evidence. The parity verifier is unchanged: it still
@@ -189,13 +200,14 @@ Add platform features through explicit, testable adapters while keeping the core
     exits 0, and no card has been executed by that script. A reviewed command
     sequence is not a measurement, and neither is a verifier that passes on a
     synthetic fixture. Since this note was first written, a real measurement has
-    been taken by hand: the v1 and v2 cards were opened in Lynx Explorer 4.1.0 on
-    an API 33 `x86_64` emulator and both captures are stored. They measured the
-    arity and return values of the three bindings and, for v2, the shape of
-    `__CreateStyleObject`'s return. They did **not** measure a lifecycle — no
-    call returned a handle — so the stylesheet half still stays open and the box
-    stays unticked, even though its CSS-id half is done and tested and its
-    capture format is checkable.
+    been taken by hand: the v1, v2 and v3 cards were opened in Lynx Explorer
+    4.1.0 on an API 33 `x86_64` emulator and all three captures are stored. They
+    measured the arity and return values of the three bindings, and v3 measured
+    what the values the host returns can be offered back to. It found a
+    style-object handle that adopt accepts, and no handle from a load — so a
+    loaded sheet's lifecycle still has nothing to implement against, the
+    stylesheet half stays open, and the box stays unticked even though its CSS-id
+    half is done and tested and its captures are checkable.
   - **The absence used to be recorded, and is now recorded as a partial
     measurement.** The pending record that named this card among its three
     (`docs/evidence/native/2026-10-25-1.0.0-pending/pending.json`) has been
@@ -266,7 +278,7 @@ Set a stable public contract after web validation, native validation, and toolin
     then the consumer fixtures), `pnpm typecheck:consumer`
     (`test/consumer/tsconfig.json` and `tsconfig.dev.json`, which assert the
     type-level rejections with `@ts-expect-error`), and `pnpm test` — measured in
-    this tree as **304 unit tests in 12 files**, of which `test/renderer.test.ts`
+    this tree as **359 unit tests in 13 files**, of which `test/renderer.test.ts`
     contributes 63 (the file has grown since this box was written; the counts
     move, the arrangement does not, and `test/documented-counts.test.ts` now
     fails when a document disagrees with the measured suite). A contract item
@@ -299,7 +311,7 @@ Set a stable public contract after web validation, native validation, and toolin
     open-ended `>=22.12.0` admits, chosen because no manifest in the graph caps
     `engines.node`. Locally the same gate exits 0 on 20.19.0, 20.20.2, 22.12.0,
     22.23.3, 24.22.1, and 26.1.0. Those runs recorded 98 tests each, which is
-    what this repository had at the time; the suite is 304 now. The 121 figure
+    what this repository had at the time; the suite is 359 now. The 121 figure
     quoted for the Node lines was re-measured on Node 22.23.3 / pnpm 12.9.1 at
     an earlier commit in this release, before the sweep and probe suites landed;
     the other five Node lines were not re-run, so their 121 is an expectation,
@@ -315,7 +327,7 @@ Set a stable public contract after web validation, native validation, and toolin
       would be red is worse than a narrowed range. On Node 22.23.3 / pnpm
       12.9.1, with the committed pins installed and `solid-js` 1.9.16 + 1.9.17
       overlaid over `babel-preset-solid` 1.9.15/1.9.16: `pnpm typecheck` exit 0,
-      `pnpm test` exit 0 with 121 tests (the suite has since grown to 304 at
+      `pnpm test` exit 0 with 121 tests (the suite has since grown to 359 at
       the same Node and pnpm, but that count was not re-run per Solid leg), and
       `pnpm web:build` exit 0 on **both**.
       Nothing failed, so the range did not need narrowing. The browser suites
@@ -535,9 +547,12 @@ Set a stable public contract after web validation, native validation, and toolin
     exist (`examples/lynx-for-native/src/stylesheet-probe.ts` and
     `.../stylesheet-probe-v2.ts`, built by `pnpm native:build`) and have now been
     run — by hand, on an API 33 `x86_64` emulator, with both captures stored —
-    and they measured the bindings' arity and return values, **not a lifecycle**:
-    no call returned a stylesheet handle, so there is still nothing whose cleanup
-    could be observed or claimed. Neither card has been run through
+    and they measured the bindings' arity and return values, **not a loaded
+    sheet's lifecycle**: a load returns `null`, so there is still nothing whose
+    cleanup could be observed or claimed. The v3 card did find a style-object
+    handle that `__AdoptStyleSheet` accepts — but it comes from
+    `__CreateStyleObject`, not from a load, and the surface names no release verb
+    for either. Neither card has been run through
     `examples/lynx-for-native/scripts/run-native-probe.sh stylesheet` (only
     `--dry-run`), and neither has run on the A03. Native cleanup *after
     `dispose()`* is unmeasured for a different reason and stays so: no card
@@ -595,10 +610,12 @@ Set a stable public contract after web validation, native validation, and toolin
     argument types, and that it returns `null` — which is a capability question,
     not this box's cleanup question. The native globals (`__LoadStyleSheet`,
     `__AdoptStyleSheet`, `__ReplaceStyleSheets`) exist and their *lifecycle* is
-    unmeasured, now for a specific reason rather than for want of a run: no call
-    in either card returned a stylesheet handle. That work is tracked where it
-    belongs, in `docs/capabilities.md` "The five measured stylesheet facts", with
-    both cards built, run, and captured.
+    unmeasured, now for a specific reason rather than for want of a run: a load
+    returns `null`, replace returns `null` for every set offered, and no
+    style-named global carries a cleanup verb. The style-object handle the host
+    does hand out is not a loaded sheet. That work is tracked where it belongs,
+    in `docs/capabilities.md` "The measured stylesheet facts", with all three
+    cards built, run, and captured.
   - **Unmeasurable here: native cleanup after `dispose()`.** The A03 device run
     exercised load, render, and tap dispatch, and the 2026-10-25 emulator captures
     exercise Element PAPI construction, the parity harness's own root disposal,

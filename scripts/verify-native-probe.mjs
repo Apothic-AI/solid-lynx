@@ -130,6 +130,71 @@ const STYLESHEET_V2_REQUIRED_STAGES = Object.freeze([
  */
 const STYLESHEET_V2_LOAD_CASE_COUNT = 8;
 
+/**
+ * The third stylesheet card's stages.
+ *
+ * It is a separate card for the same reason v2 is one: each capture is read
+ * against the stage set of the card that wrote it, and a card whose stage set
+ * grew would make its own earlier captures incomparable with its later ones.
+ * The marker is `[solid-lynx ss3]`, which is not a prefix of either predecessor.
+ */
+const STYLESHEET_V3_REQUIRED_STAGES = Object.freeze([
+  "inventory-v3",
+  "create-style-object",
+  "style-object-setters",
+  "load-retry",
+  "adopt-retry",
+  "replace-retry",
+  "handle-verdict",
+  "lifecycle",
+  "summary",
+  "done",
+]);
+
+/**
+ * The eight `__CreateStyleObject` cases the v3 card must attempt.
+ *
+ * Literal, and held to the card's own table by
+ * `test/native-probe-verify.test.ts`, which imports `createStyleObjectCases`.
+ * v2 attempted two of them; the six the v3 card adds are what separate "the host
+ * ignores its argument" from "the host built a fresh object".
+ */
+const STYLESHEET_V3_CREATE_CASE_COUNT = 8;
+
+/**
+ * The two answers the handle question can have.
+ *
+ * It is a closed set on purpose. A capture whose verdict is "probably", or a
+ * phrase describing a shape rather than a call, is not an answer this card can
+ * have measured: the verdict is computed from whether a binding accepted a value
+ * the card received.
+ */
+/**
+ * The two closed answer sets, one per question.
+ *
+ * They are separate on purpose. The first API 33 run of this card found a value the
+ * style bindings accept and that `__AdoptStyleSheet` rejects by naming
+ * `RefCounted`, so a single "handle" verdict would have to be wrong about one of
+ * them. A capture whose answer is not one of these, or a phrase describing a shape
+ * rather than a call, is not an answer this card can have measured.
+ */
+const STYLESHEET_V3_STYLE_OBJECT_VERDICTS = Object.freeze([
+  "style-binding-accepted-the-value",
+  "no-style-binding-accepted-the-value",
+]);
+
+const STYLESHEET_V3_STYLESHEET_HANDLE_VERDICTS = Object.freeze([
+  "adopt-accepted-the-value",
+  "no-adopt-accepted-the-value",
+]);
+
+/** The four bindings a card-created value must be offered to. */
+const STYLESHEET_V3_SETTERS = Object.freeze([
+  "__SetParsedStyles",
+  "__UpdateStyleObject",
+  "__SetStyleObject",
+]);
+
 const CARDS = Object.freeze({
   stylesheet: {
     key: "stylesheet",
@@ -185,6 +250,27 @@ const CARDS = Object.freeze({
       done: checkDone,
     },
   },
+  stylesheet3: {
+    key: "stylesheet3",
+    card: "stylesheet-v3",
+    marker: "[solid-lynx ss3]",
+    probe: "native-stylesheet-papi-v3",
+    bundle: "stylesheet-probe-v3.lynx.bundle",
+    stages: STYLESHEET_V3_REQUIRED_STAGES,
+    operations: STYLESHEET_OPERATIONS,
+    checks: {
+      "inventory-v3": checkStylesheetV2Inventory,
+      "create-style-object": checkStylesheetV3Create,
+      "style-object-setters": checkStylesheetV3Setters,
+      "load-retry": checkStylesheetV3LoadRetry,
+      "adopt-retry": checkStylesheetV3Retry,
+      "replace-retry": checkStylesheetV3Retry,
+      "handle-verdict": checkStylesheetV3Verdict,
+      lifecycle: checkStylesheetV3Lifecycle,
+      summary: checkStylesheetV3Summary,
+      done: checkDone,
+    },
+  },
 });
 
 /**
@@ -195,7 +281,7 @@ const CARDS = Object.freeze({
  * by length makes that impossible rather than relying on the shorter marker's
  * payload failing to parse.
  */
-const CARD_ORDER = ["stylesheet2", "stylesheet", "list"];
+const CARD_ORDER = ["stylesheet3", "stylesheet2", "stylesheet", "list"];
 
 /**
  * The thread tag the console bridge puts in front of a logged message.
@@ -1285,6 +1371,432 @@ function checkStylesheetV2Summary(out, stage) {
   }
 }
 
+/* ------------------------------------------------------------ the v3 card
+ *
+ * The v3 card asks one question: does this host ever hand a JavaScript caller an
+ * opaque stylesheet handle? Its answer is derived from calls, and the checks
+ * below test the answer against the calls it says it derived it from. None of
+ * them requires a handle to be found. A capture in which every setter rejected
+ * the value the host itself returned is a complete, correct answer — the
+ * negative measurement this card exists to record.
+ */
+
+/** Checks a field that must be one of a closed set of answers. */
+function expectOneOf(out, stage, value, field, allowed, why) {
+  const text = expectText(out, stage.stage, field, value);
+  if (text !== undefined && !allowed.includes(text)) {
+    out.add(
+      "missing-field",
+      `\`${stage.stage}.${field}\` is ${describeValue(text)}, which is not one of`
+        + ` ${allowed.join(", ")}. ${why}`,
+      stage.stage,
+    );
+    return undefined;
+  }
+  return text;
+}
+
+/** Checks an array of `{ binding, message }` rejections. */
+function expectRejections(out, stage, field, value) {
+  const rejections = expectArray(out, stage.stage, field, value);
+  if (rejections === undefined) return undefined;
+  rejections.forEach((entry, index) => {
+    if (!isPlainObject(entry)) {
+      out.add(
+        "missing-field",
+        `\`${stage.stage}.${field}[${index}]\` must be an object, got`
+          + ` ${describeValue(entry)}.`,
+        stage.stage,
+      );
+      return;
+    }
+    expectText(out, stage.stage, `${field}[${index}].binding`, entry.binding);
+    expectText(out, stage.stage, `${field}[${index}].message`, entry.message);
+  });
+  return rejections;
+}
+
+/**
+ * `__CreateStyleObject`'s bounded list, and the values it produced.
+ *
+ * `candidatesReturned` is the field the whole card turns on, so it has to agree
+ * with the `candidates` array beside it: a capture that says the host returned
+ * values and lists none has lost the values, and one that lists values it says
+ * were never returned has invented them.
+ */
+function checkStylesheetV3Create(out, stage) {
+  const exposed = expectBoolean(out, stage.stage, "exposed", stage.exposed);
+  const candidatesReturned = expectNumber(out, stage.stage, "candidatesReturned",
+    stage.candidatesReturned);
+  if (exposed === undefined) return;
+
+  if (exposed === false) {
+    expectText(out, stage.stage, "note", stage.note);
+    if (candidatesReturned !== undefined && candidatesReturned !== 0) {
+      out.add(
+        "derived-field-mismatch",
+        "`create-style-object` says __CreateStyleObject is not exposed but records"
+          + ` ${candidatesReturned} candidate(s). A binding that is not there cannot return`
+          + " a value.",
+        stage.stage,
+      );
+    }
+    return;
+  }
+
+  const attempts = checkBoundedAttempts(out, stage, "attempts",
+    STYLESHEET_V3_CREATE_CASE_COUNT);
+  checkInternedErrors(out, stage, stage.attempts);
+  const candidates = expectArray(out, stage.stage, "candidates", stage.candidates);
+  if (candidates === undefined) return;
+
+  candidates.forEach((candidate, index) => {
+    if (!isPlainObject(candidate)) {
+      out.add(
+        "missing-field",
+        `\`create-style-object.candidates[${index}]\` must be an object, got`
+          + ` ${describeValue(candidate)}.`,
+        stage.stage,
+      );
+      return;
+    }
+    expectText(out, stage.stage, `candidates[${index}].label`, candidate.label);
+    expectText(out, stage.stage, `candidates[${index}].typeofValue`, candidate.typeofValue);
+  });
+
+  if (candidatesReturned !== undefined && candidates.length !== candidatesReturned) {
+    out.add(
+      "derived-field-mismatch",
+      `\`create-style-object\` reports ${candidatesReturned} candidate(s) but lists`
+        + ` ${candidates.length}. The array is the only copy of what the host returned, so`
+        + " the two cannot disagree.",
+      stage.stage,
+    );
+  }
+
+  // A call that returned is the only call that can have produced a candidate. A
+  // count larger than the number of returning attempts means the capture was
+  // edited or written by a different revision than the one it claims.
+  if (Array.isArray(attempts)) {
+    const returning = attempts.filter(entry => isPlainObject(entry)
+      && entry.outcome === "returned").length;
+    if (candidatesReturned !== undefined && candidatesReturned > returning) {
+      out.add(
+        "handle-count-exceeds-returns",
+        `\`create-style-object\` reports ${candidatesReturned} candidate(s) from`
+          + ` ${returning} returning attempt(s). A value can only come from a call that`
+          + " returned, so the count and the attempts disagree about what the host handed"
+          + " out.",
+        stage.stage,
+      );
+    }
+  }
+}
+
+/**
+ * The four setters, each of which must really have been called with the value.
+ *
+ * The stage may skip them, but only by saying so: `candidateAvailable: false`
+ * with no `skipped` reason is the gap this check exists to catch, because a
+ * capture that silently offers nothing looks identical to one where the value
+ * was rejected and the field was dropped.
+ */
+function checkStylesheetV3Setters(out, stage) {
+  const available = expectBoolean(out, stage.stage, "candidateAvailable",
+    stage.candidateAvailable);
+  if (available === undefined) return;
+
+  if (available === false) {
+    expectText(out, stage.stage, "skipped", stage.skipped);
+    return;
+  }
+
+  expectText(out, stage.stage, "candidateLabel", stage.candidateLabel);
+  const followUps = expectArray(out, stage.stage, "followUps", stage.followUps);
+  if (followUps === undefined) return;
+
+  const internedAttempts = [];
+  for (const name of STYLESHEET_V3_SETTERS) {
+    const entry = followUps.find(candidate => isPlainObject(candidate) && candidate.name === name);
+    if (entry === undefined) {
+      out.add(
+        "missing-operation",
+        `\`style-object-setters\` never offered the value to ${name}. The stage exists to`
+          + ` record all ${STYLESHEET_V3_SETTERS.length} bindings' answers, and a missing one`
+          + " is a question the capture does not answer.",
+        stage.stage,
+      );
+      continue;
+    }
+    const attempts = checkBoundedAttempts(out, {
+      stage: `${stage.stage}.${name}`,
+      attempts: entry.attempts,
+    }, "attempts", undefined);
+    if (attempts !== undefined) {
+      if (attempts.length === 0) {
+        out.add(
+          "missing-call",
+          `\`style-object-setters.${name}\` lists no call, so the value was never offered`
+            + " to that binding.",
+          stage.stage,
+        );
+      }
+      internedAttempts.push(...attempts);
+    }
+  }
+
+  // The setter stage carries the shared `errors` table. An interned key that does
+  // not resolve loses the engine's own words while the line still looks complete.
+  checkInternedErrors(out, stage, internedAttempts);
+}
+
+/**
+ * The two retry stages that only offer a value: adopt and replace.
+ *
+ * Both are checked for the bounded list and for the boolean that says whether a
+ * value was available, because "the host rejected this value" and "this card had
+ * no value to offer" are different answers and the labels alone cannot separate
+ * them.
+ */
+function checkStylesheetV3Retry(out, stage) {
+  checkBoundedAttempts(out, stage, "attempts", undefined);
+  checkInternedErrors(out, stage, stage.attempts);
+  expectBoolean(out, stage.stage, "candidateAvailable", stage.candidateAvailable);
+}
+
+/**
+ * The load retry, which additionally answers whether a load returned an object.
+ *
+ * `loadReturnedObject` is derived from the attempts on the same line, so a
+ * capture that says a load returned an object while recording no returning
+ * attempt is disagreeing with itself.
+ */
+function checkStylesheetV3LoadRetry(out, stage) {
+  checkStylesheetV3Retry(out, stage);
+  const returnedObject = expectBoolean(out, stage.stage, "loadReturnedObject",
+    stage.loadReturnedObject);
+  if (returnedObject === undefined || !Array.isArray(stage.attempts)) return;
+
+  const returning = stage.attempts.filter(entry => isPlainObject(entry)
+    && entry.outcome === "returned").length;
+  if (returnedObject === true && returning === 0) {
+    out.add(
+      "derived-field-mismatch",
+      "`load-retry` records `loadReturnedObject: true` but no attempt returned, so the"
+        + " field has no call behind it.",
+      stage.stage,
+    );
+  }
+}
+
+/**
+ * The answer, checked against the fields it was computed from.
+ *
+ * This is the one derived-field check the card exists for: the verdict is
+ * "a binding accepted a value this card received" or it is "none did". If the
+ * capture says otherwise, it was edited or written by a different revision.
+ */
+function checkStylesheetV3Verdict(out, stage) {
+  expectNumber(out, stage.stage, "candidatesReturned", stage.candidatesReturned);
+  const styleObjectAccepted = expectTextArray(out, stage.stage, "styleObjectAcceptedBy",
+    stage.styleObjectAcceptedBy);
+  expectRejections(out, stage, "styleObjectRejectedBy", stage.styleObjectRejectedBy);
+  const handleAccepted = expectTextArray(out, stage.stage, "stylesheetHandleAcceptedBy",
+    stage.stylesheetHandleAcceptedBy);
+  expectRejections(out, stage, "stylesheetHandleRejectedBy", stage.stylesheetHandleRejectedBy);
+  // Handle-binding calls whose first argument was not the value itself. They are
+  // recorded but are not evidence: the API 33 capture showed
+  // `__AdoptStyleSheet([value])` returning while `__AdoptStyleSheet(value)` threw
+  // `param 0 should be RefCounted`, so counting the array case would report a
+  // stylesheet handle the host never handed out.
+  const nonDirect = expectArray(out, stage.stage, "nonDirectHandleOffers",
+    stage.nonDirectHandleOffers);
+  if (nonDirect !== undefined) {
+    nonDirect.forEach((entry, index) => {
+      if (!isPlainObject(entry)) {
+        out.add(
+          "missing-field",
+          `\`handle-verdict.nonDirectHandleOffers[${index}]\` must be an object, got`
+            + ` ${describeValue(entry)}.`,
+          stage.stage,
+        );
+        return;
+      }
+      expectText(out, stage.stage, `nonDirectHandleOffers[${index}].binding`, entry.binding);
+      expectText(out, stage.stage, `nonDirectHandleOffers[${index}].label`, entry.label);
+      expectText(out, stage.stage, `nonDirectHandleOffers[${index}].outcome`, entry.outcome);
+    });
+  }
+  expectBoolean(out, stage.stage, "refCountedDemandRecorded", stage.refCountedDemandRecorded);
+  expectBoolean(out, stage.stage, "loadReturnedObject", stage.loadReturnedObject);
+
+  const styleObjectVerdict = expectOneOf(out, stage, stage.styleObjectVerdict,
+    "styleObjectVerdict", STYLESHEET_V3_STYLE_OBJECT_VERDICTS,
+    "The style-object answer is computed from whether one of the four style bindings"
+      + " accepted the value, so it cannot be a third answer.");
+  const handleVerdict = expectOneOf(out, stage, stage.stylesheetHandleVerdict,
+    "stylesheetHandleVerdict", STYLESHEET_V3_STYLESHEET_HANDLE_VERDICTS,
+    "The stylesheet-handle answer is computed from whether __AdoptStyleSheet accepted"
+      + " the value, so it cannot be a third answer.");
+  expectText(out, stage.stage, "rule", stage.rule);
+
+  const excluded = expectTextArray(out, stage.stage, "excludedBindings",
+    stage.excludedBindings);
+  // __ReplaceStyleSheets must be in the excluded list. v2 measured it returning
+  // `null` for an empty set, so a return from it is not acceptance of the value it
+  // was given; a capture that counted it would report a handle nobody was handed.
+  if (excluded !== undefined && !excluded.includes("__ReplaceStyleSheets")) {
+    out.add(
+      "verdict-counts-replace",
+      "`handle-verdict.excludedBindings` does not name __ReplaceStyleSheets. Replace"
+        + " returned `null` for `[]`, `[null]` and `[[]]` in the v2 capture, so its return"
+        + " cannot be read as accepting a value, and a verdict that counted it would report"
+        + " a handle the host never handed out.",
+      stage.stage,
+    );
+  }
+
+  // Each answer is derived from the list beside it. A capture where they disagree
+  // was edited, or written by a revision other than the one it claims.
+  if (styleObjectAccepted !== undefined && styleObjectVerdict !== undefined) {
+    const derived = styleObjectAccepted.length > 0
+      ? "style-binding-accepted-the-value"
+      : "no-style-binding-accepted-the-value";
+    if (styleObjectVerdict !== derived) {
+      out.add(
+        "derived-field-mismatch",
+        `\`handle-verdict.styleObjectVerdict\` is ${describeValue(styleObjectVerdict)}, but`
+          + ` \`styleObjectAcceptedBy\` lists ${styleObjectAccepted.length} binding(s),`
+          + ` which makes it ${describeValue(derived)}. The answer is derived from the`
+          + " calls, not asserted beside them.",
+        stage.stage,
+      );
+    }
+  }
+
+  if (handleAccepted !== undefined && handleVerdict !== undefined) {
+    const derived = handleAccepted.length > 0
+      ? "adopt-accepted-the-value"
+      : "no-adopt-accepted-the-value";
+    if (handleVerdict !== derived) {
+      out.add(
+        "derived-field-mismatch",
+        `\`handle-verdict.stylesheetHandleVerdict\` is ${describeValue(handleVerdict)},`
+          + ` but \`stylesheetHandleAcceptedBy\` lists ${handleAccepted.length} binding(s),`
+          + ` which makes it ${describeValue(derived)}.`,
+        stage.stage,
+      );
+    }
+  }
+}
+
+/**
+ * The lifecycle readback, plus the measured state of the cleanup surface.
+ *
+ * `releaseScopedNames` is a list derived from the host's own property names. An
+ * empty list is an answer: the surface this card can see names no release verb,
+ * so there is no cleanup call to attempt. It is checked for shape only — the
+ * checker does not decide which names the host should have.
+ */
+function checkStylesheetV3Lifecycle(out, stage) {
+  checkStylesheetV2Lifecycle(out, stage);
+  expectTextArray(out, stage.stage, "releaseScopedNames", stage.releaseScopedNames);
+  expectNumber(out, stage.stage, "styleGlobalsDescribed", stage.styleGlobalsDescribed);
+}
+
+/** The v3 summary: counters, the answer, and the unmeasured list. */
+function checkStylesheetV3Summary(out, stage, card) {
+  const stagesLogged = expectTextArray(out, stage.stage, "stagesLogged", stage.stagesLogged);
+  expectNumber(out, stage.stage, "globalsDescribed", stage.globalsDescribed);
+  expectNumber(out, stage.stage, "boundedRuns", stage.boundedRuns);
+  expectNumber(out, stage.stage, "attemptsRecorded", stage.attemptsRecorded);
+  expectNumber(out, stage.stage, "callsThatThrew", stage.callsThatThrew);
+  expectNumber(out, stage.stage, "callsThatReturned", stage.callsThatReturned);
+  expectNumber(out, stage.stage, "candidatesReturned", stage.candidatesReturned);
+  expectNumber(out, stage.stage, "offersMade", stage.offersMade);
+  const styleObjectQuestion = expectOneOf(out, stage, stage.styleObjectQuestion,
+    "styleObjectQuestion", STYLESHEET_V3_STYLE_OBJECT_VERDICTS,
+    "It is the same closed answer as `handle-verdict.styleObjectVerdict`.");
+  const handleQuestion = expectOneOf(out, stage, stage.handleQuestion, "handleQuestion",
+    STYLESHEET_V3_STYLESHEET_HANDLE_VERDICTS,
+    "It is the same closed answer as `handle-verdict.stylesheetHandleVerdict`.");
+  expectBoolean(out, stage.stage, "loadReturnedObject", stage.loadReturnedObject);
+  checkUnmeasured(out, stage);
+
+  // `verdictFields` is the compact copy of the verdict carried into the summary so
+  // a reader does not have to page back to a line that may have been truncated.
+  if (stage.verdictFields !== null) {
+    const fields = expectObject(out, stage.stage, "verdictFields", stage.verdictFields);
+    if (fields !== undefined) {
+      const styleAccepted = expectTextArray(out, stage.stage,
+        "verdictFields.styleObjectAcceptedBy", fields.styleObjectAcceptedBy);
+      const handleAccepted = expectTextArray(out, stage.stage,
+        "verdictFields.stylesheetHandleAcceptedBy", fields.stylesheetHandleAcceptedBy);
+      expectTextArray(out, stage.stage, "verdictFields.rejectedBindings",
+        fields.rejectedBindings);
+      expectBoolean(out, stage.stage, "verdictFields.refCountedDemandRecorded",
+        fields.refCountedDemandRecorded);
+
+      if (styleAccepted !== undefined && styleObjectQuestion !== undefined) {
+        const derived = styleAccepted.length > 0
+          ? "style-binding-accepted-the-value"
+          : "no-style-binding-accepted-the-value";
+        if (styleObjectQuestion !== derived) {
+          out.add(
+            "derived-field-mismatch",
+            "`summary.styleObjectQuestion` is " + describeValue(styleObjectQuestion)
+              + " but `verdictFields.styleObjectAcceptedBy` lists "
+              + styleAccepted.length + " binding(s), which makes it "
+              + describeValue(derived) + ".",
+            stage.stage,
+          );
+        }
+      }
+
+      if (handleAccepted !== undefined && handleQuestion !== undefined) {
+        const derived = handleAccepted.length > 0
+          ? "adopt-accepted-the-value"
+          : "no-adopt-accepted-the-value";
+        if (handleQuestion !== derived) {
+          out.add(
+            "derived-field-mismatch",
+            "`summary.handleQuestion` is " + describeValue(handleQuestion)
+              + " but `verdictFields.stylesheetHandleAcceptedBy` lists "
+              + handleAccepted.length + " binding(s), which makes it "
+              + describeValue(derived) + ".",
+            stage.stage,
+          );
+        }
+      }
+    }
+  }
+
+  if (stagesLogged !== undefined && stagesLogged.join("\u0000")
+    !== card.stages.join("\u0000")) {
+    out.add(
+      "summary-does-not-add-up",
+      `\`summary.stagesLogged\` lists ${stagesLogged.join(", ")} where this card emits`
+        + ` ${card.stages.join(", ")}. The summary describes the run it closes.`,
+      stage.stage,
+    );
+  }
+
+  if (typeof stage.callsThatThrew === "number"
+    && typeof stage.callsThatReturned === "number"
+    && typeof stage.attemptsRecorded === "number") {
+    const total = stage.callsThatThrew + stage.callsThatReturned;
+    if (total !== stage.attemptsRecorded) {
+      out.add(
+        "summary-does-not-add-up",
+        `\`summary\` records ${stage.attemptsRecorded} attempt(s) but ${total}`
+          + ` (${stage.callsThatThrew} threw + ${stage.callsThatReturned} returned). The`
+          + " summary is derived from the stages above, so the two cannot disagree.",
+        stage.stage,
+      );
+    }
+  }
+}
+
 function checkListInventory(out, stage, card) {
   const operations = expectArray(out, stage.stage, "operations", stage.operations);
   // `namedPresent` is the measurement, not a promise: a host that lacks a
@@ -1596,16 +2108,45 @@ function describeStage(stage) {
       if (Array.isArray(stage.namedPresent)) parts.push(`${stage.namedPresent.length} present`);
       break;
     }
-    case "inventory-v2": {
+    case "inventory-v2":
+    case "inventory-v3": {
       if (Array.isArray(stage.globals)) parts.push(`${stage.globals.length} global(s)`);
       if (isPlainObject(stage.sources)) {
         parts.push(`${Object.keys(stage.sources).length} source(s)`);
       }
       break;
     }
+    case "create-style-object": {
+      parts.push(`exposed ${describeValue(stage.exposed)}`);
+      if (Array.isArray(stage.attempts)) parts.push(`${stage.attempts.length} attempt(s)`);
+      counter("candidates", stage.candidatesReturned);
+      break;
+    }
+    case "style-object-setters": {
+      parts.push(`candidate available ${describeValue(stage.candidateAvailable)}`);
+      if (Array.isArray(stage.followUps)) parts.push(`${stage.followUps.length} setter(s)`);
+      break;
+    }
+    case "handle-verdict": {
+      if (isText(stage.styleObjectVerdict)) parts.push(stage.styleObjectVerdict);
+      if (isText(stage.stylesheetHandleVerdict)) parts.push(stage.stylesheetHandleVerdict);
+      if (Array.isArray(stage.styleObjectAcceptedBy)) {
+        parts.push(`${stage.styleObjectAcceptedBy.length} style binding(s) accepted`);
+      }
+      if (Array.isArray(stage.stylesheetHandleAcceptedBy)) {
+        parts.push(`${stage.stylesheetHandleAcceptedBy.length} handle binding(s) accepted`);
+      }
+      if (typeof stage.refCountedDemandRecorded === "boolean") {
+        parts.push(`RefCounted demanded ${describeValue(stage.refCountedDemandRecorded)}`);
+      }
+      break;
+    }
     case "loadstyle-arity":
     case "adopt-arity":
-    case "replace-arity": {
+    case "replace-arity":
+    case "load-retry":
+    case "adopt-retry":
+    case "replace-retry": {
       if (Array.isArray(stage.attempts)) parts.push(`${stage.attempts.length} attempt(s)`);
       if (Array.isArray(stage.groups)) parts.push(`${stage.groups.length} distinct answer(s)`);
       counter("handles", stage.returnedHandles);
@@ -1614,6 +2155,9 @@ function describeStage(stage) {
       }
       if (typeof stage.setAvailable === "boolean") {
         parts.push(`set available ${describeValue(stage.setAvailable)}`);
+      }
+      if (typeof stage.candidateAvailable === "boolean") {
+        parts.push(`candidate available ${describeValue(stage.candidateAvailable)}`);
       }
       break;
     }
@@ -1626,6 +2170,9 @@ function describeStage(stage) {
     case "lifecycle": {
       counter("calls returned", stage.callsThatReturned);
       if (Array.isArray(stage.readbacks)) parts.push(`${stage.readbacks.length} readback(s)`);
+      if (Array.isArray(stage.releaseScopedNames)) {
+        parts.push(`${stage.releaseScopedNames.length} release verb(s)`);
+      }
       break;
     }
     case "no-arguments": {

@@ -287,8 +287,8 @@ device the pending record was waiting for, and the two must not be conflated.
 
 ## What is stored here now
 
-Four run directories from 2026-10-25, all of them **Android emulator** runs rather
-than A03 runs:
+Four run directories from 2026-10-25 and one from 2026-11-01, all of them
+**Android emulator** runs rather than A03 runs:
 
 | Directory | Card | Contents |
 | --- | --- | --- |
@@ -296,6 +296,7 @@ than A03 runs:
 | `2026-10-25-emulator-api33-stylesheet/` | `stylesheet` | `capture.log` + `manifest.json`, verifier exit 0 |
 | `2026-10-25-emulator-api33-list/` | `list` | `capture.log` + `manifest.json`, verifier exit 0 |
 | `2026-10-25-emulator-api33-stylesheet-v2/` | `stylesheet2` | `capture.log` only — **no manifest**, so it is supporting bytes and **not** a record |
+| `2026-11-01-emulator-api33-stylesheet-v3/` | `stylesheet3` | `capture.log` + `manifest.json`, verifier exit 0, plus two supporting logs (`probe-getter-returned.log`, `crash-getter-offer.log`) that are **not** records |
 
 Every one of those manifests names its `runtime` (AVD `lynx33`, API 33, `x86_64`,
 Explorer 4.1.0, APK SHA-256

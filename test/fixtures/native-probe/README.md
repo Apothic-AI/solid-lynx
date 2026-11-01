@@ -72,6 +72,7 @@ repository.
 | `list-recycles.log` | bare | 0 | Host asked for rows and called `enqueueComponent` twice: a complete recycling answer. |
 | `list-never-recycled.log` | bare | 0 | Host never called `enqueueComponent`, recorded as `0`: a recorded zero is an answer, not a gap. |
 | `list-no-answer.log` | bare | 1 | A capture whose `shrunk` and `summary` stages never say whether `enqueueComponent` ran: the question the card exists to answer is left open. |
+| `stylesheet-v3-no-handle.log` | real framing, `main-thread.js` | 0 | The handle question answered negatively and consistently: eight `__CreateStyleObject` shapes produced four values, `__AdoptStyleSheet` rejected the offered one by naming `RefCounted`, `__ReplaceStyleSheets` returned `null` again, and the derived verdict agrees with the calls it names. Its values are written by hand to match the shape v2 measured; they are not a capture. |
 
 The `real-format-*` fixtures exit **1**, not 0, and that is worth reading rather
 than working around. The framing extraction was the only thing they were added to

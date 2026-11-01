@@ -134,7 +134,7 @@ export const PENDING_RECORD = "pending.json";
 export const RECORD_FILES = Object.freeze([CAPTURE_MANIFEST, DECISION_RECORD, PENDING_RECORD]);
 
 /** Cards `examples/lynx-for-native/scripts/run-native-probe.sh` accepts. */
-export const NATIVE_CARDS = Object.freeze(["smoke", "stylesheet", "stylesheet2", "list"]);
+export const NATIVE_CARDS = Object.freeze(["smoke", "stylesheet", "stylesheet2", "stylesheet3", "list"]);
 
 /**
  * Which verifier reads which card's capture.
@@ -151,6 +151,7 @@ export const CARD_VERIFIERS = Object.freeze({
   smoke: Object.freeze({ label: PARITY_VERIFIER_LABEL, path: PARITY_VERIFIER_PATH }),
   stylesheet: Object.freeze({ label: PROBE_VERIFIER_LABEL, path: PROBE_VERIFIER_PATH }),
   stylesheet2: Object.freeze({ label: PROBE_VERIFIER_LABEL, path: PROBE_VERIFIER_PATH }),
+  stylesheet3: Object.freeze({ label: PROBE_VERIFIER_LABEL, path: PROBE_VERIFIER_PATH }),
   list: Object.freeze({ label: PROBE_VERIFIER_LABEL, path: PROBE_VERIFIER_PATH }),
 });
 
@@ -271,6 +272,7 @@ What it decides
 
          card \`smoke\`       ${PARITY_VERIFIER_LABEL}
          card \`stylesheet\`  ${PROBE_VERIFIER_LABEL}
+         card \`stylesheet3\` ${PROBE_VERIFIER_LABEL}
          card \`list\`        ${PROBE_VERIFIER_LABEL}
 
        A probe capture is verified for the stages its card emits, in order, and

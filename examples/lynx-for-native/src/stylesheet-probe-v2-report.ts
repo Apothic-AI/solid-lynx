@@ -442,8 +442,25 @@ export function fitToBudget(
   candidates: readonly BudgetCandidate[],
   budget = LOAD_STAGE_BYTES,
 ): FitResult {
+  return fitToBudgetWith(v2ReportLine, stage, candidates, budget);
+}
+
+/**
+ * The same fallback, measured with a given card's line builder.
+ *
+ * The v3 card has its own marker and its own payloads but the same delivered-line
+ * limit, and a second copy of this rule would be free to drift from the first. The
+ * builder is a parameter so each card measures its own line exactly; `fitToBudget`
+ * above is this function bound to v2's builder, unchanged for its existing callers.
+ */
+export function fitToBudgetWith(
+  lineFor: (stage: string, payload: Record<string, unknown>) => string,
+  stage: string,
+  candidates: readonly BudgetCandidate[],
+  budget = LOAD_STAGE_BYTES,
+): FitResult {
   for (const candidate of candidates) {
-    const bytes = v2ReportLine(stage, candidate.payload).length;
+    const bytes = lineFor(stage, candidate.payload).length;
     if (bytes <= budget) {
       const compacted = candidate.form === candidates[0]?.form;
       return {
@@ -464,7 +481,7 @@ export function fitToBudget(
       stageBytes: budget,
     },
     form: "over-budget",
-    bytes: v2ReportLine(stage, payload).length,
+    bytes: lineFor(stage, payload).length,
   };
 }
 

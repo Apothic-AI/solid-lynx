@@ -14,7 +14,7 @@ import { pluginSolidLynx } from "@apothic-ai/solid-lynx/rspeedy";
  *
  * Build with `pnpm native:build`, which produces `dist/main.lynx.bundle`,
  * `dist/stylesheet-probe.lynx.bundle`, `dist/stylesheet-probe-v2.lynx.bundle`,
- * and `dist/list-probe.lynx.bundle`.
+ * `dist/stylesheet-probe-v3.lynx.bundle`, and `dist/list-probe.lynx.bundle`.
  * Loading any of them needs Lynx Explorer or a device; see `docs/building.md`.
  */
 export default defineConfig({
@@ -31,6 +31,10 @@ export default defineConfig({
       // path exists. Kept beside v1 rather than replacing it, because v1's
       // capture is the ground truth v2 starts from.
       "stylesheet-probe-v2": "./src/stylesheet-probe-v2.ts",
+      // The third attempt: it offers the values the host returned back to the
+      // host's own setters, which is the only way the handle question can be
+      // answered. Kept separate so v2's capture stays comparable with itself.
+      "stylesheet-probe-v3": "./src/stylesheet-probe-v3.ts",
       // A third card, the same shape as the stylesheet probe, measuring the
       // native list PAPI and cell recycling on a device.
       "list-probe": "./src/list-probe.ts",
@@ -75,6 +79,10 @@ export default defineConfig({
         },
         "stylesheet-probe-v2": {
           mainThread: "./src/stylesheet-probe-v2.ts",
+          background: false,
+        },
+        "stylesheet-probe-v3": {
+          mainThread: "./src/stylesheet-probe-v3.ts",
           background: false,
         },
         "list-probe": {

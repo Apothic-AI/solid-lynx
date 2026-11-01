@@ -47,7 +47,12 @@ Recent milestone commits (newest first, all on `master`):
   `node-matrix` jobs; `9d3f22f` reconciled the five open roadmap boxes.
 - `faca97c` one native probe runner for all three cards.
 - `d8562dd` native list measurement card; `2bcac14` the indexed list row model
-  and the stylesheet probe card with their recorder tests.
+  and the stylesheet probe card with their recorder tests. The stylesheet work
+  now has three cards: v3 (`stylesheet-probe-v3.ts`, `[solid-lynx ss3]`) offers
+  the values the host returns back to it, and its 2026-11-01 emulator capture is
+  a record under `docs/evidence/native/2026-11-01-emulator-api33-stylesheet-v3/`.
+  It found an opaque style-object handle that `__AdoptStyleSheet` accepts and no
+  handle from a load, so a loaded sheet's lifecycle is still unmeasured.
 - `0d77793` contract frozen; `5ecace6` versions pinned; `002b786` migration and
   compatibility guidance; `a7d225c` CI workflow; `5c98160` release process;
   `e73168f` the PR template.
@@ -73,14 +78,16 @@ is correct; that is not a regression, it is the file being older than you.
 ```bash
 pnpm typecheck                     # exit 0
 pnpm typecheck:consumer            # exit 0; test/consumer/tsconfig.json + tsconfig.dev.json
-pnpm test                          # exit 0; 304 tests in 12 files, after `pnpm build`
+pnpm test                          # exit 0; 359 tests in 13 files, after `pnpm build`
                                    #   and before `typecheck:consumer`:
-                                   #   renderer 63, require-native-evidence 51,
-                                   #   native-probe-verify 63, native-parity-verify 28,
+                                   #   native-probe-verify 73, renderer 63,
+                                   #   require-native-evidence 51,
+                                   #   stylesheet-probe-v3-report 45,
                                    #   stylesheet-probe-v2-report 33,
-                                   #   list-probe-report 19, parity 9,
-                                   #   consumer-install 9, stylesheet-probe-report 13,
-                                   #   rspeedy 6, packaging 6, documented-counts 4
+                                   #   native-parity-verify 28, list-probe-report 19,
+                                   #   stylesheet-probe-report 13, consumer-install 9,
+                                   #   parity 9, rspeedy 6, packaging 6,
+                                   #   documented-counts 4
 pnpm build                         # exit 0
 pnpm pack --dry-run                # exit 0; 52 tarball entries (30 under dist/, 17 under docs/,
                                    #   plus LICENSE, package.json, README.md, CHANGELOG.md,

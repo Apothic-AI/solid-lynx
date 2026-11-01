@@ -193,11 +193,11 @@ same code; they do not share silicon, a device image, or an input path.
 | ABI | **`x86_64`** |
 | App | Lynx Explorer **4.1.0** (`com.lynx.explorer`), engine 3.5 — the same build as §4.1 |
 | APK digest | SHA-256 `6ae29787a2166974c29c2f23d87f3b20a137abcf9a8c17903ad19f3fb7f00cb6` — identical to the A03 install |
-| Captures | `docs/evidence/native/2026-10-25-emulator-api33-smoke/` (20/20 parity, verifier exit 0), `...-stylesheet/` (6 stages, exit 0, including a successful load of the real `probe.css`), `...-list/` (7 stages, exit 0); `...-stylesheet-v2/` holds a capture with **no manifest**, so it is supporting bytes, not a record |
+| Captures | `docs/evidence/native/2026-10-25-emulator-api33-smoke/` (20/20 parity, verifier exit 0), `...-stylesheet/` (6 stages, exit 0, including a successful load of the real `probe.css`), `...-list/` (7 stages, exit 0), and `2026-11-01-emulator-api33-stylesheet-v3/` (10 stages plus three `offer-start` extras, exit 0 — the handle question); `...-stylesheet-v2/` holds a capture with **no manifest**, so it is supporting bytes, not a record |
 
-All four cards — the parity smoke card and the stylesheet, stylesheet-v2 and
-list probes — ran on this one runtime, and three of them are stored as
-verifier-checked records. The manifests name the `runtime` block
+All five cards — the parity smoke card and the stylesheet, stylesheet-v2,
+stylesheet-v3 and list probes — ran on this one runtime, and four of them are
+stored as verifier-checked records. The manifests name the `runtime` block
 (`kind`, `avd`, `androidApi`, `abi`, `lynxExplorer`, `apkSha256`) beside the
 `device` block, so a reader does not have to infer which runtime a capture came
 from.
@@ -237,9 +237,11 @@ has never been run. Older or newer Explorer builds are untested.
 Keeping this honest matters more than it looks: part of the "unsupported" column
 in [contract.md](contract.md) and [capabilities.md](capabilities.md) is about
 native behaviour that one hand run did not measure, and part of it is about
-behaviour the emulator measured only in part — the stylesheet lifecycle has no
-handle and list recycling has no observed call. Both kinds are labelled
-`unmeasured` where they appear, and neither is upgraded by the captures existing.
+behaviour the emulator measured only in part — a loaded stylesheet hands back no
+handle (though `__CreateStyleObject` returns an opaque style-object handle, which
+`__AdoptStyleSheet` accepts), and list recycling has no observed call. Both kinds
+are labelled `unmeasured` where they appear, and neither is upgraded by the
+captures existing.
 
 ## 5. Rspeedy and the build plugins
 
@@ -399,10 +401,11 @@ specifier starts resolving again.
   it therefore cannot prove.
 - **No cross-host stylesheet or list claims.** [capabilities.md](capabilities.md)
   remains authoritative. Its summary table now records two native cells as
-  measured (stylesheet load, list create/materialize/reorder/shrink) with the
-  emulator as the runtime, keeps every other native cell `not measured`, and
-  marks the stylesheet **lifecycle** and list **recycling** unmeasured in the same
-  cells that carry the measured half.
+  measured (stylesheet load and the style-object handle, list
+  create/materialize/reorder/shrink) with the emulator as the runtime, keeps
+  every other native cell `not measured`, and marks a loaded stylesheet's
+  ownership/removal and list **recycling** unmeasured in the same cells that
+  carry the measured half.
 - **No present-tense native parity claim for the A03.** The 2026-10-09 A03 run
   reported all twenty Element PAPI operations passing, but its capture was left in
   `/tmp`. [parity-checklist.md](parity-checklist.md) therefore keeps the A03

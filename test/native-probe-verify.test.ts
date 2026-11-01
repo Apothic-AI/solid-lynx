@@ -48,6 +48,7 @@ const LP_SOURCE = path.join(REPO_ROOT, "examples", "lynx-for-native", "src",
 
 const SS = "[solid-lynx ss]";
 const LP = "[solid-lynx lp]";
+const SS3 = "[solid-lynx ss3]";
 
 const fixture = (name: string): string => path.join(FIXTURES, name);
 
@@ -873,7 +874,7 @@ describe("verify-native-probe: what it refuses to guess", () => {
     ));
 
     expect(run.status).toBe(2);
-    expect(run.stderr).toContain("contains no [solid-lynx ss2], [solid-lynx ss], [solid-lynx lp] line");
+    expect(run.stderr).toContain("contains no [solid-lynx ss3], [solid-lynx ss2], [solid-lynx ss], [solid-lynx lp] line");
     expect(run.stdout).toContain("could not evaluate");
   });
 
@@ -881,7 +882,7 @@ describe("verify-native-probe: what it refuses to guess", () => {
     const run = runVerifier(writeCapture(""));
 
     expect(run.status).toBe(2);
-    expect(run.stderr).toContain("contains no [solid-lynx ss2], [solid-lynx ss], [solid-lynx lp]");
+    expect(run.stderr).toContain("contains no [solid-lynx ss3], [solid-lynx ss2], [solid-lynx ss], [solid-lynx lp]");
   });
 
   it("cannot evaluate a marker with no JSON after it", () => {
@@ -1214,6 +1215,167 @@ describe("verify-native-probe: the stylesheet v2 card", () => {
     // The checker cannot import the card, so the literal it carries is held to
     // the card's own table here.
     expect(source).toContain(`const STYLESHEET_V2_LOAD_CASE_COUNT = ${cases.length};`);
+  });
+});
+
+describe("verify-native-probe: the stylesheet v3 card", () => {
+  // The stored fixture carries the console bridge's framing, so the payload runs
+  // to the last `}` on the line and everything after it is the bridge's closing
+  // quote. Rebuilding the line has to keep that framing.
+  const rewriteStage = (text: string, stage: string, edit: (payload: any) => void): string =>
+    text.split("\n").map(one => {
+      if (!one.includes(`"stage":"${stage}"`)) return one;
+      const at = one.indexOf(`${SS3} `);
+      const end = one.lastIndexOf("}");
+      const payload = JSON.parse(one.slice(at + SS3.length + 1, end + 1));
+      edit(payload);
+      return one.slice(0, at) + `${SS3} ` + JSON.stringify(payload) + one.slice(end + 1);
+    }).join("\n");
+
+  it("verifies the capture where both answers were observed", () => {
+    // The stored capture: a style binding accepted the value the host returned and
+    // __AdoptStyleSheet accepted it too. The two answers are reported separately.
+    const run = runVerifier(fixture("stylesheet-v3-adopt-accepted.log"));
+
+    expect(run.stderr).toBe("");
+    expect(run.status).toBe(0);
+    expect(run.stdout).toContain("verdict: verified");
+    expect(run.stdout).toContain("10 required stage(s) present");
+    expect(run.stdout).toContain("stylesheet-v3");
+    expect(run.stdout).toContain("candidates 5");
+    expect(run.stdout).toContain("3 setter(s)");
+    expect(run.stdout).toContain("style-binding-accepted-the-value");
+    expect(run.stdout).toContain("adopt-accepted-the-value");
+    expect(run.stdout).toContain("RefCounted demanded true");
+  });
+
+  it("reports a v3 capture that stops before the derived verdict", () => {
+    const text = readFileSync(fixture("stylesheet-v3-adopt-accepted.log"), "utf8");
+    const truncated = text
+      .split("\n")
+      .filter(one => !one.includes('"stage":"handle-verdict"'))
+      .join("\n");
+    const run = runVerifier(writeCapture(truncated));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[missing-stage]");
+    expect(run.stdout).toContain("`handle-verdict`");
+  });
+
+  it("flags a create list that dropped cases, because the shapes are the experiment", () => {
+    const text = readFileSync(fixture("stylesheet-v3-adopt-accepted.log"), "utf8");
+    const rewritten = rewriteStage(text, "create-style-object", payload => {
+      payload.attempts = payload.attempts.slice(0, 3);
+      payload.candidatesReturned = payload.candidatesReturned;
+    });
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[wrong-attempt-count]");
+    expect(run.stdout).toContain("8");
+  });
+
+  it("flags a setter stage that offered nothing and does not say why", () => {
+    const text = readFileSync(fixture("stylesheet-v3-adopt-accepted.log"), "utf8");
+    const rewritten = rewriteStage(text, "style-object-setters", payload => {
+      payload.candidateAvailable = false;
+      delete payload.skipped;
+    });
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[missing-field]");
+    expect(run.stdout).toContain("skipped");
+  });
+
+  it("flags a verdict that disagrees with the bindings it says accepted the value", () => {
+    const text = readFileSync(fixture("stylesheet-v3-adopt-accepted.log"), "utf8");
+    const rewritten = text.split("\n").map(one => {
+      if (!one.includes('"stage":"handle-verdict"')) return one;
+      const at = one.indexOf(`${SS3} `);
+      const end = one.lastIndexOf("}");
+      const payload = JSON.parse(one.slice(at + SS3.length + 1, end + 1));
+      payload.styleObjectVerdict = "no-style-binding-accepted-the-value";
+      return one.slice(0, at) + `${SS3} ` + JSON.stringify(payload) + one.slice(end + 1);
+    }).join("\n");
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[derived-field-mismatch]");
+    expect(run.stdout).toContain("styleObjectAcceptedBy");
+  });
+
+  it("flags a verdict that would count __ReplaceStyleSheets' null as a handle", () => {
+    // This is the false positive the card exists to avoid: replace returned null
+    // for an empty set as well, so a return from it says nothing about the value.
+    const text = readFileSync(fixture("stylesheet-v3-adopt-accepted.log"), "utf8");
+    const rewritten = rewriteStage(text, "handle-verdict", payload => {
+      payload.excludedBindings = [];
+    });
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[verdict-counts-replace]");
+  });
+
+  it("flags a v3 lifecycle stage that claims a rule was applied", () => {
+    const text = readFileSync(fixture("stylesheet-v3-adopt-accepted.log"), "utf8");
+    const rewritten = rewriteStage(text, "lifecycle", payload => {
+      payload.claim = "the loaded stylesheet was applied to the card";
+    });
+    const run = runVerifier(writeCapture(rewritten));
+
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain("[lifecycle-claim]");
+  });
+
+  it("requires the v3 stage set the v3 card actually emits", () => {
+    const sourcePath = path.join(REPO_ROOT, "examples", "lynx-for-native", "src",
+      "stylesheet-probe-v3.ts");
+    const wrapped = emittedStages(sourcePath, "stage");
+    const direct = emittedStages(sourcePath, "v3ReportLine");
+    // `offer-start` is a deliberate extra: it names each binding before the value
+    // is offered, so a native crash mid-call is still attributable. The verifier
+    // treats a stage it does not know as an extra, not as a finding.
+    expect(direct).toContain("offer-start");
+
+    expect([...wrapped, ...direct.filter(name => name !== "offer-start")]).toEqual([
+      "inventory-v3",
+      "create-style-object",
+      "style-object-setters",
+      "load-retry",
+      "adopt-retry",
+      "replace-retry",
+      "handle-verdict",
+      "lifecycle",
+      "summary",
+      "done",
+    ]);
+  });
+
+  it("holds the v3 create count to the card's own argument table", async () => {
+    const { createStyleObjectCases, STYLE_OBJECT_SETTERS } = await import(
+      "../examples/lynx-for-native/src/stylesheet-probe-v3-report.js"
+    );
+    const cases = createStyleObjectCases();
+    const source = readFileSync(SCRIPT, "utf8");
+
+    expect(source).toContain(`const STYLESHEET_V3_CREATE_CASE_COUNT = ${cases.length};`);
+    // The three bindings the checker requires are the three the card offers to.
+    expect(STYLE_OBJECT_SETTERS).toHaveLength(3);
+  });
+
+  it("keeps the three stylesheet cards from being read as each other", () => {
+    const v3 = runVerifier(fixture("stylesheet-v3-adopt-accepted.log"));
+    expect(v3.stdout).toContain("card 1 of 1 — stylesheet-v3 —");
+    expect(v3.stdout).not.toContain("stylesheet-v2");
+    expect(v3.stdout).not.toContain("card 1 of 1 — stylesheet —");
+
+    const v2 = runVerifier(fixture("stylesheet-v2-all-threw.log"));
+    expect(v2.stdout).not.toContain("stylesheet-v3");
+
+    const v1 = runVerifier(fixture("stylesheet-good.log"));
+    expect(v1.stdout).not.toContain("stylesheet-v3");
   });
 });
 
